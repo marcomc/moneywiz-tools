@@ -1,0 +1,25 @@
+# Exclude the external API (tracked in its own repo)
+moneywiz-api/
+
+# Python + venv
+.venv/
+.uv-cache/
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Build / dist
+build/
+dist/
+
+# Env / local
+.env
+*.log
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
