@@ -465,6 +465,6 @@ Examples:
 
 ## Credits & License
 
-- Moneywiz Tools is maintained by Marco Massari and released under the MIT License (see `LICENSE`).
+- Moneywiz Tools is maintained by Marco Massari Calderone and released under the MIT License (see `LICENSE`).
 - The project builds directly on—and is heavily inspired by—the excellent [`moneywiz-api`](https://github.com/ileodo/moneywiz-api) library by Tianwei Dong (ileodo). We vendor MarcoMC’s fork of that project to pick up write helpers and bug fixes while contributing improvements back upstream.
 - MoneyWiz is a product of [SilverWiz Ltd.](https://silverwiz.com/). This project is an independent, open-source tool and is not affiliated with SilverWiz Ltd.
