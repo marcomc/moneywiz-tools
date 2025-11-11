@@ -23,6 +23,7 @@ CONFIG_DB_PATH=""
 FORK_REPO_URL="https://github.com/marcomc/moneywiz-api.git"
 DEFAULT_REAL_DB_PATH="${HOME}/Library/Containers/com.moneywiz.personalfinance-setapp/Data/Documents/.AppData/ipadMoneyWiz.sqlite"
 CREATE_TEST_DB=0
+SANITIZE_TEST_DB=0
 
 trim_ws() {
   # Trim leading/trailing whitespace from the provided string
@@ -157,6 +158,7 @@ Usage: ./moneywiz.sh [--db PATH] <command> [options]
 Global:
   --db PATH                          Override database path (default: tests/test_db.sqlite)
   --create-test-db                   Copy the selected MoneyWiz DB into tests/test_db.sqlite and exit
+  --sanitize-test-db                 Scrub/anonymize tests/test_db.sqlite and exit
   --setup                            Clone moneywiz-api fork and scaffold ~/.moneywizrc
   --help                             Show this help
 
@@ -210,6 +212,8 @@ while [[ $# -gt 0 ]]; do
       if [[ -n "${2-}" ]]; then GLOBAL_DB="$2"; shift 2; else echo "--db requires a path" >&2; exit 2; fi ;;
     --create-test-db)
       CREATE_TEST_DB=1; shift ;;
+    --sanitize-test-db)
+      SANITIZE_TEST_DB=1; shift ;;
     --setup)
       run_setup; exit 0 ;;
     --help|-h)
@@ -250,6 +254,16 @@ shift || true
 PY="${VENV_DIR}/bin/python"
 BASE_DB_ARG=( )
 if [[ -n "${GLOBAL_DB}" ]]; then BASE_DB_ARG=("--db" "${GLOBAL_DB}"); else BASE_DB_ARG=("--db" "${DB_PATH}"); fi
+
+if [[ ${SANITIZE_TEST_DB} -eq 1 ]]; then
+  TARGET_DB="${SCRIPT_DIR}/tests/test_db.sqlite"
+  if [[ ! -f "${TARGET_DB}" ]]; then
+    echo "Error: ${TARGET_DB} does not exist. Seed it first with --create-test-db." >&2
+    exit 1
+  fi
+  "${PY}" "${SCRIPT_DIR}/scripts/sanitize_test_db.py" --db "${TARGET_DB}"
+  exit 0
+fi
 
 # Validate DB path for subcommands that need it (all except 'shell' when --help)
 if [[ "${SUBCMD}" != "shell" ]]; then
