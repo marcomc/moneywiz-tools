@@ -23,3 +23,7 @@ dist/
 .vscode/
 .idea/
 .DS_Store
+
+# Local config and test DBs
+.moneywizrc
+*.sqlite
