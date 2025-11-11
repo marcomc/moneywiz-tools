@@ -3,6 +3,7 @@
 This document outlines practical read/write extensions to the current read-only library so that core MoneyWiz features can be replicated from the CLI.
 
 Guiding principles
+
 - Keep database integrity: respect existing relationships and Core Data conventions.
 - Prefer small, composable operations with clear preconditions and validations.
 - Transaction-safe writes: wrap multi-table updates (e.g., transfers, category/tag links) in a single DB transaction.
@@ -10,10 +11,12 @@ Guiding principles
 ## Entities and Operations
 
 ### Users
+
 - Read: list users (implemented).
 - Write: N/A (created by the app/cloud sync). Avoid creating users manually.
 
 ### Accounts
+
 - Read: list, filter by user (implemented).
 - Write (add/update/archive):
   - Create account rows in `ZSYNCOBJECT` with appropriate `Z_ENT` for type.
@@ -22,18 +25,22 @@ Guiding principles
   - Helpers: resolve `Z_ENT` from `Z_PRIMARYKEY`.
 
 ### Payees
+
 - Read: list (implemented).
 - Write: create/update payee rows in `ZSYNCOBJECT` for the Payee entity type; fields `ZNAME5`, `ZUSER7`.
 
 ### Categories
+
 - Read: list, name chains (implemented).
 - Write: create/update `Category` rows in `ZSYNCOBJECT`, set parent via `ZPARENTCATEGORY`, `ZTYPE2`.
 
 ### Tags
+
 - Read: list (implemented).
 - Write: create/update `Tag` rows in `ZSYNCOBJECT`; link to transactions via `Z_36TAGS` rows.
 
 ### Transactions
+
 - Read: all types (implemented) + splits/tags/refunds maps (implemented).
 - Write (core):
   - Deposit/Withdraw/Refund: create `ZSYNCOBJECT` rows with FX fields as applicable.
@@ -46,12 +53,14 @@ Guiding principles
   - Refund links: create `ZWITHDRAWREFUNDTRANSACTIONLINK` row mapping refund to original withdraw.
 
 ### Holdings
+
 - Read: by account (implemented).
 - Write: update holdings meta (e.g., `ZDESC`, `ZHOLDINGTYPE`), update price table if desired (requires additional tables not currently modeled).
 
 ## Low-level Accessor Changes
 
 Add a write-capable `DatabaseAccessor` API with transaction helpers:
+
 - `begin()/commit()/rollback()` or context manager.
 - `insert_syncobject(typename: str, fields: dict) -> int` — resolve `Z_ENT`, set mandatory columns (`Z_OPT`, `ZGID`), and insert. Return `Z_PK`.
 - `update_syncobject(pk: int, fields: dict)` — patch fields.
@@ -59,6 +68,7 @@ Add a write-capable `DatabaseAccessor` API with transaction helpers:
 - Helper mappers: `ent_for/typename_for` (exists), `now_to_coredata_timestamp()`, currency helpers.
 
 Relationship helpers:
+
 - `assign_categories(tx_id: int, splits: list[tuple[cat_id, Decimal]])` — maintain sums/signs.
 - `assign_tags(tx_id: int, tag_ids: list[int])` — upsert bridge rows.
 - `link_refund(refund_tx_id: int, original_withdraw_id: int)`.
@@ -66,6 +76,7 @@ Relationship helpers:
 ## CLI Design (moneywiz.sh)
 
 New subcommands (sketch):
+
 - `create-account --user ID --type <BankCheque|Cash|CreditCard|...> --name NAME --currency CUR [--opening-balance AMOUNT]`
 - `update-account --id ID [--name N] [--currency C] [--archived BOOL] ...`
 - `create-transaction --type <deposit|withdraw|refund|transfer|reconcile|inv-buy|inv-sell|inv-exchange> [type-specific flags]`
@@ -75,6 +86,7 @@ New subcommands (sketch):
 - `link-refund --refund ID --original-withdraw ID`
 
 Safeguards:
+
 - Dry-run (`--dry-run`) to emit SQL changes without applying.
 - `--json` inputs for complex payloads (splits, tags).
 - Balancing checks for category splits and transfer consistency.
@@ -91,23 +103,29 @@ Safeguards:
 ## Research To‑Dos (external)
 
 Due to restricted network access here, capture these for future refinement:
+
 - Confirm full set of `ZSYNCOBJECT` `Z_ENT` → `Z_NAME` mappings for all MoneyWiz versions.
 - Validate write semantics expected by the app (e.g., which flags/arrays must be kept in sync).
 - Investigate MoneyWiz sync side effects (cloud or iCloud) and how local changes are detected.
 
 ## Implementation Plan (phased)
 
-1) Write layer scaffolding
+1. Write layer scaffolding
+
 - Add `write` methods on `DatabaseAccessor` with transaction helpers; unit tests against a temporary DB copy.
 
-2) CRUD for core types
+1. CRUD for core types
+
 - Accounts: create/update; Transactions: deposit/withdraw; Payees/Categories/Tags: create.
 
-3) Relationships
+1. Relationships
+
 - Category splits, tag links, refund links, transfer pairs (consistency checks).
 
-4) Advanced
+1. Advanced
+
 - Investment transactions (buy/sell/exchange), reconcile flows, holdings metadata.
 
-5) CLI integration
+1. CLI integration
+
 - Add subcommands, dry-run support, and JSON input; document in README.md and `doc/`.
