@@ -72,8 +72,11 @@ Once the sources exist, `moneywiz.sh` will create `.venv`, install runtime deps,
 ```bash
 ./moneywiz.sh users
 
-# Print the usage/help message
+# Print the usage/help message or run explicitly via bash
 bash moneywiz.sh --help
+
+# Seed the bundled test DB from an external MoneyWiz copy (kept outside the repo)
+./moneywiz.sh --create-test-db ~/tmp/moneywiz_dev.sqlite
 ```
 
 - First run creates `.venv` (Python 3.11) and installs deps.

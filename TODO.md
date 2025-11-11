@@ -1,3 +1,3 @@
 # TODO
 
-- [ ] Automate creating a sanitized test database: given a user's MoneyWiz SQLite file, copy it into `tests/`, scrub PII (names, emails), and anonymize account/card numbers before adding it to the repo.
+- [ ] Automate creating a sanitized test database: `--create-test-db` copies a user DB into `tests/test_db.sqlite`, but we still need to scrub PII (names, emails) and anonymize account/card numbers before sharing the fixture.
