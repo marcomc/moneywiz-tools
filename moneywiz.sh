@@ -244,6 +244,16 @@ if [[ ${CREATE_TEST_DB} -eq 1 ]]; then
   exit 0
 fi
 
+if [[ ${SANITIZE_TEST_DB} -eq 1 ]]; then
+  TARGET_DB="${SCRIPT_DIR}/tests/test_db.sqlite"
+  if [[ ! -f "${TARGET_DB}" ]]; then
+    echo "Error: ${TARGET_DB} does not exist. Seed it first with --create-test-db." >&2
+    exit 1
+  fi
+  "${VENV_DIR}/bin/python" "${SCRIPT_DIR}/scripts/sanitize_test_db.py" --db "${TARGET_DB}"
+  exit 0
+fi
+
 SUBCMD="${1-}"
 if [[ -z "${SUBCMD}" || "${SUBCMD}" == "-h" || "${SUBCMD}" == "--help" ]]; then
   usage; exit 0
@@ -255,15 +265,6 @@ PY="${VENV_DIR}/bin/python"
 BASE_DB_ARG=( )
 if [[ -n "${GLOBAL_DB}" ]]; then BASE_DB_ARG=("--db" "${GLOBAL_DB}"); else BASE_DB_ARG=("--db" "${DB_PATH}"); fi
 
-if [[ ${SANITIZE_TEST_DB} -eq 1 ]]; then
-  TARGET_DB="${SCRIPT_DIR}/tests/test_db.sqlite"
-  if [[ ! -f "${TARGET_DB}" ]]; then
-    echo "Error: ${TARGET_DB} does not exist. Seed it first with --create-test-db." >&2
-    exit 1
-  fi
-  "${PY}" "${SCRIPT_DIR}/scripts/sanitize_test_db.py" --db "${TARGET_DB}"
-  exit 0
-fi
 
 # Validate DB path for subcommands that need it (all except 'shell' when --help)
 if [[ "${SUBCMD}" != "shell" ]]; then
