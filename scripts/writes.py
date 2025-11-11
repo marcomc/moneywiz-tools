@@ -16,32 +16,62 @@ def load_fields(json_str: str | None) -> dict[str, Any]:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Preview (and optionally apply) SQL writes to MoneyWiz DB")
+    ap = argparse.ArgumentParser(description="Preview (and optionally apply) writes to MoneyWiz DB")
     ap.add_argument("--db", type=Path, required=True, help="Path to MoneyWiz sqlite DB")
     ap.add_argument("--apply", action="store_true", help="Apply changes (default is dry-run preview)")
 
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     ins = sub.add_parser("insert", help="Insert a ZSYNCOBJECT row for a typename")
+    ins.add_argument("--apply", action="store_true", help="Apply changes (may be placed here)")
     ins.add_argument("--type", required=True, help="Type name as in Z_PRIMARYKEY.Z_NAME (e.g., 'DepositTransaction')")
     ins.add_argument("--fields", help="JSON object with column:value pairs")
 
     upd = sub.add_parser("update", help="Update a ZSYNCOBJECT row by primary key")
+    upd.add_argument("--apply", action="store_true", help="Apply changes (may be placed here)")
     upd.add_argument("--id", type=int, required=True, help="Z_PK of the row")
     upd.add_argument("--fields", required=True, help="JSON object with column:value pairs")
 
     dele = sub.add_parser("delete", help="Delete a ZSYNCOBJECT row by primary key")
+    dele.add_argument("--apply", action="store_true", help="Apply changes (may be placed here)")
     dele.add_argument("--id", type=int, required=True)
 
+    safedel = sub.add_parser(
+        "safe-delete",
+        help=(
+            "Delete a ZSYNCOBJECT row by primary key only if no references exist; "
+            "otherwise print referencing tables/columns and abort"
+        ),
+    )
+    safedel.add_argument("--apply", action="store_true", help="Apply changes (may be placed here)")
+    safedel.add_argument("--id", type=int, required=True)
+
+    rename = sub.add_parser(
+        "rename",
+        help=(
+            "Rename an entity row in ZSYNCOBJECT by updating a name field (default heuristics)"
+        ),
+    )
+    rename.add_argument("--apply", action="store_true", help="Apply changes (may be placed here)")
+    rename.add_argument("--id", type=int, required=True)
+    rename.add_argument("--name", required=True)
+    rename.add_argument(
+        "--name-field",
+        help="Explicit column to update (e.g., ZNAME, ZDESC2)",
+    )
+
     cats = sub.add_parser("assign-categories", help="Assign category splits to a transaction")
+    cats.add_argument("--apply", action="store_true", help="Apply changes (may be placed here)")
     cats.add_argument("--tx", type=int, required=True)
     cats.add_argument("--splits", required=True, help="JSON array of [category_id, amount]")
 
     tags = sub.add_parser("assign-tags", help="Assign tags to a transaction")
+    tags.add_argument("--apply", action="store_true", help="Apply changes (may be placed here)")
     tags.add_argument("--tx", type=int, required=True)
     tags.add_argument("--tags", required=True, help="JSON array of tag ids")
 
     refund = sub.add_parser("link-refund", help="Link a refund transaction to its original withdraw")
+    refund.add_argument("--apply", action="store_true", help="Apply changes (may be placed here)")
     refund.add_argument("--refund", type=int, required=True)
     refund.add_argument("--withdraw", type=int, required=True)
 
@@ -55,6 +85,18 @@ def main() -> int:
         session.update_syncobject(args.id, load_fields(args.fields))
     elif args.cmd == "delete":
         session.delete_syncobject(args.id)
+    elif args.cmd == "safe-delete":
+        refs = session.safe_delete(args.id)
+        if refs:
+            print("-- ABORT: References found; not deleting --")
+            for r in refs:
+                samples = ", ".join(map(str, r.sample_ids)) if r.sample_ids else ""
+                suffix = f" (sample ids: {samples})" if samples else ""
+                print(f"- {r.table}.{r.column}: {r.count}{suffix}")
+            session.close()
+            return 2
+    elif args.cmd == "rename":
+        session.rename_entity(args.id, args.name, args.name_field)
     elif args.cmd == "assign-categories":
         splits = json.loads(args.splits)
         session.assign_categories(args.tx, [(int(c), a) for c, a in splits])

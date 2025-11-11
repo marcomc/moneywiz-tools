@@ -18,6 +18,7 @@ def main() -> int:
     ap.add_argument("--db", type=Path, default=default_db(), help="Path to MoneyWiz sqlite DB")
     ap.add_argument("--user", type=int, help="User ID to filter payees; omit to list all users")
     ap.add_argument("--format", choices=["table", "json"], default="table")
+    ap.add_argument("--sort-by-name", action="store_true", help="Sort payees by name (A→Z)")
     args = ap.parse_args()
 
     api = MoneywizApi(args.db)
@@ -28,6 +29,11 @@ def main() -> int:
         for p in records
         if args.user is None or p.user == args.user
     ]
+    # Stable sort: by id by default; by lowercased name if requested
+    if args.sort_by_name:
+        rows.sort(key=lambda r: (str(r["name"]).lower(), r["id"]))
+    else:
+        rows.sort(key=lambda r: r["id"])  # deterministic output
 
     if args.format == "json":
         print(json.dumps(rows, indent=2))
