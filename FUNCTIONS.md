@@ -87,4 +87,3 @@ If enabled, before starting the shell the CLI prints:
 
 - The CLI and API are read-only; write/update actions are not implemented.
 - The session uses the current process’s logging configuration set via `--log-level`.
-

@@ -44,6 +44,7 @@ erDiagram
 ```
 
 Notes
+
 - Most business rows (accounts, transactions, categories, payees, tags, holdings) live in `ZSYNCOBJECT` with different `Z_ENT` values. Resolve type names via `Z_PRIMARYKEY`.
 - Many-to-many relationships are modeled by bridge tables (`ZCATEGORYASSIGMENT`, `Z_36TAGS`).
 - Refunds link via `ZWITHDRAWREFUNDTRANSACTIONLINK`.
