@@ -38,7 +38,7 @@ CLI tools to explore a local MoneyWiz SQLite database (read‑only), powered by 
 `PYTHONPATH`. Run the helper once to bootstrap everything:
 
 ```bash
-./moneywiz.sh --setup
+bash moneywiz.sh --setup
 ```
 
 The setup step clones MarcoMC's fork (needed for write helpers and tolerance fixes) into
@@ -71,6 +71,9 @@ Once the sources exist, `moneywiz.sh` will create `.venv`, install runtime deps,
 
 ```bash
 ./moneywiz.sh users
+
+# Print the usage/help message
+bash moneywiz.sh --help
 ```
 
 - First run creates `.venv` (Python 3.11) and installs deps.
