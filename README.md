@@ -76,7 +76,7 @@ Once the sources exist, `moneywiz.sh` will create `.venv`, install runtime deps,
 bash moneywiz.sh --help
 
 # Seed the bundled test DB from an external MoneyWiz copy (kept outside the repo)
-bash moneywiz.sh --create-test-db ~/tmp/moneywiz_dev.sqlite
+bash moneywiz.sh --db ~/tmp/moneywiz_dev.sqlite --create-test-db
 
 # Scrub/anonymize the bundled test DB after seeding it
 bash moneywiz.sh --sanitize-test-db
@@ -115,7 +115,7 @@ The repo already ships with `tests/test_db.sqlite`, but you can drop in your own
    ```
 
 3. Point the CLI/tests at the file via `--db ~/tmp/moneywiz_dev.sqlite` or by setting `db_path=~/tmp/moneywiz_dev.sqlite` in `.moneywizrc`.
-4. Run `./moneywiz.sh --sanitize-test-db` to scrub names, emails, descriptions, and account/card numbers in `tests/test_db.sqlite` once you've seeded it.
+4. Run `./moneywiz.sh --db ~/tmp/moneywiz_dev.sqlite --create-test-db` to copy it into `tests/test_db.sqlite`, then `./moneywiz.sh --sanitize-test-db` to scrub names, emails, descriptions, and account/card numbers.
 5. (Optional) Keep the sample DB around by duplicating it first: `cp tests/test_db.sqlite tests/test_db.backup.sqlite`.
 
 The CLI validates the path before running any command, so you will get a clear error if the copy goes missing.
