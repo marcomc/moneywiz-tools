@@ -145,9 +145,9 @@ Interactive, read‑only Python shell with prebound helpers.
   ./moneywiz.sh shell --demo-dump --log-level DEBUG
 
   # Use a specific DB path and enable demo
-  ./moneywiz.sh shell --db \
+  ./moneywiz.sh --db \
     "/Users/mmassari/Library/Containers/com.moneywiz.personalfinance-setapp/Data/Documents/.AppData/ipadMoneyWiz.sqlite" \
-    --demo-dump
+    shell --demo-dump
   # >>> helper.users_table()
   # >>> helper.accounts_table(2)[["id","name","currency"]]
   ```
