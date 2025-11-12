@@ -239,20 +239,8 @@ fi
 
 case "${SUBCMD}" in
   shell)
-    # Allow --db after the subcommand for shell
     DB_FOR_SHELL="${GLOBAL_DB:-${DB_PATH}}"
-    SHELL_ARGS=()
-    while [[ $# -gt 0 ]]; do
-      case "$1" in
-        --db)
-          DB_FOR_SHELL="$2"; shift 2 ;;
-        --help|-h)
-          exec "${PY}" "${SCRIPT_DIR}/scripts/run_moneywiz_cli.py" --help ;;
-        *)
-          SHELL_ARGS+=("$1"); shift ;;
-      esac
-    done
-    exec "${PY}" "${SCRIPT_DIR}/scripts/run_moneywiz_cli.py" "${DB_FOR_SHELL}" "${SHELL_ARGS[@]}" ;;
+    exec "${PY}" "${SCRIPT_DIR}/scripts/run_moneywiz_cli.py" "${DB_FOR_SHELL}" "$@" ;;
   users)
     exec "${PY}" "${SCRIPT_DIR}/scripts/users.py" "${BASE_DB_ARG[@]}" "$@" ;;
   accounts)
