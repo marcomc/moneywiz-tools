@@ -24,6 +24,8 @@ CLI tools to explore a local MoneyWiz SQLite database (read‑only), powered by 
   - [summary](#summary)
   - [Writes](#writes)
   - [reassign-payees-by-id](#reassign-payees-by-id)
+  - [create-test-db](#create-test-db)
+  - [sanitize-test-db](#sanitize-test-db)
   - [schema](#schema)
 - [Example (all accounts)](#example-all-accounts)
 - [Credits & License](#credits--license)
@@ -445,6 +447,26 @@ Example:
 # Apply the changes
 ./moneywiz.sh reassign-payees-by-id --from-payee-id 2874 --apply
 ```
+
+### create-test-db
+
+Copy the currently selected MoneyWiz database into `tests/test_db.sqlite`. The source DB is resolved in the same order as other commands (`--db` override → `.moneywizrc` → default path).
+
+- Example:
+  ```bash
+  ./moneywiz.sh --db ~/tmp/moneywiz_dev.sqlite create-test-db
+  # Created test DB at tests/test_db.sqlite (copied from ~/tmp/moneywiz_dev.sqlite)
+  ```
+
+### sanitize-test-db
+
+Scrub/anonymize `tests/test_db.sqlite` after seeding it. The command prints a verbose summary of every column updated so you can confirm no personal data remains.
+
+- Example:
+  ```bash
+  ./moneywiz.sh sanitize-test-db
+  # ... per-column summary ...
+  ```
 
 ### schema
 
