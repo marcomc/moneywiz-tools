@@ -9,7 +9,7 @@ from typing import Literal
 Rule = Literal["CLEAR", "EMAIL"] | str
 
 SANITIZE_RULES: dict[str, Rule] = {
-    "ZNAME": "NAME",
+    "ZNAME": "ACCOUNT",
     "ZNAME2": "CAT",
     "ZNAME5": "PAYEE",
     "ZNAME6": "TAG",

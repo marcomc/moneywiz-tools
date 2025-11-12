@@ -22,8 +22,6 @@ CONFIG_FILE_NAME=".moneywizrc"
 CONFIG_DB_PATH=""
 FORK_REPO_URL="https://github.com/marcomc/moneywiz-api.git"
 DEFAULT_REAL_DB_PATH="${HOME}/Library/Containers/com.moneywiz.personalfinance-setapp/Data/Documents/.AppData/ipadMoneyWiz.sqlite"
-CREATE_TEST_DB=0
-SANITIZE_TEST_DB=0
 
 trim_ws() {
   # Trim leading/trailing whitespace from the provided string
@@ -157,8 +155,6 @@ Usage: ./moneywiz.sh [--db PATH] <command> [options]
 
 Global:
   --db PATH                          Override database path (default: tests/test_db.sqlite)
-  --create-test-db                   Copy the selected MoneyWiz DB into tests/test_db.sqlite and exit
-  --sanitize-test-db                 Scrub/anonymize tests/test_db.sqlite and exit
   --setup                            Clone moneywiz-api fork and scaffold ~/.moneywizrc
   --help                             Show this help
 
@@ -210,10 +206,6 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --db)
       if [[ -n "${2-}" ]]; then GLOBAL_DB="$2"; shift 2; else echo "--db requires a path" >&2; exit 2; fi ;;
-    --create-test-db)
-      CREATE_TEST_DB=1; shift ;;
-    --sanitize-test-db)
-      SANITIZE_TEST_DB=1; shift ;;
     --setup)
       run_setup; exit 0 ;;
     --help|-h)
@@ -224,35 +216,6 @@ while [[ $# -gt 0 ]]; do
       break ;;
   esac
 done
-
-if [[ ${CREATE_TEST_DB} -eq 1 ]]; then
-  SRC="${GLOBAL_DB}"
-  if [[ -z "${SRC}" ]]; then SRC="${CONFIG_DB_PATH}"; fi
-  if [[ -z "${SRC}" ]]; then SRC="${DEFAULT_REAL_DB_PATH}"; fi
-  if [[ -z "${SRC}" ]]; then
-    echo "Error: no source DB could be determined. Pass --db PATH or configure db_path in .moneywizrc." >&2
-    exit 1
-  fi
-  if [[ ! -f "${SRC}" ]]; then
-    echo "Error: source database not found: ${SRC}" >&2
-    exit 1
-  fi
-  DEST="${SCRIPT_DIR}/tests/test_db.sqlite"
-  mkdir -p "${SCRIPT_DIR}/tests"
-  cp "${SRC}" "${DEST}"
-  echo "Created test DB at ${DEST} (copied from ${SRC})"
-  exit 0
-fi
-
-if [[ ${SANITIZE_TEST_DB} -eq 1 ]]; then
-  TARGET_DB="${SCRIPT_DIR}/tests/test_db.sqlite"
-  if [[ ! -f "${TARGET_DB}" ]]; then
-    echo "Error: ${TARGET_DB} does not exist. Seed it first with --create-test-db." >&2
-    exit 1
-  fi
-  "${VENV_DIR}/bin/python" "${SCRIPT_DIR}/scripts/sanitize_test_db.py" --db "${TARGET_DB}"
-  exit 0
-fi
 
 SUBCMD="${1-}"
 if [[ -z "${SUBCMD}" || "${SUBCMD}" == "-h" || "${SUBCMD}" == "--help" ]]; then
@@ -330,6 +293,30 @@ case "${SUBCMD}" in
     exec "${PY}" "${SCRIPT_DIR}/scripts/link_refund.py" "${BASE_DB_ARG[@]}" "$@" ;;
   reassign-payees-by-id)
     exec "${PY}" "${SCRIPT_DIR}/scripts/reassign_payees_by_id.py" "${BASE_DB_ARG[@]}" "$@" ;;
+  create-test-db)
+    SRC="${GLOBAL_DB}"
+    if [[ -z "${SRC}" ]]; then SRC="${CONFIG_DB_PATH}"; fi
+    if [[ -z "${SRC}" ]]; then SRC="${DEFAULT_REAL_DB_PATH}"; fi
+    if [[ -z "${SRC}" ]]; then
+      echo "Error: no source DB could be determined. Pass --db PATH or configure db_path in .moneywizrc." >&2
+      exit 1
+    fi
+    if [[ ! -f "${SRC}" ]]; then
+      echo "Error: source database not found: ${SRC}" >&2
+      exit 1
+    fi
+    DEST="${SCRIPT_DIR}/tests/test_db.sqlite"
+    mkdir -p "${SCRIPT_DIR}/tests"
+    cp "${SRC}" "${DEST}"
+    echo "Created test DB at ${DEST} (copied from ${SRC})"
+    exit 0 ;;
+  sanitize-test-db)
+    TARGET_DB="${SCRIPT_DIR}/tests/test_db.sqlite"
+    if [[ ! -f "${TARGET_DB}" ]]; then
+      echo "Error: ${TARGET_DB} does not exist. Seed it first with create-test-db." >&2
+      exit 1
+    fi
+    exec "${PY}" "${SCRIPT_DIR}/scripts/sanitize_test_db.py" --db "${TARGET_DB}" ;;
   schema)
     # Options: --out-md PATH, --out-json PATH
     OUT_MD="${SCRIPT_DIR}/doc/DB-SCHEMA.md"
