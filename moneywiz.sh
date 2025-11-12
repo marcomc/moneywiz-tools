@@ -196,6 +196,8 @@ Introspection & Misc:
                                       View a record by id or gid
   shell          [--db PATH] [--demo-dump] [--log-level LEVEL]
                                       Launch interactive shell (moneywiz-cli)
+  create-test-db                       Copy the selected MoneyWiz DB into tests/test_db.sqlite
+  sanitize-test-db                     Scrub/anonymize tests/test_db.sqlite
 
 USAGE
 }

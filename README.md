@@ -80,7 +80,7 @@ bash moneywiz.sh --help
 # Seed the bundled test DB from an external MoneyWiz copy (kept outside the repo)
 bash moneywiz.sh --db ~/tmp/moneywiz_dev.sqlite --create-test-db
 
-# Scrub/anonymize the bundled test DB after seeding it
+# Scrub/anonymize the bundled test DB after seeding it (always operates on tests/test_db.sqlite and ignores --db option)
 bash moneywiz.sh --sanitize-test-db
 ```
 
