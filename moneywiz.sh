@@ -154,50 +154,46 @@ usage() {
 Usage: ./moneywiz.sh [--db PATH] <command> [options]
 
 Global:
-  --db PATH                          Override database path (default: tests/test_db.sqlite)
-  --setup                            Clone moneywiz-api fork and scaffold ~/.moneywizrc
-  --help                             Show this help
+  --db PATH                           Override database path (default: tests/test_db.sqlite)
+  --setup                             Clone moneywiz-api fork and scaffold ~/.moneywizrc
+  --help                              Show this help
 
 Reads (support --format table|json; default: table):
-  users                              List users
-  accounts       [--user ID]         List accounts (optionally for user)
-  categories     --user ID [--full-name]
-                                      List categories for user
-  payees         [--user ID] [--sort-by-name]
-                                      List payees (optionally for user); sort by name A→Z
-  tags           [--user ID]         List tags (optionally for user)
-  transactions   [--account ID] [--until YYYY-MM-DD] [--limit N]
-                 [--with-categories] [--with-tags]
-                 [--fields f1,f2,...] [--list-fields] [--all-fields]
+  users                               List users
+  accounts [--user ID]                List accounts (optionally for user)
+  categories --user ID [--full-name]  List categories for user
+  payees [--user ID] [--sort-by-name] List payees (optionally for user); sort by name A→Z
+  tags [--user ID]                    List tags (optionally for user)
+  transactions [--account ID] [--until YYYY-MM-DD] [--limit N]
+               [--with-categories] [--with-tags]
+               [--fields f1,f2,...] [--list-fields] [--all-fields]
                                       List transactions; omit --account to list across all accounts.
                                       Use '--list-fields' to discover selectable fields for '--fields'.
-  holdings       --account ID        List investment holdings for an account
+  holdings --account ID               List investment holdings for an account
 
 Writes (dry-run by default; add --apply to commit):
-  insert         --type TYPE --fields '{JSON cols}'
-  update         --id ID --fields '{JSON cols}'
-  delete         --id ID
-  safe-delete    --id ID            Abort if referenced; prints references
-  rename         --id ID --name NAME [--name-field COL]
+  insert --type TYPE --fields '{JSON cols}'
+  update --id ID --fields '{JSON cols}'
+  delete --id ID
+  safe-delete --id ID                 Abort if referenced; prints references
+  rename --id ID --name NAME [--name-field COL]
   assign-categories --tx ID --splits '[ [cat_id, amount], ... ]'
-  assign-tags    --tx ID --tags '[ tag_id, ... ]'
-  link-refund    --refund ID --withdraw ID
-
+  assign-tags --tx ID --tags '[ tag_id, ... ]'
+  link-refund --refund ID --withdraw ID
   reassign-payees-by-id --from-payee-id ID [--apply] [--quiet] [--show-plan]
-                                      Reassign transactions referencing a payee id so that
-                                      each transaction references a payee named exactly as its description.
+                                      Reassign transactions referencing a payee id so that each transaction
+                                      references a payee named exactly as its description.
 
 Introspection & Misc:
-  schema         [--out-md PATH] [--out-json PATH]
+  schema [--out-md PATH] [--out-json PATH]
                                       Generate Markdown and JSON schema dumps
-  summary                            Show counts per manager
-  stats          [--out DIR]         Write simple stats snapshots to files
-  record         (--id ID | --gid GID)
-                                      View a record by id or gid
-  shell          [--db PATH] [--demo-dump] [--log-level LEVEL]
+  summary                             Show counts per manager
+  stats [--out DIR]                   Write simple stats snapshots to files
+  record (--id ID | --gid GID)        View a record by id or gid
+  shell [--db PATH] [--demo-dump] [--log-level LEVEL]
                                       Launch interactive shell (moneywiz-cli)
-  create-test-db                       Copy the selected MoneyWiz DB into tests/test_db.sqlite
-  sanitize-test-db                     Scrub/anonymize tests/test_db.sqlite
+  create-test-db                      Copy the selected MoneyWiz DB into tests/test_db.sqlite
+  sanitize-test-db                    Scrub/anonymize tests/test_db.sqlite
 
 USAGE
 }
