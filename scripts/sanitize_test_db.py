@@ -35,8 +35,16 @@ def column_exists(con: sqlite3.Connection, table: str, column: str) -> bool:
     return any(row[1].upper() == column.upper() for row in cur.fetchall())
 
 
-def apply_rule(con: sqlite3.Connection, table: str, column: str, rule: Rule) -> None:
+def apply_rule(
+    con: sqlite3.Connection, table: str, column: str, rule: Rule, summary: dict[str, int]
+) -> None:
     if not column_exists(con, table, column):
+        print(f"- {table}.{column}: column missing, skipping")
+        return
+    cur = con.execute(f"SELECT COUNT(*) FROM {table} WHERE {column} IS NOT NULL")
+    count = cur.fetchone()[0]
+    if count == 0:
+        print(f"- {table}.{column}: no data to sanitize")
         return
     rule_upper = rule.upper() if isinstance(rule, str) else rule
     if rule_upper == "CLEAR":
@@ -51,24 +59,34 @@ def apply_rule(con: sqlite3.Connection, table: str, column: str, rule: Rule) -> 
             f"UPDATE {table} SET {column} = ? || Z_PK WHERE {column} IS NOT NULL",
             (f"{prefix}_",),
         )
+    key = f"{table}.{column}"
+    summary[key] = summary.get(key, 0) + count
+    print(f"- {key}: sanitized {count} entr{'y' if count == 1 else 'ies'}")
 
 
-def sanitize_syncobject(con: sqlite3.Connection) -> None:
+def sanitize_syncobject(con: sqlite3.Connection, summary: dict[str, int]) -> None:
     for column, rule in SANITIZE_RULES.items():
-        apply_rule(con, "ZSYNCOBJECT", column, rule)
+        apply_rule(con, "ZSYNCOBJECT", column, rule, summary)
 
 
-def sanitize_users(con: sqlite3.Connection) -> None:
+def sanitize_users(con: sqlite3.Connection, summary: dict[str, int]) -> None:
     if not column_exists(con, "ZUSER", "Z_PK"):
+        print("- ZUSER: table missing, skipping user sanitization")
         return
     for column, rule in USER_RULES.items():
-        apply_rule(con, "ZUSER", column, rule)
+        apply_rule(con, "ZUSER", column, rule, summary)
 
 
-def anonymize_payee_names(con: sqlite3.Connection) -> None:
+def anonymize_payee_names(con: sqlite3.Connection, summary: dict[str, int]) -> None:
     # Some builds keep payee names in dedicated tables; ensure they are blanked too
     if column_exists(con, "ZPAYEE", "ZNAME"):
-        con.execute("UPDATE ZPAYEE SET ZNAME = 'PAYEE_' || Z_PK")
+        cur = con.execute("SELECT COUNT(*) FROM ZPAYEE WHERE ZNAME IS NOT NULL")
+        count = cur.fetchone()[0]
+        con.execute("UPDATE ZPAYEE SET ZNAME = 'PAYEE_' || Z_PK WHERE ZNAME IS NOT NULL")
+        summary["ZPAYEE.ZNAME"] = summary.get("ZPAYEE.ZNAME", 0) + count
+        print(f"- ZPAYEE.ZNAME: sanitized {count} entries")
+    else:
+        print("- ZPAYEE.ZNAME: column missing, skipping")
 
 
 def main() -> int:
@@ -80,15 +98,24 @@ def main() -> int:
         raise SystemExit(f"Database not found: {args.db}")
 
     con = sqlite3.connect(str(args.db))
+    summary: dict[str, int] = {}
     try:
-        sanitize_syncobject(con)
-        sanitize_users(con)
-        anonymize_payee_names(con)
+        sanitize_syncobject(con, summary)
+        sanitize_users(con, summary)
+        anonymize_payee_names(con, summary)
         con.commit()
     finally:
         con.close()
 
-    print(f"Sanitized and anonymized test database at {args.db}")
+    total = sum(summary.values())
+    print("\nSanitized columns summary:")
+    if summary:
+        for key in sorted(summary):
+            count = summary[key]
+            print(f"  * {key}: {count} entr{'y' if count == 1 else 'ies'} updated")
+    else:
+        print("  * No columns required updates; database already sanitized")
+    print(f"\nSanitized and anonymized test database at {args.db} (total entries touched: {total})")
     return 0
 
 
