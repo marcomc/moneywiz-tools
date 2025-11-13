@@ -88,6 +88,22 @@ bash moneywiz.sh --sanitize-test-db
 - Default DB: `tests/test_db.sqlite` (included for development/testing)
 - Use your own DB: `./moneywiz.sh --db /path/to/your/ipadMoneyWiz.sqlite <command> [options]`
 
+## Running Tests
+
+Two helper commands cover the API and CLI suites together. From the repo root run:
+
+```bash
+bash scripts/run_tests.sh
+```
+
+That script bootstraps the `.venv` (via `uv`), installs pytest, sets `PYTHONPATH=moneywiz-api/src`, then runs both `pytest -q moneywiz-api/tests` and `pytest -q tests`. If you prefer to run just the CLI portion, repeat the same environment setup and run:
+
+```bash
+PYTHONPATH=moneywiz-api/src .venv/bin/python -m pytest -q tests/cli
+```
+
+The `doc/TDD.md` file contains the same guidance along with the overall testing strategy.
+
 ## Optional Config File
 
 Create a `.moneywizrc` file to avoid retyping your DB path. The script looks for this file in the

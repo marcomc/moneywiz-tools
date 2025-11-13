@@ -20,10 +20,15 @@ uv pip install pytest --python "$VENV_DIR/bin/python"
 
 export PYTHONPATH="${REPO_ROOT}/moneywiz-api/src${PYTHONPATH:+:${PYTHONPATH}}"
 
-echo "Running API unit tests..."
-"$VENV_DIR/bin/python" -m pytest -q moneywiz-api/tests/unit
+run_pytest() {
+  local label="$1"; shift
+  echo "Running ${label} (${*})..."
+  echo "-> $VENV_DIR/bin/python -m pytest -q $*"
+  "$VENV_DIR/bin/python" -m pytest -q "$@"
+}
 
-echo "Running CLI tests..."
-"$VENV_DIR/bin/python" -m pytest -q tests
+run_pytest "API unit tests" moneywiz-api/tests/unit
+run_pytest "API integration tests" moneywiz-api/tests/integration
+run_pytest "CLI tests" tests/cli
 
 echo "All tests passed."
