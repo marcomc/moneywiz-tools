@@ -21,7 +21,11 @@ def main() -> int:
     args = ap.parse_args()
 
     session = WriteSession(args.db, dry_run=(not args.apply))
-    session.rename_entity(args.id, args.name, args.name_field)
+    if args.apply:
+        with session.transaction():
+            session.rename_entity(args.id, args.name, args.name_field)
+    else:
+        session.rename_entity(args.id, args.name, args.name_field)
 
     print("-- " + ("APPLY" if args.apply else "DRY-RUN") + " --")
     for i, step in enumerate(session.planned, start=1):
@@ -34,4 +38,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

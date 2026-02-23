@@ -79,32 +79,40 @@ def main() -> int:
 
     session = WriteSession(args.db, dry_run=(not args.apply))
 
-    if args.cmd == "insert":
-        session.insert_syncobject(args.type, load_fields(args.fields))
-    elif args.cmd == "update":
-        session.update_syncobject(args.id, load_fields(args.fields))
-    elif args.cmd == "delete":
-        session.delete_syncobject(args.id)
-    elif args.cmd == "safe-delete":
-        refs = session.safe_delete(args.id)
-        if refs:
-            print("-- ABORT: References found; not deleting --")
-            for r in refs:
-                samples = ", ".join(map(str, r.sample_ids)) if r.sample_ids else ""
-                suffix = f" (sample ids: {samples})" if samples else ""
-                print(f"- {r.table}.{r.column}: {r.count}{suffix}")
-            session.close()
-            return 2
-    elif args.cmd == "rename":
-        session.rename_entity(args.id, args.name, args.name_field)
-    elif args.cmd == "assign-categories":
-        splits = json.loads(args.splits)
-        session.assign_categories(args.tx, [(int(c), a) for c, a in splits])
-    elif args.cmd == "assign-tags":
-        tag_ids = [int(x) for x in json.loads(args.tags)]
-        session.assign_tags(args.tx, tag_ids)
-    elif args.cmd == "link-refund":
-        session.link_refund(args.refund, args.withdraw)
+    def run() -> int:
+        if args.cmd == "insert":
+            session.insert_syncobject(args.type, load_fields(args.fields))
+        elif args.cmd == "update":
+            session.update_syncobject(args.id, load_fields(args.fields))
+        elif args.cmd == "delete":
+            session.delete_syncobject(args.id)
+        elif args.cmd == "safe-delete":
+            refs = session.safe_delete(args.id)
+            if refs:
+                print("-- ABORT: References found; not deleting --")
+                for r in refs:
+                    samples = ", ".join(map(str, r.sample_ids)) if r.sample_ids else ""
+                    suffix = f" (sample ids: {samples})" if samples else ""
+                    print(f"- {r.table}.{r.column}: {r.count}{suffix}")
+                return 2
+        elif args.cmd == "rename":
+            session.rename_entity(args.id, args.name, args.name_field)
+        elif args.cmd == "assign-categories":
+            splits = json.loads(args.splits)
+            session.assign_categories(args.tx, [(int(c), a) for c, a in splits])
+        elif args.cmd == "assign-tags":
+            tag_ids = [int(x) for x in json.loads(args.tags)]
+            session.assign_tags(args.tx, tag_ids)
+        elif args.cmd == "link-refund":
+            session.link_refund(args.refund, args.withdraw)
+        return 0
+
+    exit_code = 0
+    if args.apply:
+        with session.transaction():
+            exit_code = run()
+    else:
+        exit_code = run()
 
     # Print the plan
     print("-- " + ("APPLY" if args.apply else "DRY-RUN") + " --")
@@ -114,9 +122,8 @@ def main() -> int:
             print(f"    params: {step.params}")
 
     session.close()
-    return 0
+    return exit_code
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

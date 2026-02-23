@@ -22,7 +22,11 @@ def main() -> int:
 
     session = WriteSession(args.db, dry_run=(not args.apply))
     splits = json.loads(args.splits)
-    session.assign_categories(args.tx, [(int(c), a) for c, a in splits])
+    if args.apply:
+        with session.transaction():
+            session.assign_categories(args.tx, [(int(c), a) for c, a in splits])
+    else:
+        session.assign_categories(args.tx, [(int(c), a) for c, a in splits])
 
     print("-- " + ("APPLY" if args.apply else "DRY-RUN") + " --")
     for i, step in enumerate(session.planned, start=1):
@@ -35,4 +39,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

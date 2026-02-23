@@ -22,7 +22,11 @@ def main() -> int:
 
     session = WriteSession(args.db, dry_run=(not args.apply))
     tag_ids = [int(x) for x in json.loads(args.tags)]
-    session.assign_tags(args.tx, tag_ids)
+    if args.apply:
+        with session.transaction():
+            session.assign_tags(args.tx, tag_ids)
+    else:
+        session.assign_tags(args.tx, tag_ids)
 
     print("-- " + ("APPLY" if args.apply else "DRY-RUN") + " --")
     for i, step in enumerate(session.planned, start=1):
@@ -35,4 +39,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

@@ -21,7 +21,11 @@ def main() -> int:
     args = ap.parse_args()
 
     session = WriteSession(args.db, dry_run=(not args.apply))
-    session.update_syncobject(args.id, json.loads(args.fields))
+    if args.apply:
+        with session.transaction():
+            session.update_syncobject(args.id, json.loads(args.fields))
+    else:
+        session.update_syncobject(args.id, json.loads(args.fields))
 
     print("-- " + ("APPLY" if args.apply else "DRY-RUN") + " --")
     for i, step in enumerate(session.planned, start=1):
@@ -34,4 +38,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

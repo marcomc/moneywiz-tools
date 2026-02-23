@@ -19,7 +19,11 @@ def main() -> int:
     args = ap.parse_args()
 
     session = WriteSession(args.db, dry_run=(not args.apply))
-    refs = session.safe_delete(args.id)
+    if args.apply:
+        with session.transaction():
+            refs = session.safe_delete(args.id)
+    else:
+        refs = session.safe_delete(args.id)
     if refs:
         print("-- ABORT: References found; not deleting --")
         for r in refs:
@@ -40,4 +44,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
