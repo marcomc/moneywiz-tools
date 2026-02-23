@@ -451,17 +451,24 @@ Examples:
 
 ### reassign-payees-by-id
 
-Reassign transactions currently referencing a given payee id so that each transaction instead references a payee whose name equals the transaction's description (per user). Creates missing payees as needed.
+Reassign transactions by payee criteria so that each matching transaction references a payee whose name equals the transaction's description (per user). Creates missing payees as needed.
 
-- Usage: `./moneywiz.sh reassign-payees-by-id --from-payee-id <ID> [--apply]`
+- Supports:
+  - `--from-payee-id <ID>`: process transactions currently pointing at that payee id.
+  - `--from-empty-payee`: process expense/income-like transactions (`WithdrawTransaction`, `DepositTransaction`, `RefundTransaction`) where payee is null/0 or linked payee name is empty.
+  - `--empty-desc-target-payee-id <ID>`: when a matching transaction has empty description, assign this payee id instead of skipping.
+- Usage: `./moneywiz.sh reassign-payees-by-id [--from-payee-id <ID>] [--from-empty-payee] [--empty-desc-target-payee-id <ID>] [--apply]`
 Example:
 
 ```bash
 # Preview reassignments away from payee 2874
 ./moneywiz.sh reassign-payees-by-id --from-payee-id 2874
 
+# Preview reassignments for NULL/blank payees
+./moneywiz.sh reassign-payees-by-id --from-empty-payee
+
 # Apply the changes
-./moneywiz.sh reassign-payees-by-id --from-payee-id 2874 --apply
+./moneywiz.sh reassign-payees-by-id --from-payee-id 2874 --from-empty-payee --apply
 ```
 
 ### create-test-db

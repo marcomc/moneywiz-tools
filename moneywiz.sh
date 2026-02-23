@@ -182,9 +182,12 @@ Writes (dry-run by default; add --apply to commit):
   assign-categories --tx ID --splits '[ [cat_id, amount], ... ]'
   assign-tags --tx ID --tags '[ tag_id, ... ]'
   link-refund --refund ID --withdraw ID
-  reassign-payees-by-id --from-payee-id ID [--apply] [--quiet] [--show-plan]
-                                      Reassign transactions referencing a payee id so that each transaction
+  reassign-payees-by-id [--from-payee-id ID] [--from-empty-payee]
+                        [--empty-desc-target-payee-id ID]
+                        [--apply] [--quiet] [--show-plan]
+                                      Reassign transactions by payee criteria so each transaction
                                       references a payee named exactly as its description.
+                                      --from-empty-payee is limited to expense/income-like rows.
 
 Introspection & Misc:
   schema [--out-md PATH] [--out-json PATH]
