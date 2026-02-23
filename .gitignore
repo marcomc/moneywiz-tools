@@ -27,3 +27,4 @@ dist/
 # Local config and test DBs
 .moneywizrc
 *.sqlite
+*.sqlite-*
