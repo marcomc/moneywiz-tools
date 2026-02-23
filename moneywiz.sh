@@ -51,7 +51,9 @@ read_config_file() {
     if [[ "${value}" == ~/* ]]; then
       value="${HOME}/${value#~/}"
     fi
-    case "${key,,}" in
+    # Bash 3.2 (default on macOS) doesn't support `${var,,}` lowercasing.
+    # Use `tr` for portability.
+    case "$(printf '%s' "${key}" | tr '[:upper:]' '[:lower:]')" in
       db_path)
         CONFIG_DB_PATH="${value}"
         ;;
