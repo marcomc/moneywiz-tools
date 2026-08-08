@@ -48,8 +48,8 @@ read_config_file() {
     elif [[ "${value}" == "'"*"'" && ${#value} -ge 2 ]]; then
       value="${value:1:${#value}-2}"
     fi
-    if [[ "${value}" == ~/* ]]; then
-      value="${HOME}/${value#~/}"
+    if [[ "${value}" == "~/"* ]]; then
+      value="${HOME}/${value:2}"
     fi
     # Bash 3.2 (default on macOS) doesn't support `${var,,}` lowercasing.
     # Use `tr` for portability.
