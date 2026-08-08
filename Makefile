@@ -2,10 +2,15 @@ SHELL := /bin/bash
 APP_HOME ?= $(HOME)/.local/share/moneywiz-tools
 APP_VENV := $(APP_HOME)/venv
 APP_PY := $(APP_VENV)/bin/python
-APP_PIP := $(APP_VENV)/bin/pip
+APP_PYTHON_VERSION ?= 3.11
 API_DIR := $(CURDIR)/moneywiz-api
 RUNTIME_DIR := $(APP_HOME)/runtime
 RUNTIME_SH := $(RUNTIME_DIR)/moneywiz.sh
+MONEYWIZ_APP ?= /Applications/Setapp/MoneyWiz 2026.app
+CORE_DATA_WRITER_SOURCE := $(CURDIR)/scripts/moneywiz_coredata_writer.swift
+CORE_DATA_WRITER_PLIST := $(CURDIR)/scripts/MoneyWizWriter-Info.plist
+CORE_DATA_WRITER_APP := $(RUNTIME_DIR)/MoneyWizWriter.app
+CORE_DATA_WRITER_BIN := $(CORE_DATA_WRITER_APP)/Contents/MacOS/MoneyWiz
 
 PREFIX ?= $(HOME)/.local
 BINDIR ?= $(PREFIX)/bin
@@ -17,7 +22,7 @@ MARKDOWN_FILES := README.md CHANGELOG.md TODO.md AGENTS.md doc/*.md
 
 .DEFAULT_GOAL := help
 
-.PHONY: help check-deps check-runtime-deps sync app-venv install-runtime install install-moneywiz install-cli cli uninstall reinstall run clean
+.PHONY: help check-deps check-runtime-deps check-coredata-writer-deps build-coredata-writer sync app-venv install-runtime install install-moneywiz install-cli cli uninstall reinstall run clean
 
 help: ## Show available targets
 	@awk 'BEGIN { FS = ":.*##" } /^[a-zA-Z_-]+:.*##/ { printf "  %-16s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -45,16 +50,35 @@ check-deps: ## Verify required local tools
 
 check-runtime-deps: check-deps ## Backward-compatible alias
 
+check-coredata-writer-deps: ## Verify the compiler needed for the compatible write runtime
+	@command -v swiftc >/dev/null 2>&1 \
+		|| { echo "x swiftc not found; install Xcode Command Line Tools"; exit 1; }
+
+build-coredata-writer: check-coredata-writer-deps ## Compile the MoneyWiz-compatible Core Data writer bundle
+	@mkdir -p "$(CORE_DATA_WRITER_APP)/Contents/MacOS"
+	@cp -f "$(CORE_DATA_WRITER_PLIST)" "$(CORE_DATA_WRITER_APP)/Contents/Info.plist"
+	@if [ -f "$(MONEYWIZ_APP)/Contents/Info.plist" ]; then \
+		short_version="$$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$(MONEYWIZ_APP)/Contents/Info.plist" 2>/dev/null || true)"; \
+		bundle_version="$$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$(MONEYWIZ_APP)/Contents/Info.plist" 2>/dev/null || true)"; \
+		if [ -n "$$short_version" ]; then /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $$short_version" "$(CORE_DATA_WRITER_APP)/Contents/Info.plist"; fi; \
+		if [ -n "$$bundle_version" ]; then /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $$bundle_version" "$(CORE_DATA_WRITER_APP)/Contents/Info.plist"; fi; \
+	fi
+	@swiftc "$(CORE_DATA_WRITER_SOURCE)" -o "$(CORE_DATA_WRITER_BIN)"
+	@chmod +x "$(CORE_DATA_WRITER_BIN)"
+	@echo "Built compatible Core Data writer at $(CORE_DATA_WRITER_APP)"
+
 sync: ## Create/refresh the standalone runtime virtualenv
 	@$(MAKE) app-venv
 
 app-venv: ## Create/refresh the standalone runtime virtualenv
 	@mkdir -p "$(APP_HOME)"
-	@if [ ! -x "$(APP_PY)" ]; then \
-		echo "Creating standalone virtualenv at $(APP_VENV)..."; \
-		python3 -m venv "$(APP_VENV)"; \
+	@command -v uv >/dev/null 2>&1 \
+		|| { echo "x uv not found; install uv before installing moneywiz-cli"; exit 1; }
+	@if [ ! -x "$(APP_PY)" ] || ! "$(APP_PY)" -c "import sys; raise SystemExit(sys.version_info[:2] != (3, 11))"; then \
+		echo "Creating standalone Python $(APP_PYTHON_VERSION) virtualenv at $(APP_VENV)..."; \
+		uv venv --clear --python "$(APP_PYTHON_VERSION)" "$(APP_VENV)"; \
 	fi
-	"$(APP_PIP)" install --upgrade pip --quiet
+	@uv pip install --python "$(APP_PY)" --upgrade pip setuptools wheel --quiet
 
 install: check-deps ## Install moneywiz wrapper into a standalone self-contained runtime
 	@$(MAKE) install-runtime
@@ -64,7 +88,7 @@ install: check-deps ## Install moneywiz wrapper into a standalone self-contained
 	@echo "  Run: $(SCRIPT_NAME) --help"
 
 install-cli: check-deps sync ## Install moneywiz-cli into a standalone user venv
-	"$(APP_PIP)" install --no-build-isolation --quiet "$(API_DIR)"
+	@uv pip install --python "$(APP_PY)" --no-build-isolation --quiet "$(API_DIR)"
 	@$(MAKE) install-link
 	@echo ""
 	@echo "✓ moneywiz-cli installed successfully"
@@ -87,6 +111,7 @@ install-runtime: ## Copy project runtime payload into a self-contained install d
 	@cp -Rf "$(CURDIR)/scripts/." "$(RUNTIME_DIR)/scripts/"
 	@cp -Rf "$(CURDIR)/tests/." "$(RUNTIME_DIR)/tests/"
 	@cp -Rf "$(CURDIR)/doc/." "$(RUNTIME_DIR)/doc/"
+	@$(MAKE) --no-print-directory build-coredata-writer
 	@echo "✓ Copied self-contained runtime payload to $(RUNTIME_DIR)"
 
 install-link: ## Symlink the CLI entrypoint into ~/.local/bin

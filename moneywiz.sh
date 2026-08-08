@@ -186,7 +186,8 @@ Writes (dry-run by default; add --apply to commit):
                         [--empty-desc-target-payee-id ID]
                         [--apply] [--quiet] [--show-plan]
                                       Reassign transactions by payee criteria so each transaction
-                                      references a payee named exactly as its description.
+                                      references a payee matching its description. --apply uses the
+                                      compatible Core Data writer; quit MoneyWiz before applying.
                                       --from-empty-payee is limited to expense/income-like rows.
 
 Introspection & Misc:
