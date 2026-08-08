@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Documentation
+
+- Added a versioned live-write compatibility profile for the MoneyWiz iCloud
+  store, including the observed app build and Core Data model fingerprint.
+- Documented the confirmed persistence participants for direct writes:
+  `ZSYNCOBJECT`, `ATRANSACTION`, `ACHANGE`, and CloudKit `ANSCK*` metadata.
+- Clarified that generic SQLite write helpers provide SQL atomicity only; the
+  native pre/post capture is still required before implementing a
+  live-compatible payee reassignment writer.
+
 ## [0.1.0] - 2026-02-23
 
 ### Added

@@ -47,17 +47,23 @@ Read path highlights:
 - Convert `ZDATE1` and other timestamps from Apple epoch (2001‑01‑01) to `datetime`.
 - Convert numeric amounts to `Decimal` where precision matters.
 
-Write path (scaffold):
+Write path (SQL scaffold):
 
 - `insert_syncobject(typename, fields)` — resolve `Z_ENT` and insert into `ZSYNCOBJECT`, auto-filling `ZGID` and `Z_OPT`.
 - `update_syncobject(pk, fields)` — patch fields for a row.
 - `delete_syncobject(pk)` — delete a row (caution: ensure referential integrity first).
 - Relationship inserts: category/tag/refund link tables (see Concepts).
 
+These helpers describe raw SQLite changes only. They are not yet a complete
+live-store mutation contract: a MoneyWiz iCloud write also requires Core Data
+persistent history and CloudKit bookkeeping. The versioned evidence and the
+reassignment discovery plan live in `LIVE-WRITE-COMPATIBILITY.md`.
+
 ## Practical Tips
 
 - Always resolve `Z_ENT` from `Z_PRIMARYKEY` using the type name you’re targeting.
-- Set `ZGID` (UUID) and `Z_OPT` for new rows; increment `Z_OPT` on updates if you enforce it.
+- Set `ZGID` (UUID) and use the native `Z_OPT` semantics for new rows and
+  updates; do not treat those fields as the full live-write contract.
 - Respect signs and FX fields for transactions; paired transfers must be consistent across sides.
 - Wrap multi-table changes in a transaction.
 - Use dry‑run SQL previews to verify changes before applying to a real DB.

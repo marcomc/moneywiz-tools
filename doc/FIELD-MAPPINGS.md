@@ -61,6 +61,9 @@ Subtypes (same columns, distinguished by type name):
 
 - name ← `ZNAME5`
 - user ← `ZUSER7`
+- Live-write note: these are domain-field mappings only. Creating a payee in
+  an iCloud store also requires the versioned persistence contract in
+  `LIVE-WRITE-COMPATIBILITY.md`.
 
 ## Tags (ZSYNCOBJECT, `Tag`)
 
@@ -86,6 +89,9 @@ Subtypes (same columns, distinguished by type name):
 - description ← `ZDESC2`
 - datetime ← `ZDATE1`
 - notes (optional) ← `ZNOTES1`
+- payee relationship ← `ZPAYEE2`; a direct live update must also produce the
+  Core Data history and CloudKit changes described in
+  `LIVE-WRITE-COMPATIBILITY.md`.
 
 ### DepositTransaction (create recipe)
 
@@ -199,58 +205,58 @@ This is a first draft synthesized from the test DB and the current API models. A
 
 ## Z_ENT → Z_NAME (from test DB)
 
-| Z_ENT | Z_NAME |
+|Z_ENT|Z_NAME|
 |------:|:-------|
-| 1 | AccountBudgetLink |
-| 2 | CategoryAssigment |
-| 3 | CommonSettings |
-| 4 | Image |
-| 5 | InvestmentAccountTotalValue |
-| 6 | StringHistoryItem |
-| 7 | SyncCommand |
-| 8 | SyncObject |
-| 9 | Account |
-| 10 | BankChequeAccount |
-| 11 | BankSavingAccount |
-| 12 | CashAccount |
-| 13 | CreditCardAccount |
-| 14 | LoanAccount |
-| 15 | InvestmentAccount |
-| 16 | ForexAccount |
-| 17 | AppSettings |
-| 18 | Budget |
-| 19 | Category |
-| 20 | CustomFormsOption |
-| 21 | CustomReport |
-| 22 | Group |
-| 23 | InfoCard |
-| 24 | InvestmentHolding |
-| 25 | OnlineBank |
-| 26 | OnlineBankAccount |
-| 27 | OnlineBankUser |
-| 28 | Payee |
-| 29 | PaymentPlan |
-| 30 | PaymentPlanItem |
-| 31 | ScheduledTransactionHandler |
-| 32 | ScheduledDepositTransactionHandler |
-| 33 | ScheduledTransferTransactionHandler |
-| 34 | ScheduledWithdrawTransactionHandler |
-| 35 | Tag |
-| 36 | Transaction |
-| 37 | DepositTransaction |
-| 38 | InvestmentExchangeTransaction |
-| 39 | InvestmentTransaction |
-| 40 | InvestmentBuyTransaction |
-| 41 | InvestmentSellTransaction |
-| 42 | ReconcileTransaction |
-| 43 | RefundTransaction |
-| 44 | TransferBudgetTransaction |
-| 45 | TransferDepositTransaction |
-| 46 | TransferWithdrawTransaction |
-| 47 | WithdrawTransaction |
-| 48 | TransactionBudgetLink |
-| 49 | User |
-| 50 | WithdrawRefundTransactionLink |
+|1|AccountBudgetLink|
+|2|CategoryAssigment|
+|3|CommonSettings|
+|4|Image|
+|5|InvestmentAccountTotalValue|
+|6|StringHistoryItem|
+|7|SyncCommand|
+|8|SyncObject|
+|9|Account|
+|10|BankChequeAccount|
+|11|BankSavingAccount|
+|12|CashAccount|
+|13|CreditCardAccount|
+|14|LoanAccount|
+|15|InvestmentAccount|
+|16|ForexAccount|
+|17|AppSettings|
+|18|Budget|
+|19|Category|
+|20|CustomFormsOption|
+|21|CustomReport|
+|22|Group|
+|23|InfoCard|
+|24|InvestmentHolding|
+|25|OnlineBank|
+|26|OnlineBankAccount|
+|27|OnlineBankUser|
+|28|Payee|
+|29|PaymentPlan|
+|30|PaymentPlanItem|
+|31|ScheduledTransactionHandler|
+|32|ScheduledDepositTransactionHandler|
+|33|ScheduledTransferTransactionHandler|
+|34|ScheduledWithdrawTransactionHandler|
+|35|Tag|
+|36|Transaction|
+|37|DepositTransaction|
+|38|InvestmentExchangeTransaction|
+|39|InvestmentTransaction|
+|40|InvestmentBuyTransaction|
+|41|InvestmentSellTransaction|
+|42|ReconcileTransaction|
+|43|RefundTransaction|
+|44|TransferBudgetTransaction|
+|45|TransferDepositTransaction|
+|46|TransferWithdrawTransaction|
+|47|WithdrawTransaction|
+|48|TransactionBudgetLink|
+|49|User|
+|50|WithdrawRefundTransactionLink|
 
 ## Per-type “Create” Recipes
 

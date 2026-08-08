@@ -33,7 +33,12 @@ This document captures important conventions in the MoneyWiz database that help 
 
 ## Optimistic versioning
 
-- `Z_OPT` acts as a version field; set to `1` on insert and increment on update to mirror Core Data behavior if you want to emulate conflicts explicitly.
+- `Z_OPT` is a Core Data version field. Native app updates increment it.
+- Do not assume an initial value for a new live object from the generic SQL
+  helper. The observed live payees have values greater than one; the native
+  creation sequence still needs a pre/post capture.
+- Updating `Z_OPT` alone is insufficient for a live iCloud store. See
+  `LIVE-WRITE-COMPATIBILITY.md` for the associated history and CloudKit state.
 
 ## GIDs (Global IDs)
 
@@ -52,7 +57,11 @@ This document captures important conventions in the MoneyWiz database that help 
 ## Recommended write practices
 
 - Use transactions when touching multiple tables.
+- Treat a SQLite transaction as atomicity only, not as a replacement for a
+  Core Data persistent-history transaction.
 - For complex creates (e.g., transfers): create both sides first, then link by setting the cross‑referenced transaction ids.
 - For category splits: validate that sums match the transaction amount.
 - For tags: avoid duplicate links; consider upserts or deduping before insert.
 - Always dry‑run and review SQL before applying to a real database.
+- Version any live-write rule by MoneyWiz app build and the Core Data model
+  fingerprint recorded in `LIVE-WRITE-COMPATIBILITY.md`.

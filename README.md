@@ -404,6 +404,11 @@ Print counts per manager.
 
 ### Writes
 
+> Live-write status: generic SQL writes currently cover domain rows and
+> relationships only. `LIVE-WRITE-COMPATIBILITY.md` documents the discovered
+> Core Data and CloudKit contract required before applying a mutation to the
+> live iCloud store.
+
 Preview (and optionally apply) write operations with a safe dry-run by default. Add `--apply` to execute on the DB (recommended only on a copy). Use global `--db` before the command to point to a specific DB.
 
 - Commands (top-level):
@@ -476,6 +481,7 @@ Example:
 Copy the currently selected MoneyWiz database into `tests/test_db.sqlite`. The source DB is resolved in the same order as other commands (`--db` override → `.moneywizrc` → default path).
 
 - Example:
+
   ```bash
   ./moneywiz.sh --db ~/tmp/moneywiz_dev.sqlite create-test-db
   # Created test DB at tests/test_db.sqlite (copied from ~/tmp/moneywiz_dev.sqlite)
@@ -486,6 +492,7 @@ Copy the currently selected MoneyWiz database into `tests/test_db.sqlite`. The s
 Scrub/anonymize `tests/test_db.sqlite` after seeding it. The command prints a verbose summary of every column updated so you can confirm no personal data remains.
 
 - Example:
+
   ```bash
   ./moneywiz.sh sanitize-test-db
   # ... per-column summary ...

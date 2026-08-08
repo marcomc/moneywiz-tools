@@ -7,6 +7,7 @@ Guiding principles
 - Keep database integrity: respect existing relationships and Core Data conventions.
 - Prefer small, composable operations with clear preconditions and validations.
 - Transaction-safe writes: wrap multi-table updates (e.g., transfers, category/tag links) in a single DB transaction.
+- Treat `LIVE-WRITE-COMPATIBILITY.md` as the gate for writes to the live iCloud store; raw SQL field mappings are not sufficient evidence.
 
 ## Entities and Operations
 
@@ -28,6 +29,7 @@ Guiding principles
 
 - Read: list (implemented).
 - Write: create/update payee rows in `ZSYNCOBJECT` for the Payee entity type; fields `ZNAME5`, `ZUSER7`.
+- Live iCloud status: pending native pre/post capture of the Core Data history and CloudKit records required for create/update.
 
 ### Categories
 
@@ -98,6 +100,8 @@ Safeguards:
 - FX fields: `ZORIGINALAMOUNT`, `ZORIGINALCURRENCY`, `ZORIGINALEXCHANGERATE` should be coherent; tolerate rounding.
 - Global IDs (`ZGID`) should be unique; generate UUIDs when inserting.
 - `Z_OPT` is a Core Data version field; set to `1` on insert, increment on updates.
+- A direct iCloud write also requires `ATRANSACTION`, `ACHANGE`, and CloudKit
+  state. The exact values must be captured from the matching native app edit.
 - Add/maintain indexes for large tables if write-heavy workflows are introduced (Careful: app updates may recreate DB).
 
 ## Research To‑Dos (external)
@@ -105,8 +109,8 @@ Safeguards:
 Due to restricted network access here, capture these for future refinement:
 
 - Confirm full set of `ZSYNCOBJECT` `Z_ENT` → `Z_NAME` mappings for all MoneyWiz versions.
-- Validate write semantics expected by the app (e.g., which flags/arrays must be kept in sync).
-- Investigate MoneyWiz sync side effects (cloud or iCloud) and how local changes are detected.
+- Capture the native delta for changing an existing transaction payee and for creating a payee, versioned by app build and model fingerprint.
+- Implement a live-write session only after those deltas are available as regression fixtures.
 
 ## Implementation Plan (phased)
 

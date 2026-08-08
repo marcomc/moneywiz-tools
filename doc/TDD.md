@@ -4,7 +4,7 @@
 
 - API (moneywiz-api):
   - Read: `DatabaseAccessor`, per-entity managers, typed models constructed from `ZSYNCOBJECT` rows; auxiliary tables for relationships.
-  - Write: `writes.WriteSession` for planned SQL (dry-run/apply), plus future typed create/update helpers.
+- Write: `writes.WriteSession` for planned SQL (dry-run/apply), plus future typed create/update helpers and a live-store-compatible mutation layer.
 - CLI: `moneywiz.sh` dispatcher invoking Python scripts under `scripts/` with `PYTHONPATH=moneywiz-api/src`.
 
 ## Data Model
@@ -30,6 +30,11 @@
 - Relationship helpers: `assign_categories`, `assign_tags`, `link_refund`.
 - Transactions: context manager available; future writes will group multi-step operations.
 
+`WriteSession` currently provides SQLite atomicity and SQL previews. It is not
+by itself a Core Data persistent-history or CloudKit writer. A future
+live-write session must use the versioned native deltas documented in
+`LIVE-WRITE-COMPATIBILITY.md`.
+
 ## Validations & Safety
 
 - Category splits must sum to transaction amount (by sign) — to be enforced in typed helpers.
@@ -43,6 +48,9 @@
 - Integration tests against a readonly test DB copy for read flows.
 - Preview tests for write session to assert correct SQL/plans.
 - (Optional) Apply-mode tests use a temp SQLite copy seeded from fixtures.
+- Live-write compatibility tests must compare the exact pre/post delta from a
+  native MoneyWiz edit, including `ATRANSACTION`, `ACHANGE`, and `ANSCK*`
+  tables.
 
 ## Test Suite Layout (scaffolded)
 
