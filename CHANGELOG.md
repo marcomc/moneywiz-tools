@@ -2,15 +2,28 @@
 
 ## [Unreleased]
 
-### Documentation
+## [0.2.0] - 2026-08-09
 
-- Added a versioned live-write compatibility profile for the MoneyWiz iCloud
-  store, including the observed app build and Core Data model fingerprint.
-- Documented the confirmed persistence participants for direct writes:
-  `ZSYNCOBJECT`, `ATRANSACTION`, `ACHANGE`, and CloudKit `ANSCK*` metadata.
-- Clarified that generic SQLite write helpers provide SQL atomicity only; the
-  native pre/post capture is still required before implementing a
-  live-compatible payee reassignment writer.
+### Added
+
+- A relocatable MoneyWiz Tools.app installation path with bundled Python runtime, scripts, API source, and Core Data host.
+- A documented, evidence-backed Core Data writer for live payee reassignment and destination-payee creation.
+- Version-scoped live payee structure and relationship documentation, including transaction and string-history references.
+- Exact-normalized duplicate-payee planning and Core Data consolidation, with deterministic canonical selection.
+- An editable, approval-only CSV map for similar-name payee candidates.
+
+### Changed
+
+- Reorganized operator and maintainer documentation around the installed bundle, command roles, and live-write boundaries.
+- Added source-backed installation and live-write workflow diagrams.
+- Distinguished the configuration-aware `moneywiz` dispatcher from the explicit-path `moneywiz-cli` API shell.
+- Recorded the native merge survivor contract and model-driven inbound payee relationships.
+
+### Fixed
+
+- Removed stale guidance that described the project as read-only or presented generic raw SQLite writes as live-store compatible.
+- Corrected configuration guidance to require an absolute database path and avoid an unexpanded `~` value.
+- Replaced obsolete test-wrapper references with the actual validation strategy.
 
 ## [0.1.0] - 2026-02-23
 
