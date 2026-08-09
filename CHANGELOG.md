@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Added schema capability profiles and investment-column aliases so read-only
+  commands support both suffixed fixture columns and the unsuffixed columns
+  observed in the MoneyWiz 2026 live store.
+- Made read-only transfer parsing tolerate the live profile's zero-valued
+  `ZORIGINALAMOUNT` when the counterparty amount and exchange rate are present.
+- Made read-only API loading isolate malformed or model-incompatible records
+  instead of aborting unrelated listing commands with a traceback.
+- Made optional category, refund, and tag relationship tables safe to omit in a
+  supported store profile.
+
 ## [0.2.0] - 2026-08-09
 
 ### Added
