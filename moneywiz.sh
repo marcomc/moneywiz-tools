@@ -163,6 +163,22 @@ fi
 export PYTHONPATH="${SCRIPT_DIR}/moneywiz-api/src${PYTHONPATH:+:${PYTHONPATH}}"
 DB_PATH="${CONFIG_DB_PATH:-${DEFAULT_DB_PATH}}"
 
+run_python_script() {
+  local script_path="$1"
+  shift
+  "${PY}" -c '
+import runpy
+import sys
+
+script_path = sys.argv[1]
+sys.argv = [script_path, *sys.argv[2:]]
+try:
+    runpy.run_path(script_path, run_name="__main__")
+except KeyboardInterrupt:
+    raise SystemExit(130)
+' "${script_path}" "$@"
+}
+
 usage() {
   cat <<USAGE
 Usage: moneywiz [--db PATH] <command> [options]
@@ -265,18 +281,18 @@ fi
 
 case "${SUBCMD}" in
   shell)
-    exec "${PY}" "${SCRIPT_DIR}/scripts/run_moneywiz_cli.py" "${GLOBAL_DB:-${DB_PATH}}" "$@"
+    run_python_script "${SCRIPT_DIR}/scripts/run_moneywiz_cli.py" "${GLOBAL_DB:-${DB_PATH}}" "$@"
     ;;
   users|accounts|categories|payees|tags|transactions|holdings|record|stats|summary)
-    exec "${PY}" "${SCRIPT_DIR}/scripts/${SUBCMD}.py" "${BASE_DB_ARG[@]}" "$@"
+    run_python_script "${SCRIPT_DIR}/scripts/${SUBCMD}.py" "${BASE_DB_ARG[@]}" "$@"
     ;;
   insert|update|delete|safe-delete|rename)
     script_name="${SUBCMD//-/_}.py"
-    exec "${PY}" "${SCRIPT_DIR}/scripts/${script_name}" "${BASE_DB_ARG[@]}" "$@"
+    run_python_script "${SCRIPT_DIR}/scripts/${script_name}" "${BASE_DB_ARG[@]}" "$@"
     ;;
-  assign-categories|assign-tags|link-refund|reassign-payees-by-id|merge-duplicate-payees|merchant-payee-review)
+  assign-categories|assign-tags|link-refund|reassign-payees-by-id|merge-duplicate-payees)
     script_name="${SUBCMD//-/_}.py"
-    exec "${PY}" "${SCRIPT_DIR}/scripts/${script_name}" "${BASE_DB_ARG[@]}" "$@"
+    run_python_script "${SCRIPT_DIR}/scripts/${script_name}" "${BASE_DB_ARG[@]}" "$@"
     ;;
   create-test-db)
     source_db="${GLOBAL_DB:-${CONFIG_DB_PATH:-${DEFAULT_REAL_DB_PATH}}}"
@@ -295,7 +311,7 @@ case "${SUBCMD}" in
       echo "Error: ${target_db} does not exist. Seed it first with create-test-db." >&2
       exit 1
     fi
-    exec "${PY}" "${SCRIPT_DIR}/scripts/sanitize_test_db.py" --db "${target_db}"
+    run_python_script "${SCRIPT_DIR}/scripts/sanitize_test_db.py" --db "${target_db}"
     ;;
   schema)
     out_md="${SCRIPT_DIR}/doc/DB-SCHEMA.md"
@@ -321,8 +337,8 @@ case "${SUBCMD}" in
       esac
     done
     mkdir -p "$(dirname "${out_md}")" "$(dirname "${out_json}")"
-    "${PY}" "${SCRIPT_DIR}/scripts/introspect_db.py" --db "${GLOBAL_DB:-${DB_PATH}}" --format md > "${out_md}"
-    "${PY}" "${SCRIPT_DIR}/scripts/introspect_db.py" --db "${GLOBAL_DB:-${DB_PATH}}" --format json > "${out_json}"
+    run_python_script "${SCRIPT_DIR}/scripts/introspect_db.py" --db "${GLOBAL_DB:-${DB_PATH}}" --format md > "${out_md}"
+    run_python_script "${SCRIPT_DIR}/scripts/introspect_db.py" --db "${GLOBAL_DB:-${DB_PATH}}" --format json > "${out_json}"
     echo "Schema written to ${out_md} and ${out_json}"
     ;;
   *)

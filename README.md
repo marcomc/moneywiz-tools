@@ -115,7 +115,14 @@ and exports near-name candidates for manual approval:
 ~~~sh
 moneywiz merge-duplicate-payees --show-plan \
   --fuzzy-map "$HOME/payee-fuzzy-review.csv"
+# After reviewing the plan and quitting MoneyWiz:
+moneywiz merge-duplicate-payees --apply --show-plan
 ~~~
+
+The fuzzy CSV is review-only: resolve each `pending` row through manual review,
+then apply any approved similar-name merge natively in MoneyWiz or through a
+separately reviewed Core Data plan. This command never reads the CSV to merge
+similar names. See [Functions Reference](FUNCTIONS.md) for the decision flow.
 
 The reassignment command can reuse an existing destination payee or create one
 from the transaction description. It refuses ambiguous normalized matches

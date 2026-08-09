@@ -11,8 +11,8 @@ An exact group is scoped by MoneyWiz user and is equal only after:
 2. Whitespace collapse.
 3. Case folding.
 
-The current inventory contains 33 such groups, but the command discovers the
-current count at execution time rather than hard-coding it.
+The command discovers the current count at execution time; no duplicate-group
+count is assumed by the implementation or this document.
 
 ## Canonical payee selection
 
@@ -68,6 +68,47 @@ That future operation requires an explicit, separately reviewed design.
 
 ## Native behavior evidence
 
-MoneyWiz 2026 exposes **Payees > Edit > Merge**. After selecting two payees,
+MoneyWiz 2026 exposes **Preferences > Payees > Edit**. After selecting two payees,
 it asks which one should remain. The command mirrors that survivor/source
 model, but uses a deterministic canonical rule for exact groups.
+
+## Resolving a pending candidate
+
+`pending` means that the candidate has not been reviewed. It is not a state
+that `merge-duplicate-payees --apply` can resolve.
+
+For each row, inspect the source and candidate payees and their transactions,
+then record one of these reviewer decisions:
+
+| Decision | Values to record | Next action |
+| --- | --- | --- |
+| Same merchant | `review_decision=approved`; set `approved_canonical_id` to the survivor; add rationale in `review_notes`. | Search both names in **Preferences > Payees > Edit**, use the IDs to select the records, then merge and choose the survivor. |
+| Different merchants | `review_decision=rejected`; add rationale in `review_notes`. | Keep both payees. |
+| Not enough evidence | Leave `review_decision=pending`; optionally add a note. | Take no write action. |
+
+The CSV is an audit and review artifact only. Its fields are not parsed,
+validated, or applied by the current CLI, so editing a row does not change the
+database.
+
+### CSV editing example
+
+Edit the review columns of the existing row; do not add a new row or change
+the detected payee IDs and names:
+
+~~~csv
+user_id,similarity,reason,left_id,left_name,right_id,right_name,review_decision,approved_canonical_id,review_notes
+1,0.919,similarity>=0.88,1037,Merchant Example A,1892,Merchant Example B,pending,,
+1,0.919,similarity>=0.88,1037,Merchant Example A,1892,Merchant Example B,approved,1037,"Same merchant; keep payee 1037."
+~~~
+
+For a rejection, use `rejected`, leave `approved_canonical_id` empty, and
+explain the decision in `review_notes`:
+
+~~~csv
+1,0.919,similarity>=0.88,1037,Merchant Example A,1892,Merchant Example B,rejected,,"Different merchants."
+~~~
+
+These values document the decision but are not consumed by the current CLI.
+An approved merge must be performed through MoneyWiz's native
+**Preferences > Payees > Edit** workflow: search both names, use the CSV IDs to
+select the exact records, invoke merge, and choose the survivor.
