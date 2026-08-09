@@ -1,69 +1,49 @@
-# ZSYNCOBJECT (SyncObject) — Deep Dive
+# Sync Object Model
 
-MoneyWiz stores most business entities in a single Core Data table named `ZSYNCOBJECT`. Each row is a “SyncObject” and represents a typed entity such as an account, transaction, category, payee, tag, or investment holding.
+## Purpose
 
-## Typing and Identity
+`ZSYNCOBJECT` is the shared Core Data storage layer behind multiple logical
+MoneyWiz entities. It carries object identity, entity type, and optimistic
+version data that are part of the synchronization contract.
 
-- `Z_ENT`: Integer type id. Maps to a human-readable type name via `Z_PRIMARYKEY` (`Z_NAME`).
-- `ZGID`: Global identifier (UUID-like string) used for sync across devices.
-- `Z_OPT`: Optimistic concurrency/version counter (Core Data). Incremented on updates.
-- `Z_PK`: Primary key of the row.
+## Live profile
 
-Common columns you will encounter across entities (not exhaustive):
+| Field | Meaning | Rule |
+| --- | --- | --- |
+| `Z_PK` | SQLite object identity | Preserve existing identity. |
+| `ZGID` | Sync/global identity | Do not fabricate for live writes. |
+| `Z_ENT` | Core Data entity discriminator | Interpret only with the active model. |
+| `Z_OPT` | Optimistic-lock version | Let Core Data manage it for live writes. |
 
-- `ZDATE1`: Core timestamp for the record (see Concepts for epoch details).
-- `ZAMOUNT1`: Generic amount field (transactions).
-- `ZDESC2`: Description (text field).
-- `ZNOTES1`: Notes (optional text).
-- `ZACCOUNT2`: Owning account for a transaction.
-- `ZPAYEE2`: Payee for a transaction (optional).
-- `ZUSER`: User id for user-scoped objects (e.g., accounts, categories, tags).
+Subtype-specific fields are not globally stable. For the observed live
+payee profile, the name is `ZNAME5` and ownership is `ZUSER7`. Other entity
+versions and test fixtures can use different column names or entity values.
 
-Entity-specific columns follow a naming convention rooted in the Core Data model. Examples:
+## Relationship contract
 
-- Accounts: `ZNAME`, `ZCURRENCYNAME`, `ZDISPLAYORDER`, `ZGROUPID`.
-- Transactions (FX): `ZORIGINALAMOUNT`, `ZORIGINALCURRENCY`, `ZORIGINALEXCHANGERATE`, `ZORIGINALFEE`, `ZORIGINALFEECURRENCY`.
-- Transfers: `ZSENDERACCOUNT`, `ZSENDERTRANSACTION`, `ZRECIPIENTACCOUNT1`, `ZRECIPIENTTRANSACTION`, `ZORIGINALSENDERAMOUNT`, `ZORIGINALRECIPIENTAMOUNT`.
-- Investment: `ZINVESTMENTACCOUNT`, `ZNUMBEROFSHARES1`, `ZPRICEPERSHARE1`, `ZFEE2`, `ZFROMNUMBEROFSHARES`, `ZTONUMBEROFSHARES`.
+A live payee affects more than a display name:
 
-Types observed in the API (resolved at runtime via `Z_PRIMARYKEY`):
+- Transaction rows can point at the payee through `ZPAYEE2`.
+- `ZSTRINGHISTORYITEM.ZPAYEE` records payee-related string history.
+- The associated Core Data object lifecycle must publish persistent history
+  understood by the app and CloudKit.
 
-- Accounts: `BankChequeAccount`, `BankSavingAccount`, `CashAccount`, `CreditCardAccount`, `LoanAccount`, `InvestmentAccount`, `ForexAccount`.
-- Categories: `Category`.
-- Payees: `Payee`.
-- Tags: `Tag`.
-- Investment: `InvestmentHolding`.
-- Transactions: `DepositTransaction`, `WithdrawTransaction`, `RefundTransaction`, `ReconcileTransaction`, `TransferDepositTransaction`, `TransferWithdrawTransaction`, `TransferBudgetTransaction`, `InvestmentExchangeTransaction`, `InvestmentBuyTransaction`, `InvestmentSellTransaction`.
+The current Core Data writer handles reassignment, destination creation, and
+exact duplicate consolidation. The merge enumerates model relationships that
+target `Payee`, then deletes the source through the same Core Data lifecycle.
+Similar-name consolidation remains excluded until its approval workflow is
+implemented.
 
-## Mapping to Models (API)
+## Identity allocation
 
-The API loads `ZSYNCOBJECT` rows and constructs typed models by looking up `Z_ENT → Z_NAME` from `Z_PRIMARYKEY`. Managers cache these objects and expose domain-specific helpers. Relationships are pulled from auxiliary tables (categories, tags, refunds).
+Do not use `Z_PRIMARYKEY.Z_MAX` as a live object-ID allocator. The observed
+store has a global `ZSYNCOBJECT.Z_PK` identity space, and Core Data owns
+identity creation for the compatible writer path.
 
-Read path highlights:
+## Scope of raw SQL mappings
 
-- `Z_PRIMARYKEY` → map `Z_ENT` to type name.
-- `ZSYNCOBJECT` → fetch rows for a set of type names.
-- Build typed model objects from row dicts.
-- Convert `ZDATE1` and other timestamps from Apple epoch (2001‑01‑01) to `datetime`.
-- Convert numeric amounts to `Decimal` where precision matters.
-
-Write path (SQL scaffold):
-
-- `insert_syncobject(typename, fields)` — resolve `Z_ENT` and insert into `ZSYNCOBJECT`, auto-filling `ZGID` and `Z_OPT`.
-- `update_syncobject(pk, fields)` — patch fields for a row.
-- `delete_syncobject(pk)` — delete a row (caution: ensure referential integrity first).
-- Relationship inserts: category/tag/refund link tables (see Concepts).
-
-These helpers describe raw SQLite changes only. They are not yet a complete
-live-store mutation contract: a MoneyWiz iCloud write also requires Core Data
-persistent history and CloudKit bookkeeping. The versioned evidence and the
-reassignment discovery plan live in `LIVE-WRITE-COMPATIBILITY.md`.
-
-## Practical Tips
-
-- Always resolve `Z_ENT` from `Z_PRIMARYKEY` using the type name you’re targeting.
-- Set `ZGID` (UUID) and use the native `Z_OPT` semantics for new rows and
-  updates; do not treat those fields as the full live-write contract.
-- Respect signs and FX fields for transactions; paired transfers must be consistent across sides.
-- Wrap multi-table changes in a transaction.
-- Use dry‑run SQL previews to verify changes before applying to a real DB.
+Field mappings can still support inspection, diagnostics, and test-copy
+experiments. They are not a substitute for the live Core Data contract. See
+[Field Mappings](FIELD-MAPPINGS.md) for broader mapping evidence and
+[Live Payee Structure](LIVE-PAYEE-STRUCTURE.md) for the versioned live
+profile.

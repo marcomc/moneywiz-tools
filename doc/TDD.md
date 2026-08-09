@@ -1,80 +1,66 @@
-# Technical Design Document (TDD)
+# Technical Design Document
 
 ## Architecture
 
-- API (moneywiz-api):
-  - Read: `DatabaseAccessor`, per-entity managers, typed models constructed from `ZSYNCOBJECT` rows; auxiliary tables for relationships.
-- Write: `writes.WriteSession` for planned SQL (dry-run/apply), plus future typed create/update helpers and a live-store-compatible mutation layer.
-- CLI: `moneywiz.sh` dispatcher invoking Python scripts under `scripts/` with `PYTHONPATH=moneywiz-api/src`.
+~~~text
+moneywiz or moneywiz-cli
+          |
+          v
+~/.local/bin symlink
+          |
+          v
+MoneyWiz Tools.app
+  |- Python runtime and virtual environment
+  |- moneywiz-api source and dispatcher scripts
+  `- MoneyWizTools Swift Core Data host
+~~~
 
-## Data Model
+`moneywiz` is the product dispatcher. `moneywiz-cli` is a separate upstream
+read-only API shell that receives an explicit database path.
 
-- Central table: `ZSYNCOBJECT` (SyncObject), typed via `Z_ENT` ↔ `Z_PRIMARYKEY.Z_NAME`.
-- Relationships: `ZCATEGORYASSIGMENT`, `Z_36TAGS`, `ZWITHDRAWREFUNDTRANSACTIONLINK`, `ZUSER`.
-- Conversions: timestamps via `utils.get_datetime/get_date`; amounts via `RawDataHandler.get_decimal`.
+## Build design
 
-## Modules
+Make owns the supported build and installation workflow:
 
-- `database_accessor.py`: low-level queries, type maps, relationship loaders.
-- `managers/*`: caches and exposes domain-specific helpers.
-- `model/*`: typed dataclasses mapping raw fields; tolerances for legacy data; validations where stable.
-- `writes.py`: library write session with SQL planning and execution; helpers for common relationships (imported by per-command scripts).
-- `scripts/*`: focused CLIs for each function; each write action has its own script (insert.py, update.py, delete.py, safe_delete.py, rename.py, assign_categories.py, assign_tags.py, link_refund.py).
+1. Validate `uv`, `swiftc`, and the local `moneywiz-api/` source.
+2. Build or refresh MoneyWiz Tools.app.
+3. Copy the runtime, scripts, and API source into the bundle.
+4. Create the requested command symlink in `~/.local/bin`.
 
-## Write Session Design
+`make install` creates the `moneywiz` link. `make install-cli` creates the
+`moneywiz-cli` link. Both ensure the app bundle exists.
 
-- `WriteSession(db_path, dry_run=True)`: records `PlannedSQL` steps; executes only with `--apply`.
-- `insert_syncobject(typename, fields)`: resolves `Z_ENT`, auto-fills `ZGID`, `Z_OPT`.
-- `update_syncobject(pk, fields)`: updates arbitrary columns.
-- `delete_syncobject(pk)`: removes rows by PK (guarded by caller policy).
-- Relationship helpers: `assign_categories`, `assign_tags`, `link_refund`.
-- Transactions: context manager available; future writes will group multi-step operations.
+## Data-access design
 
-`WriteSession` currently provides SQLite atomicity and SQL previews. It is not
-by itself a Core Data persistent-history or CloudKit writer. A future
-live-write session must use the versioned native deltas documented in
-`LIVE-WRITE-COMPATIBILITY.md`.
+| Path | Mechanism | Scope |
+| --- | --- | --- |
+| Reads | SQLite/API access | Live or copied store. |
+| Generic mutations | SQL-oriented helpers | Test copy only. |
+| Payee reassignment | Bundled Swift Core Data host | Verified live path. |
+| Exact duplicate consolidation | Bundled Swift Core Data host | Revalidate before first live batch. |
 
-## Validations & Safety
+The live writer relies on Core Data to manage object identity, optimistic
+versions, persistent history, and the sync-visible save lifecycle. It is
+therefore intentionally narrower than the generic SQL helpers.
 
-- Category splits must sum to transaction amount (by sign) — to be enforced in typed helpers.
-- Transfers must create paired rows with coherent FX/fees and cross-links.
-- Refund links must reference existing withdraw transactions.
-- Dry-run by default; `--apply` is explicit; recommend operating on DB copies while maturing.
+For exact duplicate groups, the host discovers each modeled relationship whose
+destination is `Payee`, migrates to-one and to-many references to the chosen
+survivor, verifies no supported inbound reference remains, then deletes the
+source object in the same save.
 
-## Testing Strategy
+## Validation strategy
 
-- Unit tests on mapping/conversion functions (`RawDataHandler`, epoch conversion).
-- Integration tests against a readonly test DB copy for read flows.
-- Preview tests for write session to assert correct SQL/plans.
-- (Optional) Apply-mode tests use a temp SQLite copy seeded from fixtures.
-- Live-write compatibility tests must compare the exact pre/post delta from a
-  native MoneyWiz edit, including `ATRANSACTION`, `ACHANGE`, and `ANSCK*`
-  tables.
+Documentation and command behavior must agree with `make` and
+`moneywiz --help`. The project has no documented `scripts/run_tests.sh`
+wrapper; do not publish that nonexistent command.
 
-## Test Suite Layout (scaffolded)
+For each new live writer, validation must include:
 
-- API unit tests: `moneywiz-api/tests/unit/`
-  - `test_raw_data_handler.py`: conversions and edge cases.
-  - `test_writes_preview.py`: SQL planning for inserts/updates.
-- API integration tests: `moneywiz-api/tests/integration/` (existing).
-- CLI tests: `tests/cli/`
-  - `test_users.py`: verifies JSON output contract of `moneywiz.sh users`.
+1. A minimal native-app comparison for the target operation.
+2. A narrow writer execution against the compatible model.
+3. App reopen after the write.
+4. Persistent-history and sync observation.
+5. Cleanup or restoration of any transaction created only for testing.
 
-## Running Tests
-
-- Script: `scripts/run_tests.sh`
-  - Ensures `.venv` via uv, installs pytest, sets `PYTHONPATH`, then runs:
-    - `pytest -q moneywiz-api/tests`
-    - `pytest -q tests`
-- Manual:
-  - `PYTHONPATH=moneywiz-api/src .venv/bin/python -m pytest -q moneywiz-api/tests`
-  - `PYTHONPATH=moneywiz-api/src .venv/bin/python -m pytest -q tests`
-
-Developer workflow: run `scripts/run_tests.sh` after any API change or when adding CLI options/parameters to ensure no regressions.
-
-## Extensibility
-
-- Add typed create/update helpers per entity on top of `WriteSession`.
-- Keep field mappings in `doc/FIELD-MAPPINGS.md` aligned with models as they evolve.
-- Extend CLI with new subcommands; update usage and README with each change.
+The current writer evidence is recorded in
+[Live Write Compatibility](LIVE-WRITE-COMPATIBILITY.md).

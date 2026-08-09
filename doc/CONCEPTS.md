@@ -65,3 +65,18 @@ This document captures important conventions in the MoneyWiz database that help 
 - Always dry‑run and review SQL before applying to a real database.
 - Version any live-write rule by MoneyWiz app build and the Core Data model
   fingerprint recorded in `LIVE-WRITE-COMPATIBILITY.md`.
+
+## Live payees and consolidation
+
+- The current live MoneyWiz 2026 mapping stores `Payee` as
+  `ZSYNCOBJECT.Z_ENT=29`, with its name in `ZNAME5` and user in `ZUSER7`.
+  These are model-version-specific subtype columns; do not reuse the test DB
+  mapping or query the generic `ZNAME` column for a live payee.
+- A transaction's payee relationship is stored in `ZPAYEE2`, while
+  `ZSTRINGHISTORYITEM.ZPAYEE` retains additional payee references. A payee
+  merge must account for both, through Core Data, before deleting a duplicate.
+- Payee matching is user-scoped and uses NFKC normalization, collapsed
+  whitespace, and case folding. Fuzzy similarity is a review aid only; it is
+  not evidence that two merchants are interchangeable.
+- The detailed compatibility profile and merge constraints are in
+  [`LIVE-PAYEE-STRUCTURE.md`](LIVE-PAYEE-STRUCTURE.md).

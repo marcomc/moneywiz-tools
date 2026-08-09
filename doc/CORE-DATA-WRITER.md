@@ -1,52 +1,82 @@
-# Compatible Core Data Writer
+# Core Data Writer
 
-## Status and compatibility
+## Purpose and current scope
 
-This document records the verified contract for direct payee reassignment on a
-live MoneyWiz database. It was observed on 2026-08-08 with MoneyWiz 2026
-version 2026.32.1, build 431, using `MoneyWizDataModel 48`.
+The bundled Core Data writer is the live-store write path for
+`reassign-payees-by-id --apply`. It exists because changing relationship
+columns with raw SQLite does not create the Core Data persistent-history and
+CloudKit metadata that MoneyWiz expects.
 
-The writer resolves the current model version from MoneyWiz's
-`MoneyWizDataModel.momd/VersionInfo.plist`. A future MoneyWiz model version is
-not automatically assumed compatible; the contract must be rechecked after an
-app or model upgrade.
+The current writer is verified for:
 
-## Why raw SQLite was insufficient
+- Reassigning transactions to an existing payee.
+- Creating a destination payee when reassignment requires one.
+- Saving through the installed MoneyWiz Tools.app host.
 
-Changing `ZSYNCOBJECT.ZPAYEE2` directly updates the local relationship but does
-not create MoneyWiz's persistent-history provenance or its private CloudKit
-metadata and serialized asset. That can leave a locally visible change which
-does not have the same synchronization contract as a native edit.
+It now implements exact-normalized duplicate consolidation using the same
+host. The first live batch remains subject to the operational revalidation
+described in [Payee Consolidation](PAYEE-CONSOLIDATION.md).
 
-MoneyWiz owns the `ANSCKRECORDMETADATA` and
-`ANSCKRECORDMETADATAENCODEDRECORDASSET` payloads. The compatibility writer does
-not synthesize or patch those private payloads.
+It is not a general live SQL writer and it never applies similar-name pairs
+from the approval map.
 
-## Verified write protocol
+## Operational protocol
 
-`reassign-payees-by-id --apply` writes through Core Data, not SQL:
+```mermaid
+flowchart LR
+    accTitle: Live payee write protocol
+    accDescr: Preview a reassignment or exact duplicate merge, stop MoneyWiz, use the bundled Core Data host to save, then reopen MoneyWiz and confirm iCloud sync completes.
+    A["Preview the payee plan"] --> B["Quit MoneyWiz and allow sync to settle"]
+    B --> C["Run the selected moneywiz payee command with --apply"]
+    C --> D["Bundled Swift host opens the persistent store"]
+    D --> E["Core Data saves object changes and persistent history"]
+    E --> F["Reopen MoneyWiz"]
+    F --> G["Confirm iCloud Sync is Up to Date"]
+```
 
-1. The Python planner reads the database and resolves a target payee per user.
-2. The installed `MoneyWizWriter.app` loads the current MoneyWiz model.
-3. It saves a single Core Data transaction with persistent history enabled,
-   `transactionAuthor = MWLocalAuthor`, bundle identifier
-   `com.moneywiz.personalfinance-setapp`, and executable name `MoneyWiz`.
-4. On the next launch, MoneyWiz consumes that history and materializes its own
-   CloudKit metadata, encoded record asset, and export.
+Do not run `--apply` while MoneyWiz has the database open. Do not use a
+generic raw SQL helper as a substitute for this protocol.
 
-The protocol was exercised for both an existing payee reassignment and a newly
-created payee. In both cases MoneyWiz displayed the result, incremented the
-record metadata export transaction, and recorded successful CloudKit events.
+## Host arrangement
 
-## Operating rule
+The executable is inside the installed outer bundle:
 
-Quit MoneyWiz before using `--apply`; the writer requires exclusive store
-access. Reopen MoneyWiz afterward and wait for iCloud Sync to report `Up to
-Date`. This is a concurrency requirement, not a prohibition on using the live
-database path.
+```text
+MoneyWiz Tools.app/Contents/MacOS/MoneyWizTools
+```
 
-Payee matching uses Unicode NFKC normalization, whitespace collapsing, and
-case-folding within the transaction's user. The existing stored payee name is
-retained when it matches. If no matching payee exists, the writer creates one
-using the transaction description and that transaction's account user. Duplicate
-matching payees are rejected as ambiguous rather than choosing one silently.
+It has bundle identity `com.marcomc.moneywiz-tools` and uses transaction
+author `MWLocalAuthor`. The outer app bundle is the writer host; no separate
+MoneyWizWriter.app is required.
+
+The bundle also contains the Python dispatcher and scripts. The Swift host is
+not a wrapper around an external development checkout.
+
+## Verified compatibility profile
+
+| Property | Observed value |
+| --- | --- |
+| Application | MoneyWiz 2026.32.1, build 431 |
+| Managed-object model | MoneyWizDataModel 48 |
+| Payee entity in live profile | `Z_ENT = 29` |
+| Root transaction entities | `Z_ENT = 37` through `48` |
+| Persistent-history writer | Core Data through the bundled host |
+
+These values are evidence for the observed profile, not a permanent schema
+guarantee. Revalidate after an app or model migration.
+
+## Behavior at duplicate names
+
+The reassignment planner normalizes names before selecting a destination. It
+fails when more than one matching candidate remains, preventing accidental
+selection of a duplicate. Existing and new destination creation are supported.
+
+`merge-duplicate-payees` performs the separate exact-normalized merge
+operation. It migrates all model relationships whose destination is `Payee`,
+validates that the source has no remaining supported reference, and deletes
+the source in the same Core Data save. Similar-name pairs stay pending in an
+approval CSV.
+
+See [Live Payee Structure](LIVE-PAYEE-STRUCTURE.md) for the recorded live
+mappings and [Live Write Compatibility](LIVE-WRITE-COMPATIBILITY.md) for the
+full operating and revalidation contract.

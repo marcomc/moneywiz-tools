@@ -1,135 +1,53 @@
-# Extensions Roadmap — moneywiz-api + moneywiz.sh
+# Extension Roadmap
 
-This document outlines practical read/write extensions to the current read-only library so that core MoneyWiz features can be replicated from the CLI.
+## Current capability boundary
 
-Guiding principles
+| Capability | State |
+| --- | --- |
+| Read users, accounts, categories, payees, tags, transactions, holdings, and schema | Available through `moneywiz`. |
+| Build a self-contained app and command symlinks | Available through Make targets. |
+| Generic write helpers | Available for test copies and disposable stores. |
+| Live payee reassignment to an existing payee | Verified through Core Data. |
+| Live payee reassignment that creates a destination payee | Verified through Core Data. |
+| Live exact-normalized duplicate-payee merge | Implemented through Core Data; first live batch requires revalidation. |
+| Similar-name payee merge | Approval-map generation only. |
+| Graphical user interface | Planned. |
 
-- Keep database integrity: respect existing relationships and Core Data conventions.
-- Prefer small, composable operations with clear preconditions and validations.
-- Transaction-safe writes: wrap multi-table updates (e.g., transfers, category/tag links) in a single DB transaction.
-- Treat `LIVE-WRITE-COMPATIBILITY.md` as the gate for writes to the live iCloud store; raw SQL field mappings are not sufficient evidence.
+## Extension principles
 
-## Entities and Operations
+- Keep the installed product relocatable: runtime dependencies belong inside
+  MoneyWiz Tools.app.
+- Separate an SQL preview or test-copy mutation from a proven live writer.
+- Add live writes only after reconstructing the complete Core Data,
+  persistent-history, and sync contract for that operation.
+- Stop on ambiguous payee matches rather than selecting a candidate by
+  heuristic.
+- Record model version, entity mapping, and behavioral evidence with each
+  new live writer.
 
-### Users
+## Next implementation candidates
 
-- Read: list users (implemented).
-- Write: N/A (created by the app/cloud sync). Avoid creating users manually.
+### Similar-name approval workflow
 
-### Accounts
+Exact-normalized groups now have a deterministic Core Data merge path. The
+remaining extension is an explicit parser for an approved fuzzy CSV:
 
-- Read: list, filter by user (implemented).
-- Write (add/update/archive):
-  - Create account rows in `ZSYNCOBJECT` with appropriate `Z_ENT` for type.
-  - Fields: `ZNAME`, `ZCURRENCYNAME`, `ZDISPLAYORDER`, `ZGROUPID`, `ZUSER`, `ZOPENINGBALANCE`.
-  - Consider “archived” flag (toggle), include/exclude from net worth.
-  - Helpers: resolve `Z_ENT` from `Z_PRIMARYKEY`.
+1. Read only rows marked approved.
+2. Validate the selected canonical payee is still valid and belongs to the
+   same user.
+3. Present a fresh plan because names and reference counts may have changed.
+4. Apply no unapproved or stale row.
 
-### Payees
+The current command intentionally exports the CSV but never consumes it.
 
-- Read: list (implemented).
-- Write: create/update payee rows in `ZSYNCOBJECT` for the Payee entity type; fields `ZNAME5`, `ZUSER7`.
-- Live iCloud status: pending native pre/post capture of the Core Data history and CloudKit records required for create/update.
+### Additional live writers
 
-### Categories
+Potential writers include categories, tags, refunds, and other relationship
+updates. Each requires a narrow contract and native comparison evidence
+before it is offered against the live iCloud store.
 
-- Read: list, name chains (implemented).
-- Write: create/update `Category` rows in `ZSYNCOBJECT`, set parent via `ZPARENTCATEGORY`, `ZTYPE2`.
+### GUI
 
-### Tags
-
-- Read: list (implemented).
-- Write: create/update `Tag` rows in `ZSYNCOBJECT`; link to transactions via `Z_36TAGS` rows.
-
-### Transactions
-
-- Read: all types (implemented) + splits/tags/refunds maps (implemented).
-- Write (core):
-  - Deposit/Withdraw/Refund: create `ZSYNCOBJECT` rows with FX fields as applicable.
-  - Transfers: create two linked rows (withdraw+deposit) and maintain both sides (`recipient/sender` account + transaction ids) with correct signs and FX/fee.
-  - Reconcile: create entries with new balance or share count.
-  - Investment buy/sell/exchange: create entries for each subtype with shares, price per share, fees.
-- Write (relationships):
-  - Category splits: insert into `ZCATEGORYASSIGMENT` per transaction, amounts summing to transaction value (by sign).
-  - Tags: insert rows into `Z_36TAGS` per tag.
-  - Refund links: create `ZWITHDRAWREFUNDTRANSACTIONLINK` row mapping refund to original withdraw.
-
-### Holdings
-
-- Read: by account (implemented).
-- Write: update holdings meta (e.g., `ZDESC`, `ZHOLDINGTYPE`), update price table if desired (requires additional tables not currently modeled).
-
-## Low-level Accessor Changes
-
-Add a write-capable `DatabaseAccessor` API with transaction helpers:
-
-- `begin()/commit()/rollback()` or context manager.
-- `insert_syncobject(typename: str, fields: dict) -> int` — resolve `Z_ENT`, set mandatory columns (`Z_OPT`, `ZGID`), and insert. Return `Z_PK`.
-- `update_syncobject(pk: int, fields: dict)` — patch fields.
-- `delete_syncobject(pk: int)` — cautious; ensure no dependent rows.
-- Helper mappers: `ent_for/typename_for` (exists), `now_to_coredata_timestamp()`, currency helpers.
-
-Relationship helpers:
-
-- `assign_categories(tx_id: int, splits: list[tuple[cat_id, Decimal]])` — maintain sums/signs.
-- `assign_tags(tx_id: int, tag_ids: list[int])` — upsert bridge rows.
-- `link_refund(refund_tx_id: int, original_withdraw_id: int)`.
-
-## CLI Design (moneywiz.sh)
-
-New subcommands (sketch):
-
-- `create-account --user ID --type <BankCheque|Cash|CreditCard|...> --name NAME --currency CUR [--opening-balance AMOUNT]`
-- `update-account --id ID [--name N] [--currency C] [--archived BOOL] ...`
-- `create-transaction --type <deposit|withdraw|refund|transfer|reconcile|inv-buy|inv-sell|inv-exchange> [type-specific flags]`
-- `update-transaction --id ID [--amount A] [--description S] [--notes S] [--datetime ISO] ...`
-- `assign-categories --tx ID --split cat:amt --split cat:amt ...`
-- `assign-tags --tx ID --tags TAG_ID,TAG_ID,...`
-- `link-refund --refund ID --original-withdraw ID`
-
-Safeguards:
-
-- Dry-run (`--dry-run`) to emit SQL changes without applying.
-- `--json` inputs for complex payloads (splits, tags).
-- Balancing checks for category splits and transfer consistency.
-
-## Data Constraints & Pitfalls
-
-- Core Data fields often duplicate semantics across entity types (e.g., `ZAMOUNT1`, `ZDATE1`, `ZDESC2`). Keep a mapping per type.
-- Signs: expenses are negative, income positive; transfers are paired entries with opposite signs.
-- FX fields: `ZORIGINALAMOUNT`, `ZORIGINALCURRENCY`, `ZORIGINALEXCHANGERATE` should be coherent; tolerate rounding.
-- Global IDs (`ZGID`) should be unique; generate UUIDs when inserting.
-- `Z_OPT` is a Core Data version field; set to `1` on insert, increment on updates.
-- A direct iCloud write also requires `ATRANSACTION`, `ACHANGE`, and CloudKit
-  state. The exact values must be captured from the matching native app edit.
-- Add/maintain indexes for large tables if write-heavy workflows are introduced (Careful: app updates may recreate DB).
-
-## Research To‑Dos (external)
-
-Due to restricted network access here, capture these for future refinement:
-
-- Confirm full set of `ZSYNCOBJECT` `Z_ENT` → `Z_NAME` mappings for all MoneyWiz versions.
-- Capture the native delta for changing an existing transaction payee and for creating a payee, versioned by app build and model fingerprint.
-- Implement a live-write session only after those deltas are available as regression fixtures.
-
-## Implementation Plan (phased)
-
-1. Write layer scaffolding
-
-- Add `write` methods on `DatabaseAccessor` with transaction helpers; unit tests against a temporary DB copy.
-
-1. CRUD for core types
-
-- Accounts: create/update; Transactions: deposit/withdraw; Payees/Categories/Tags: create.
-
-1. Relationships
-
-- Category splits, tag links, refund links, transfer pairs (consistency checks).
-
-1. Advanced
-
-- Investment transactions (buy/sell/exchange), reconcile flows, holdings metadata.
-
-1. CLI integration
-
-- Add subcommands, dry-run support, and JSON input; document in README.md and `doc/`.
+A future GUI should call the same dispatcher and Core Data host already
+bundled in MoneyWiz Tools.app. It should not introduce a second standalone
+writer bundle.

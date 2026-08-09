@@ -1,5 +1,7 @@
 # Field Mapping Cheat Sheet (First Draft)
 
+> **Scope.** This file contains mapping evidence and SQL-oriented recipes for inspection, test fixtures, and copied databases. It is not an authorization to apply raw SQL changes to a live iCloud store. The only currently verified live payee write path is the bundled Core Data reassignment writer; see [Core Data Writer](CORE-DATA-WRITER.md) and [Live Payee Structure](LIVE-PAYEE-STRUCTURE.md).
+
 This reference maps domain model fields used by the API to raw SQLite columns (primarily in `ZSYNCOBJECT`) as observed in the test database and the current model classes.
 
 ## Quick Index
