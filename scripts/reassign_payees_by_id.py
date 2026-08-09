@@ -319,15 +319,18 @@ def _moneywiz_is_running() -> bool:
 
 
 def _resolve_writer() -> Path:
-    configured = os.environ.get("MONEYWIZ_CORE_DATA_WRITER")
+    configured = os.environ.get("MONEYWIZ_TOOLS_HOST") or os.environ.get(
+        "MONEYWIZ_CORE_DATA_WRITER"
+    )
     if configured:
         writer = Path(configured).expanduser()
     else:
         runtime_root = Path(__file__).resolve().parents[1]
-        writer = runtime_root / "MoneyWizWriter.app/Contents/MacOS/MoneyWiz"
+        bundle_contents = runtime_root.parent.parent
+        writer = bundle_contents / "MacOS/MoneyWizTools"
     if not writer.is_file() or not os.access(writer, os.X_OK):
         raise ReassignmentError(
-            f"Compatible Core Data writer is not installed at {writer}. Run: make install"
+            f"MoneyWiz Tools Core Data host is not installed at {writer}. Run: make install"
         )
     return writer
 
@@ -372,9 +375,7 @@ def _resolve_model() -> Path:
     return model
 
 
-def apply_plan(db_path: Path, plan: ReassignmentPlan) -> None:
-    if not plan.operations:
-        return
+def apply_coredata_payload(db_path: Path, payload: dict[str, Any]) -> None:
     if _moneywiz_is_running():
         raise ReassignmentError(
             "Quit MoneyWiz 2026 before --apply. The compatible writer needs exclusive "
@@ -383,16 +384,13 @@ def apply_plan(db_path: Path, plan: ReassignmentPlan) -> None:
 
     writer = _resolve_writer()
     model = _resolve_model()
-    payload = {
-        "schema_version": 1,
-        "operations": [operation.writer_payload() for operation in plan.operations],
-    }
-    with tempfile.TemporaryDirectory(prefix="moneywiz-reassign-") as temp_dir:
+    with tempfile.TemporaryDirectory(prefix="moneywiz-coredata-") as temp_dir:
         plan_path = Path(temp_dir) / "plan.json"
         plan_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
         completed = subprocess.run(
             [
                 str(writer),
+                "--coredata-write",
                 "--store",
                 str(db_path.expanduser().resolve()),
                 "--model",
@@ -410,6 +408,18 @@ def apply_plan(db_path: Path, plan: ReassignmentPlan) -> None:
         raise ReassignmentError(f"Compatible Core Data writer failed: {detail}")
     if completed.stdout.strip():
         print(completed.stdout.strip())
+
+
+def apply_plan(db_path: Path, plan: ReassignmentPlan) -> None:
+    if not plan.operations:
+        return
+    apply_coredata_payload(
+        db_path,
+        {
+            "schema_version": 1,
+            "operations": [operation.writer_payload() for operation in plan.operations],
+        },
+    )
 
 
 def _print_plan(plan: ReassignmentPlan) -> None:

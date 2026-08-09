@@ -1,9 +1,7 @@
-# MoneyWiz CLI configuration
-# This file sets default configurations for the MoneyWiz command-line tool.
-# This file can be placed in the user's home directory as .moneywizrc
-# or in the current working directory.
-# The settings here can be overridden by command-line arguments.
-# The priority is: command-line args > .moneywizrc in cwd > .moneywizrc in home directory
+# MoneyWiz Tools configuration
+#
+# Copy this file to ~/.moneywizrc and set the database path used by moneywiz.
+# The path must be absolute. Do not use ~ because the launcher does not expand
+# it. A global --db argument overrides this value for one command.
 
-# Set default database path (can be overridden with --db)
-db_path=/Users/<your_home>/Library/Containers/com.moneywiz.personalfinance-setapp/Data/Documents/.AppData/ipadMoneyWiz.sqlite
+db_path=/Users/your-user/absolute/path/to/MoneyWiz_iCloud.sqlite

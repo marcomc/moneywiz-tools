@@ -2,7 +2,7 @@ import CoreData
 import Darwin
 import Foundation
 
-private let expectedBundleIdentifier = "com.moneywiz.personalfinance-setapp"
+private let expectedBundleIdentifier = "com.marcomc.moneywiz-tools"
 private let transactionAuthor = "MWLocalAuthor"
 
 final class PassthroughTransformer: ValueTransformer {
@@ -21,10 +21,12 @@ struct WriterArguments {
 struct WriterPlan: Decodable {
     let schemaVersion: Int
     let operations: [WriterOperation]
+    let payeeMerges: [PayeeMerge]?
 
     enum CodingKeys: String, CodingKey {
         case schemaVersion = "schema_version"
         case operations
+        case payeeMerges = "payee_merges"
     }
 }
 
@@ -44,17 +46,31 @@ struct WriterOperation: Decodable {
     }
 }
 
+struct PayeeMerge: Decodable {
+    let sourcePayeeGID: String
+    let targetPayeeGID: String
+
+    enum CodingKeys: String, CodingKey {
+        case sourcePayeeGID = "source_payee_gid"
+        case targetPayeeGID = "target_payee_gid"
+    }
+}
+
 struct WriterResult: Encodable {
     let createdPayees: Int
     let reassignedTransactions: Int
+    let mergedPayees: Int
+    let migratedRelationships: Int
 
     enum CodingKeys: String, CodingKey {
         case createdPayees = "created_payees"
         case reassignedTransactions = "reassigned_transactions"
+        case mergedPayees = "merged_payees"
+        case migratedRelationships = "migrated_relationships"
     }
 }
 
-enum WriterError: LocalizedError {
+enum HostError: LocalizedError {
     case message(String)
 
     var errorDescription: String? {
@@ -65,10 +81,18 @@ enum WriterError: LocalizedError {
     }
 }
 
-func parseArguments() throws -> WriterArguments {
-    let arguments = Array(CommandLine.arguments.dropFirst())
+func parseWriterArguments() throws -> WriterArguments {
+    let invocation = Array(CommandLine.arguments.dropFirst())
+    guard invocation.first == "--coredata-write" else {
+        throw HostError.message(
+            "usage: MoneyWizTools --coredata-write --store PATH --model PATH --plan PATH"
+        )
+    }
+    let arguments = Array(invocation.dropFirst())
     guard arguments.count == 6 else {
-        throw WriterError.message("usage: MoneyWiz --store PATH --model PATH --plan PATH")
+        throw HostError.message(
+            "usage: MoneyWizTools --coredata-write --store PATH --model PATH --plan PATH"
+        )
     }
 
     var values: [String: String] = [:]
@@ -77,7 +101,9 @@ func parseArguments() throws -> WriterArguments {
         let flag = arguments[index]
         let value = arguments[index + 1]
         guard ["--store", "--model", "--plan"].contains(flag), values[flag] == nil else {
-            throw WriterError.message("invalid arguments; expected --store PATH --model PATH --plan PATH")
+            throw HostError.message(
+                "invalid arguments; expected --store PATH --model PATH --plan PATH"
+            )
         }
         values[flag] = value
         index += 2
@@ -86,7 +112,7 @@ func parseArguments() throws -> WriterArguments {
     guard let storePath = values["--store"],
           let modelPath = values["--model"],
           let planPath = values["--plan"] else {
-        throw WriterError.message("missing required --store, --model, or --plan argument")
+        throw HostError.message("missing required --store, --model, or --plan argument")
     }
     return WriterArguments(
         store: URL(fileURLWithPath: storePath),
@@ -113,7 +139,7 @@ func fetchObject(
     request.predicate = NSPredicate(format: "GID == %@", gid)
     let results = try context.fetch(request)
     guard results.count == 1, let object = results.first else {
-        throw WriterError.message("expected one \(entityName) with GID \(gid), found \(results.count)")
+        throw HostError.message("expected one \(entityName) with GID \(gid), found \(results.count)")
     }
     return object
 }
@@ -122,15 +148,171 @@ func validateOperation(_ operation: WriterOperation) throws {
     let hasExistingTarget = !(operation.existingPayeeGID?.isEmpty ?? true)
     let hasNewTarget = !(operation.newPayeeKey?.isEmpty ?? true) && !(operation.newPayeeName?.isEmpty ?? true)
     guard hasExistingTarget != hasNewTarget else {
-        throw WriterError.message(
+        throw HostError.message(
             "transaction \(operation.transactionGID) must define exactly one payee target"
         )
     }
 }
 
+func validatePayeeMerge(_ merge: PayeeMerge) throws {
+    guard !merge.sourcePayeeGID.isEmpty,
+          !merge.targetPayeeGID.isEmpty,
+          merge.sourcePayeeGID != merge.targetPayeeGID else {
+        throw HostError.message("payee merge must define two distinct non-empty GIDs")
+    }
+}
+
+func isPayeeEntity(_ entity: NSEntityDescription?) -> Bool {
+    var candidate = entity
+    while let current = candidate {
+        if current.name == "Payee" {
+            return true
+        }
+        candidate = current.superentity
+    }
+    return false
+}
+
+func inboundPayeeRelationships(
+    in model: NSManagedObjectModel
+) -> [(NSEntityDescription, NSRelationshipDescription)] {
+    var relationships: [(NSEntityDescription, NSRelationshipDescription)] = []
+    for entity in model.entities where !entity.isAbstract && entity.name != "Payee" {
+        for relationship in entity.relationshipsByName.values
+            where isPayeeEntity(relationship.destinationEntity) {
+            // This is the Payee.user inverse and is removed naturally when the
+            // source payee is deleted. Repointing it would detach the source early.
+            if entity.name == "User" && relationship.name == "payees" {
+                continue
+            }
+            relationships.append((entity, relationship))
+        }
+    }
+    return relationships.sorted {
+        let leftKey = "\($0.0.name ?? "")::\($0.1.name)"
+        let rightKey = "\($1.0.name ?? "")::\($1.1.name)"
+        return leftKey < rightKey
+    }
+}
+
+func objectsReferencing(
+    _ source: NSManagedObject,
+    entity: NSEntityDescription,
+    relationship: NSRelationshipDescription,
+    context: NSManagedObjectContext
+) throws -> [NSManagedObject] {
+    guard let entityName = entity.name else {
+        throw HostError.message("payee relationship has no entity name")
+    }
+    let request = NSFetchRequest<NSManagedObject>(entityName: entityName)
+    request.includesSubentities = false
+    if relationship.isToMany {
+        request.predicate = NSPredicate(
+            format: "ANY \(relationship.name) == %@",
+            source
+        )
+    } else {
+        request.predicate = NSPredicate(
+            format: "%K == %@",
+            relationship.name,
+            source
+        )
+    }
+    return try context.fetch(request)
+}
+
+func migrateInboundPayeeRelationships(
+    from source: NSManagedObject,
+    to target: NSManagedObject,
+    model: NSManagedObjectModel,
+    context: NSManagedObjectContext
+) throws -> Int {
+    var migrated = 0
+    for (entity, relationship) in inboundPayeeRelationships(in: model) {
+        let objects = try objectsReferencing(
+            source,
+            entity: entity,
+            relationship: relationship,
+            context: context
+        )
+        for object in objects {
+            if relationship.isToMany {
+                let references = object.mutableSetValue(forKey: relationship.name)
+                if references.contains(source) {
+                    references.remove(source)
+                    references.add(target)
+                    migrated += 1
+                }
+            } else {
+                object.setValue(target, forKey: relationship.name)
+                migrated += 1
+            }
+        }
+    }
+    context.processPendingChanges()
+    return migrated
+}
+
+func assertNoInboundPayeeReferences(
+    _ source: NSManagedObject,
+    model: NSManagedObjectModel,
+    context: NSManagedObjectContext
+) throws {
+    for (entity, relationship) in inboundPayeeRelationships(in: model) {
+        let remaining = try objectsReferencing(
+            source,
+            entity: entity,
+            relationship: relationship,
+            context: context
+        )
+        if !remaining.isEmpty {
+            let entityName = entity.name ?? "<unknown>"
+            throw HostError.message(
+                "payee merge left \(remaining.count) reference(s) in "
+                    + "\(entityName).\(relationship.name)"
+            )
+        }
+    }
+}
+
+func mergePayee(
+    _ merge: PayeeMerge,
+    model: NSManagedObjectModel,
+    context: NSManagedObjectContext
+) throws -> Int {
+    try validatePayeeMerge(merge)
+    let source = try fetchObject(
+        entityName: "Payee",
+        gid: merge.sourcePayeeGID,
+        context: context
+    )
+    let target = try fetchObject(
+        entityName: "Payee",
+        gid: merge.targetPayeeGID,
+        context: context
+    )
+    guard source.objectID != target.objectID else {
+        throw HostError.message("payee merge source and target resolve to the same object")
+    }
+    guard let sourceUser = source.value(forKey: "user") as? NSManagedObject,
+          let targetUser = target.value(forKey: "user") as? NSManagedObject,
+          sourceUser.objectID == targetUser.objectID else {
+        throw HostError.message("payee merge source and target must belong to the same user")
+    }
+    let migrated = try migrateInboundPayeeRelationships(
+        from: source,
+        to: target,
+        model: model,
+        context: context
+    )
+    try assertNoInboundPayeeReferences(source, model: model, context: context)
+    context.delete(source)
+    return migrated
+}
+
 func loadContainer(storeURL: URL, modelURL: URL) throws -> NSPersistentContainer {
     guard let model = NSManagedObjectModel(contentsOf: modelURL) else {
-        throw WriterError.message("cannot load MoneyWiz managed-object model at \(modelURL.path)")
+        throw HostError.message("cannot load MoneyWiz managed-object model at \(modelURL.path)")
     }
     let container = NSPersistentContainer(name: "MoneyWizDataModel", managedObjectModel: model)
     let description = NSPersistentStoreDescription(url: storeURL)
@@ -146,23 +328,25 @@ func loadContainer(storeURL: URL, modelURL: URL) throws -> NSPersistentContainer
     }
     semaphore.wait()
     if let loadError {
-        throw WriterError.message("cannot open MoneyWiz database: \(loadError.localizedDescription)")
+        throw HostError.message("cannot open MoneyWiz database: \(loadError.localizedDescription)")
     }
     return container
 }
 
 func writePlan(_ plan: WriterPlan, container: NSPersistentContainer) throws -> WriterResult {
-    guard plan.schemaVersion == 1 else {
-        throw WriterError.message("unsupported writer plan version \(plan.schemaVersion)")
+    guard plan.schemaVersion == 1 || plan.schemaVersion == 2 else {
+        throw HostError.message("unsupported writer plan version \(plan.schemaVersion)")
     }
     let context = container.newBackgroundContext()
     context.transactionAuthor = transactionAuthor
-    var result: Result<WriterResult, Error> = .failure(WriterError.message("writer did not run"))
+    var result: Result<WriterResult, Error> = .failure(HostError.message("writer did not run"))
 
     context.performAndWait {
         do {
             var createdPayees: [String: NSManagedObject] = [:]
             var createdPayeeUsers: [String: String] = [:]
+            var mergedPayees = 0
+            var migratedRelationships = 0
             for operation in plan.operations {
                 try validateOperation(operation)
                 let transaction = try fetchObject(
@@ -181,20 +365,20 @@ func writePlan(_ plan: WriterPlan, container: NSPersistentContainer) throws -> W
                           let name = operation.newPayeeName,
                           !key.isEmpty,
                           !name.isEmpty else {
-                        throw WriterError.message(
+                        throw HostError.message(
                             "transaction \(operation.transactionGID) has an incomplete new payee target"
                         )
                     }
                     guard let account = transaction.value(forKey: "account") as? NSManagedObject,
                           let user = account.value(forKey: "user") as? NSManagedObject else {
-                        throw WriterError.message(
+                        throw HostError.message(
                             "transaction \(operation.transactionGID) has no account user for new payee creation"
                         )
                     }
                     let userIdentifier = user.objectID.uriRepresentation().absoluteString
                     if let existingCreatedPayee = createdPayees[key] {
                         guard createdPayeeUsers[key] == userIdentifier else {
-                            throw WriterError.message(
+                            throw HostError.message(
                                 "new payee key \(key) resolved to more than one MoneyWiz user"
                             )
                         }
@@ -217,13 +401,23 @@ func writePlan(_ plan: WriterPlan, container: NSPersistentContainer) throws -> W
                 }
                 transaction.setValue(targetPayee, forKey: "payee")
             }
+            for merge in plan.payeeMerges ?? [] {
+                migratedRelationships += try mergePayee(
+                    merge,
+                    model: container.managedObjectModel,
+                    context: context
+                )
+                mergedPayees += 1
+            }
             if context.hasChanges {
                 try context.save()
             }
             result = .success(
                 WriterResult(
                     createdPayees: createdPayees.count,
-                    reassignedTransactions: plan.operations.count
+                    reassignedTransactions: plan.operations.count,
+                    mergedPayees: mergedPayees,
+                    migratedRelationships: migratedRelationships
                 )
             )
         } catch {
@@ -236,16 +430,14 @@ func writePlan(_ plan: WriterPlan, container: NSPersistentContainer) throws -> W
 
 func run() throws {
     guard Bundle.main.bundleIdentifier == expectedBundleIdentifier else {
-        throw WriterError.message(
-            "writer must run from the installed MoneyWizWriter.app compatibility bundle"
-        )
+        throw HostError.message("host must run from the installed MoneyWiz Tools.app bundle")
     }
-    let arguments = try parseArguments()
+    let arguments = try parseWriterArguments()
     guard FileManager.default.fileExists(atPath: arguments.store.path) else {
-        throw WriterError.message("database file not found: \(arguments.store.path)")
+        throw HostError.message("database file not found: \(arguments.store.path)")
     }
     guard FileManager.default.fileExists(atPath: arguments.model.path) else {
-        throw WriterError.message("managed-object model not found: \(arguments.model.path)")
+        throw HostError.message("managed-object model not found: \(arguments.model.path)")
     }
     let data = try Data(contentsOf: arguments.plan)
     let plan = try JSONDecoder().decode(WriterPlan.self, from: data)

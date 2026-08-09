@@ -4,17 +4,19 @@
 <dict>
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
+    <key>CFBundleDisplayName</key>
+    <string>MoneyWiz Tools</string>
     <key>CFBundleExecutable</key>
-    <string>MoneyWiz</string>
+    <string>MoneyWizTools</string>
     <key>CFBundleIdentifier</key>
-    <string>com.moneywiz.personalfinance-setapp</string>
+    <string>com.marcomc.moneywiz-tools</string>
     <key>CFBundleName</key>
-    <string>MoneyWiz</string>
+    <string>MoneyWiz Tools</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>2026.32.1</string>
+    <string>1.0.0</string>
     <key>CFBundleVersion</key>
-    <string>431</string>
+    <string>1</string>
 </dict>
 </plist>
