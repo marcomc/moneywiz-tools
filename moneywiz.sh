@@ -167,10 +167,14 @@ run_python_script() {
   local script_path="$1"
   shift
   "${PY}" -c '
+import os
 import runpy
 import sys
 
 script_path = sys.argv[1]
+script_directory = os.path.dirname(os.path.abspath(script_path))
+if script_directory not in sys.path:
+    sys.path.insert(0, script_directory)
 sys.argv = [script_path, *sys.argv[2:]]
 try:
     runpy.run_path(script_path, run_name="__main__")
