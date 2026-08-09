@@ -28,6 +28,27 @@ FORK_REPO_URL="https://github.com/marcomc/moneywiz-api.git"
 DEFAULT_REAL_DB_PATH="${HOME}/Library/Containers/com.moneywiz.personalfinance-setapp/Data/Documents/.AppData/ipadMoneyWiz.sqlite"
 BUNDLE_HOST="${SCRIPT_DIR}/../../MacOS/MoneyWizTools"
 BUNDLED_PY="${SCRIPT_DIR}/python/venv/bin/python"
+BUNDLE_INFO_PLIST="${SCRIPT_DIR}/../Info.plist"
+SOURCE_INFO_PLIST="${SCRIPT_DIR}/scripts/MoneyWizTools-Info.plist"
+
+print_version() {
+  local info_plist="${BUNDLE_INFO_PLIST}"
+  local version=""
+  if [[ ! -r "${info_plist}" ]]; then
+    info_plist="${SOURCE_INFO_PLIST}"
+  fi
+  if [[ -r "${info_plist}" ]]; then
+    version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${info_plist}" 2>/dev/null || true)"
+  fi
+  printf 'moneywiz %s\n' "${version:-unknown}"
+}
+
+for argument in "$@"; do
+  if [[ "${argument}" == "--version" || "${argument}" == "-V" ]]; then
+    print_version
+    exit 0
+  fi
+done
 
 trim_ws() {
   local value="$1"
@@ -149,6 +170,7 @@ Usage: moneywiz [--db PATH] <command> [options]
 Global:
   --db PATH                           Override the configured database path
   --setup                             Scaffold ~/.moneywizrc
+  --version, -V                       Show the installed tool version
   --help                              Show this help
 
 Reads (support --format table|json; default: table):
