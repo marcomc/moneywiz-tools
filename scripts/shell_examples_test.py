@@ -5,19 +5,16 @@ Non-interactive smoke test for README shell examples.
 Runs a subset of helper calls against the bundled test DB to ensure
 examples in the README remain valid.
 """
+
 from __future__ import annotations
 
-import sys
+import tempfile
 from pathlib import Path
 
-# Ensure local source tree is importable
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SRC = REPO_ROOT / "moneywiz-api" / "src"
-if str(SRC) not in sys.path:
-    sys.path.insert(0, str(SRC))
 
-from moneywiz_api.moneywiz_api import MoneywizApi  # type: ignore
 from moneywiz_api.cli.helpers import ShellHelper  # type: ignore
+from moneywiz_api.moneywiz_api import MoneywizApi  # type: ignore
 
 
 def main() -> int:
@@ -71,10 +68,12 @@ def main() -> int:
     print(f"OK pd_table(account_manager): rows={len(acct_df.index)}")
 
     # 7) Write stats files
-    out_dir = REPO_ROOT / "data" / "stats_test"
-    helper.write_stats_data_files(out_dir)
-    wrote = list(out_dir.glob("*.data"))
-    print(f"OK write_stats_data_files: wrote={len(wrote)} files to {out_dir}")
+    with tempfile.TemporaryDirectory(prefix="moneywiz-tools-stats-") as temp_dir:
+        out_dir = Path(temp_dir)
+        helper.write_stats_data_files(out_dir)
+        wrote = list(out_dir.glob("*.data"))
+        assert wrote, "write_stats_data_files should create at least one data file"
+        print(f"OK write_stats_data_files: wrote={len(wrote)} temporary files")
 
     return 0
 

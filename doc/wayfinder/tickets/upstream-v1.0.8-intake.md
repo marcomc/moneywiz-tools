@@ -1,7 +1,9 @@
 # Compare Upstream v1.0.8 with the Compatibility Fork
 
-**Type:** Research  
-**Status:** Open  
+**Type:** Research
+
+**Status:** Open
+
 **Blocks:** Choose the fork baseline and raw-write migration sequence
 
 ## Question

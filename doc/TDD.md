@@ -49,8 +49,9 @@ source object in the same save.
 ## Validation strategy
 
 Documentation and command behavior must agree with `make` and
-`moneywiz --help`. The project has no documented `scripts/run_tests.sh`
-wrapper; do not publish that nonexistent command.
+`moneywiz --help`. Run `scripts/run_tests.sh` to synchronize the frozen locked
+dependency graph and execute the MoneyWiz Tools CLI regression suite. The
+wrapper does not depend on or test a nested `moneywiz-api` checkout.
 
 For each new live writer, validation must include:
 

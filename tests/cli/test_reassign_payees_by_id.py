@@ -3,7 +3,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-
 TRANSACTION_TYPES = (
     "DepositTransaction",
     "InvestmentExchangeTransaction",
@@ -42,9 +41,7 @@ def make_database(path: Path) -> None:
         + [(29, "Payee")],
     )
     withdraw_entity = 40 + TRANSACTION_TYPES.index("WithdrawTransaction")
-    con.execute(
-        "INSERT INTO ZSYNCOBJECT (Z_PK, Z_ENT, ZUSER) VALUES (100, 10, 1)"
-    )
+    con.execute("INSERT INTO ZSYNCOBJECT (Z_PK, Z_ENT, ZUSER) VALUES (100, 10, 1)")
     con.execute(
         """
         INSERT INTO ZSYNCOBJECT (Z_PK, Z_ENT, ZGID, ZNAME5, ZUSER7)
@@ -72,8 +69,7 @@ def run_reassign(db_path: Path, *arguments: str) -> subprocess.CompletedProcess[
     script = repo_root / "scripts/reassign_payees_by_id.py"
     return subprocess.run(
         [sys.executable, str(script), "--db", str(db_path), *arguments],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         text=True,
         check=False,
     )
@@ -90,7 +86,9 @@ def test_reassign_plan_normalizes_existing_unicode_payee(tmp_path: Path) -> None
     assert "Summary: processed=3, created=1, updated=3" in result.stdout
 
 
-def test_reassign_plan_reuses_one_new_payee_for_matching_descriptions(tmp_path: Path) -> None:
+def test_reassign_plan_reuses_one_new_payee_for_matching_descriptions(
+    tmp_path: Path,
+) -> None:
     db_path = tmp_path / "moneywiz.sqlite"
     make_database(db_path)
 
@@ -115,3 +113,88 @@ def test_reassign_invalid_parameters_are_clean_errors(tmp_path: Path) -> None:
     assert result.returncode == 2
     assert "not a valid Payee id" in result.stderr
     assert "Traceback" not in result.stderr
+
+
+def prepare_empty_description_fallback(
+    db_path: Path, *, payee_id: int, payee_user_id: int
+) -> None:
+    with sqlite3.connect(db_path) as con:
+        con.execute(
+            """
+            INSERT INTO ZSYNCOBJECT (Z_PK, Z_ENT, ZGID, ZNAME5, ZUSER7)
+            VALUES (?, 29, ?, 'Fallback', ?)
+            """,
+            (payee_id, f"payee-{payee_id}", payee_user_id),
+        )
+        con.execute(
+            "UPDATE ZSYNCOBJECT SET ZDESC2 = '', ZPAYEE2 = NULL WHERE Z_PK = 300"
+        )
+
+
+def test_reassign_accepts_same_user_fallback_payee(tmp_path: Path) -> None:
+    db_path = tmp_path / "moneywiz.sqlite"
+    make_database(db_path)
+    prepare_empty_description_fallback(db_path, payee_id=201, payee_user_id=1)
+
+    result = run_reassign(
+        db_path,
+        "--from-empty-payee",
+        "--empty-desc-target-payee-id",
+        "201",
+        "--show-plan",
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert (
+        "tx 300 (WithdrawTransaction) -> existing payee 201 ('Fallback')"
+        in result.stdout
+    )
+
+
+def test_reassign_rejects_cross_user_fallback_payee(tmp_path: Path) -> None:
+    db_path = tmp_path / "moneywiz.sqlite"
+    make_database(db_path)
+    prepare_empty_description_fallback(db_path, payee_id=201, payee_user_id=2)
+
+    result = run_reassign(
+        db_path,
+        "--from-empty-payee",
+        "--empty-desc-target-payee-id",
+        "201",
+    )
+
+    assert result.returncode == 2
+    assert (
+        "Fallback payee id 201 belongs to user 2, but transaction 300 belongs to user 1"
+        in result.stderr
+    )
+    assert "Traceback" not in result.stderr
+
+
+def test_reassign_rejects_mixed_user_fallback_plan_atomically(tmp_path: Path) -> None:
+    db_path = tmp_path / "moneywiz.sqlite"
+    make_database(db_path)
+    prepare_empty_description_fallback(db_path, payee_id=201, payee_user_id=1)
+    withdraw_entity = 40 + TRANSACTION_TYPES.index("WithdrawTransaction")
+    with sqlite3.connect(db_path) as con:
+        con.execute("INSERT INTO ZSYNCOBJECT (Z_PK, Z_ENT, ZUSER) VALUES (101, 10, 2)")
+        con.execute(
+            """
+            INSERT INTO ZSYNCOBJECT
+            (Z_PK, Z_ENT, ZGID, ZACCOUNT2, ZDESC2, ZPAYEE2)
+            VALUES (303, ?, 'transaction-user-two', 101, '', NULL)
+            """,
+            (withdraw_entity,),
+        )
+
+    result = run_reassign(
+        db_path,
+        "--from-empty-payee",
+        "--empty-desc-target-payee-id",
+        "201",
+        "--apply",
+    )
+
+    assert result.returncode == 2
+    assert "transaction 303 belongs to user 2" in result.stderr
+    assert "-- APPLY --" not in result.stdout

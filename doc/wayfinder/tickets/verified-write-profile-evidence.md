@@ -1,7 +1,9 @@
 # Define Evidence for a Verified Write Profile
 
-**Type:** Research  
-**Status:** Closed  
+**Type:** Research
+
+**Status:** Closed
+
 **Blocks:** Enabling any additional schema profile for live writes
 
 ## Question

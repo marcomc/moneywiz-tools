@@ -1,17 +1,26 @@
 import json
 import subprocess
-from pathlib import Path
 
 
 def run(cmd):
-    return subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+    return subprocess.run(cmd, capture_output=True, text=True, check=True)
 
 
-def test_transactions_all_fields_json():
-    repo_root = Path(__file__).resolve().parents[2]
-    script = repo_root / "moneywiz.sh"
+def test_transactions_all_fields_json(moneywiz_command: list[str]):
     # Use a known account id from the test DB; request one row
-    proc = run(["bash", str(script), "transactions", "--account", "5309", "--limit", "1", "--all-fields", "--format", "json"])
+    proc = run(
+        [
+            *moneywiz_command,
+            "transactions",
+            "--account",
+            "5309",
+            "--limit",
+            "1",
+            "--all-fields",
+            "--format",
+            "json",
+        ]
+    )
     data = json.loads(proc.stdout)
     assert isinstance(data, list) and len(data) >= 1
     item = data[0]

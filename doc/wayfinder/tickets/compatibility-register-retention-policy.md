@@ -1,7 +1,9 @@
 # Define the Compatibility Register and Retention Policy
 
-**Type:** Grilling  
-**Status:** Closed  
+**Type:** Grilling
+
+**Status:** Closed
+
 **Blocks:** Release support promise and future capability rollout
 
 ## Question

@@ -11,12 +11,12 @@ import sqlite3
 import subprocess
 import tempfile
 import unicodedata
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
 from compatibility import CompatibilityError, require_write_capability
-
 
 DEFAULT_MONEYWIZ_APP = Path("/Applications/Setapp/MoneyWiz 2026.app")
 EXPECTED_BUNDLE_IDENTIFIER = "com.moneywiz.personalfinance-setapp"
@@ -103,7 +103,9 @@ def _dict_connection(db_path: Path) -> sqlite3.Connection:
     con = sqlite3.connect(db_uri, uri=True)
 
     def dict_factory(cursor: sqlite3.Cursor, row: tuple[Any, ...]) -> dict[str, Any]:
-        return {column[0]: row[index] for index, column in enumerate(cursor.description)}
+        return {
+            column[0]: row[index] for index, column in enumerate(cursor.description)
+        }
 
     con.row_factory = dict_factory
     return con
@@ -265,7 +267,9 @@ def build_plan(
                 )
 
             description_raw = row.get("ZDESC2")
-            description = str(description_raw).strip() if description_raw is not None else ""
+            description = (
+                str(description_raw).strip() if description_raw is not None else ""
+            )
             target_existing: ExistingPayee | None = None
             new_payee_key: str | None = None
             new_payee_name: str | None = None
@@ -282,6 +286,12 @@ def build_plan(
                     new_payee_key = _new_payee_key(user_id, normalized_description)
                     new_payee_name = description
             elif fallback_payee is not None:
+                if fallback_payee.user_id != user_id:
+                    raise ReassignmentError(
+                        f"Fallback payee id {fallback_payee.id} belongs to user "
+                        f"{fallback_payee.user_id}, but transaction {transaction_id} "
+                        f"belongs to user {user_id}"
+                    )
                 target_existing = fallback_payee
             else:
                 continue
@@ -351,7 +361,9 @@ def _resolve_model() -> Path:
         with info_path.open("rb") as info_file:
             app_info = plistlib.load(info_file)
     except (OSError, plistlib.InvalidFileException) as exc:
-        raise ReassignmentError(f"Cannot read MoneyWiz app metadata at {info_path}: {exc}") from exc
+        raise ReassignmentError(
+            f"Cannot read MoneyWiz app metadata at {info_path}: {exc}"
+        ) from exc
     if app_info.get("CFBundleIdentifier") != EXPECTED_BUNDLE_IDENTIFIER:
         raise ReassignmentError(
             f"Unexpected MoneyWiz bundle identifier at {app}: {app_info.get('CFBundleIdentifier')!r}"
@@ -412,13 +424,14 @@ def apply_coredata_payload(
                 "--plan",
                 str(plan_path),
             ],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             text=True,
             check=False,
         )
     if completed.returncode != 0:
-        detail = completed.stderr.strip() or completed.stdout.strip() or "unknown failure"
+        detail = (
+            completed.stderr.strip() or completed.stdout.strip() or "unknown failure"
+        )
         raise ReassignmentError(f"Compatible Core Data writer failed: {detail}")
     if completed.stdout.strip():
         print(completed.stdout.strip())
@@ -459,8 +472,12 @@ def make_parser() -> argparse.ArgumentParser:
             "New payees are created through MoneyWiz-compatible Core Data history."
         )
     )
-    parser.add_argument("--db", type=Path, default=default_db(), help="Path to MoneyWiz sqlite DB")
-    parser.add_argument("--from-payee-id", type=int, help="Payee id to replace in transactions")
+    parser.add_argument(
+        "--db", type=Path, default=default_db(), help="Path to MoneyWiz sqlite DB"
+    )
+    parser.add_argument(
+        "--from-payee-id", type=int, help="Payee id to replace in transactions"
+    )
     parser.add_argument(
         "--from-empty-payee",
         action="store_true",
@@ -473,7 +490,9 @@ def make_parser() -> argparse.ArgumentParser:
         type=int,
         help="Assign this payee when a selected transaction has an empty description",
     )
-    parser.add_argument("--apply", action="store_true", help="Apply the Core Data write")
+    parser.add_argument(
+        "--apply", action="store_true", help="Apply the Core Data write"
+    )
     parser.add_argument(
         "--quiet", action="store_true", help="Suppress per-transaction plan output"
     )
@@ -489,7 +508,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = make_parser()
     args = parser.parse_args(argv)
     if args.from_payee_id is None and not args.from_empty_payee:
-        parser.error("provide at least one selector: --from-payee-id ID and/or --from-empty-payee")
+        parser.error(
+            "provide at least one selector: --from-payee-id ID and/or --from-empty-payee"
+        )
     db_path = args.db.expanduser()
     if not db_path.is_file():
         print(f"error: database file not found: {db_path}", file=os.sys.stderr)

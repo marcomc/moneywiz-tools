@@ -369,12 +369,24 @@ func writePlan(_ plan: WriterPlan, container: NSPersistentContainer) throws -> W
                     gid: operation.transactionGID,
                     context: context
                 )
+                guard let account = transaction.value(forKey: "account") as? NSManagedObject,
+                      let transactionUser = account.value(forKey: "user") as? NSManagedObject else {
+                    throw HostError.message(
+                        "transaction \(operation.transactionGID) has no account user for payee assignment"
+                    )
+                }
 
                 let targetPayee: NSManagedObject
                 if let existingPayeeGID = operation.existingPayeeGID, !existingPayeeGID.isEmpty {
                     targetPayee = try fetchObject(
                         entityName: "Payee", gid: existingPayeeGID, context: context
                     )
+                    guard let payeeUser = targetPayee.value(forKey: "user") as? NSManagedObject,
+                          payeeUser.objectID == transactionUser.objectID else {
+                        throw HostError.message(
+                            "transaction \(operation.transactionGID) and target payee must belong to the same user"
+                        )
+                    }
                 } else {
                     guard let key = operation.newPayeeKey,
                           let name = operation.newPayeeName,
@@ -384,13 +396,7 @@ func writePlan(_ plan: WriterPlan, container: NSPersistentContainer) throws -> W
                             "transaction \(operation.transactionGID) has an incomplete new payee target"
                         )
                     }
-                    guard let account = transaction.value(forKey: "account") as? NSManagedObject,
-                          let user = account.value(forKey: "user") as? NSManagedObject else {
-                        throw HostError.message(
-                            "transaction \(operation.transactionGID) has no account user for new payee creation"
-                        )
-                    }
-                    let userIdentifier = user.objectID.uriRepresentation().absoluteString
+                    let userIdentifier = transactionUser.objectID.uriRepresentation().absoluteString
                     if let existingCreatedPayee = createdPayees[key] {
                         guard createdPayeeUsers[key] == userIdentifier else {
                             throw HostError.message(
@@ -408,7 +414,7 @@ func writePlan(_ plan: WriterPlan, container: NSPersistentContainer) throws -> W
                         )
                         payee.setValue(name, forKey: "name")
                         payee.setValue(Date(), forKey: "objectCreationDate")
-                        payee.setValue(user, forKey: "user")
+                        payee.setValue(transactionUser, forKey: "user")
                         createdPayees[key] = payee
                         createdPayeeUsers[key] = userIdentifier
                         targetPayee = payee
@@ -464,10 +470,17 @@ func run() throws {
     FileHandle.standardOutput.write(Data([0x0A]))
 }
 
-do {
-    try run()
-} catch {
-    let message = "error: \(error.localizedDescription)\n"
-    FileHandle.standardError.write(Data(message.utf8))
-    exit(2)
-}
+#if !MONEYWIZ_TOOLS_TESTING
+    @main
+    struct MoneyWizToolsHost {
+        static func main() {
+            do {
+                try run()
+            } catch {
+                let message = "error: \(error.localizedDescription)\n"
+                FileHandle.standardError.write(Data(message.utf8))
+                exit(2)
+            }
+        }
+    }
+#endif

@@ -1,7 +1,9 @@
 # Define the Python-to-Core-Data Writer Contract
 
-**Type:** Grilling  
-**Status:** Open  
+**Type:** Grilling
+
+**Status:** Open
+
 **Blocked by:** Define the Schema-Profile Support Policy
 
 ## Question

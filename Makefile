@@ -64,7 +64,7 @@ build-bundle: check-deps ## Build a self-contained MoneyWiz Tools.app bundle
 	@mkdir -p "$(APP_RUNTIME)/scripts"
 	@mkdir -p "$(APP_RUNTIME)/tests" "$(APP_RUNTIME)/doc"
 	@cp -f "$(HOST_PLIST)" "$(APP_CONTENTS)/Info.plist"
-	@swiftc "$(HOST_SOURCE)" -o "$(APP_HOST)"
+	@swiftc -parse-as-library "$(HOST_SOURCE)" -o "$(APP_HOST)"
 	@cp -f "$(CURDIR)/moneywiz.sh" "$(APP_RUNTIME)/moneywiz.sh"
 	@cp -f "$(CURDIR)/.moneywizrc.example" "$(APP_RUNTIME)/.moneywizrc.example"
 	@cp -Rf "$(CURDIR)/scripts/." "$(APP_RUNTIME)/scripts/"

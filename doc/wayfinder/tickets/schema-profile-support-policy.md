@@ -1,7 +1,9 @@
 # Define the Schema-Profile Support Policy
 
-**Type:** Grilling  
-**Status:** Closed  
+**Type:** Grilling
+
+**Status:** Closed
+
 **Blocks:** Define the Python-to-Core-Data writer contract; define release gates
 
 ## Question

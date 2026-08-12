@@ -1,7 +1,9 @@
 # Choose the Pinned Dependency and Bundle Mechanism
 
-**Type:** Research  
-**Status:** Open  
+**Type:** Research
+
+**Status:** Open
+
 **Blocks:** Reproducible build migration
 
 ## Question

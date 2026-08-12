@@ -24,9 +24,7 @@ def make_database(path: Path) -> None:
         );
         """
     )
-    con.execute(
-        "INSERT INTO Z_PRIMARYKEY (Z_ENT, Z_NAME) VALUES (29, 'Payee')"
-    )
+    con.execute("INSERT INTO Z_PRIMARYKEY (Z_ENT, Z_NAME) VALUES (29, 'Payee')")
     con.executemany(
         """
         INSERT INTO ZSYNCOBJECT (Z_PK, Z_ENT, ZGID, ZNAME5, ZUSER7)
@@ -72,8 +70,7 @@ def run_merge(db_path: Path, *arguments: str) -> subprocess.CompletedProcess[str
     script = repo_root / "scripts/merge_duplicate_payees.py"
     return subprocess.run(
         [sys.executable, str(script), "--db", str(db_path), *arguments],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         text=True,
         check=False,
     )
@@ -89,7 +86,10 @@ def test_exact_plan_prefers_readable_ascii_canonical_payee(tmp_path: Path) -> No
     assert "keep 201 ('Ita'; ZPAYEE2=1, StringHistoryItem=2)" in result.stdout
     assert "merge 200 ('ITA'; ZPAYEE2=2, StringHistoryItem=1)" in result.stdout
     assert "keep 203 ('Acton Forini'; ZPAYEE2=1, StringHistoryItem=1)" in result.stdout
-    assert "merge 202 ('Acton\\xa0Forini'; ZPAYEE2=3, StringHistoryItem=0)" in result.stdout
+    assert (
+        "merge 202 ('Acton\\xa0Forini'; ZPAYEE2=3, StringHistoryItem=0)"
+        in result.stdout
+    )
     assert "exact_groups=2, merges=2" in result.stdout
 
 
@@ -105,17 +105,13 @@ def test_fuzzy_map_is_pending_review_only(tmp_path: Path) -> None:
     with map_path.open(newline="", encoding="utf-8") as map_file:
         rows = list(csv.DictReader(map_file))
     digitalocean = next(
-        row
-        for row in rows
-        if {row["left_id"], row["right_id"]} == {"300", "301"}
+        row for row in rows if {row["left_id"], row["right_id"]} == {"300", "301"}
     )
     assert digitalocean["similarity"] == "1.000"
     assert digitalocean["reason"] == "loose-normalized-equal"
     assert digitalocean["review_decision"] == "pending"
     assert digitalocean["approved_canonical_id"] == ""
-    assert not any(
-        {row["left_id"], row["right_id"]} == {"201", "302"} for row in rows
-    )
+    assert not any({row["left_id"], row["right_id"]} == {"201", "302"} for row in rows)
 
 
 def test_existing_fuzzy_map_requires_explicit_overwrite(tmp_path: Path) -> None:
