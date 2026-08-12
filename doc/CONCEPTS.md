@@ -56,15 +56,13 @@ This document captures important conventions in the MoneyWiz database that help 
 
 ## Recommended write practices
 
-- Use transactions when touching multiple tables.
+- Do not use raw SQL as a product write path.
+- Use a named `moneywiz` operation only after
+  `moneywiz compatibility --capability NAME` reports `verified`.
 - Treat a SQLite transaction as atomicity only, not as a replacement for a
   Core Data persistent-history transaction.
-- For complex creates (e.g., transfers): create both sides first, then link by setting the cross‑referenced transaction ids.
-- For category splits: validate that sums match the transaction amount.
-- For tags: avoid duplicate links; consider upserts or deduping before insert.
-- Always dry‑run and review SQL before applying to a real database.
-- Version any live-write rule by MoneyWiz app build and the Core Data model
-  fingerprint recorded in `LIVE-WRITE-COMPATIBILITY.md`.
+- Version every live-write rule by MoneyWiz app build, Core Data model
+  fingerprint, and the profile-capability register.
 
 ## Live payees and consolidation
 

@@ -22,7 +22,7 @@ Use the documents below by task rather than reading the design history first.
 | Core Data sync-object lifecycle | [Sync Object Model](SYNCOBJECT.md) |
 | Broader field mappings and test-store recipes | [Field Mappings](FIELD-MAPPINGS.md) |
 | Generated test-store schema snapshot | [Database Schema](DB-SCHEMA.md) |
-| Supported physical-schema profiles | [Schema Compatibility](SCHEMA-COMPATIBILITY.md) |
+| Profile x capability compatibility policy | [Schema Compatibility](SCHEMA-COMPATIBILITY.md) |
 
 `DB-SCHEMA.md` is generated from a test-store snapshot. Do not use its entity
 numbers as a live-store contract and do not hand-edit generated sections.

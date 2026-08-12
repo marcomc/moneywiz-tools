@@ -357,6 +357,7 @@ def apply_exact_groups(db_path: Path, plan: DuplicatePayeePlan) -> None:
             "operations": [],
             "payee_merges": payee_merges,
         },
+        capability="write.merge-duplicate-payees",
     )
 
 

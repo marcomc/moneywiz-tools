@@ -2,8 +2,8 @@
 
 ## Purpose and current scope
 
-The bundled Core Data writer is the live-store write path for
-`reassign-payees-by-id --apply`. It exists because changing relationship
+The bundled Core Data writer is the live-store write path for product
+operations that have a verified capability. It exists because changing relationship
 columns with raw SQLite does not create the Core Data persistent-history and
 CloudKit metadata that MoneyWiz expects.
 
@@ -13,9 +13,9 @@ The current writer is verified for:
 - Creating a destination payee when reassignment requires one.
 - Saving through the installed MoneyWiz Tools.app host.
 
-It now implements exact-normalized duplicate consolidation using the same
-host. The first live batch remains subject to the operational revalidation
-described in [Payee Consolidation](PAYEE-CONSOLIDATION.md).
+It implements exact-normalized duplicate consolidation using the same host,
+but that operation remains blocked until its own acceptance evidence is
+recorded. Verification is operation-specific.
 
 It is not a general live SQL writer and it never applies similar-name pairs
 from the approval map.
@@ -25,8 +25,8 @@ from the approval map.
 ```mermaid
 flowchart LR
     accTitle: Live payee write protocol
-    accDescr: Preview a reassignment or exact duplicate merge, stop MoneyWiz, use the bundled Core Data host to save, then reopen MoneyWiz and confirm iCloud sync completes.
-    A["Preview the payee plan"] --> B["Quit MoneyWiz and allow sync to settle"]
+    accDescr: Verify the profile capability, preview the plan, stop MoneyWiz, use the bundled Core Data host to save, then reopen MoneyWiz and confirm iCloud sync completes.
+    A["Check profile capability and preview the payee plan"] --> B["Quit MoneyWiz and allow sync to settle"]
     B --> C["Run the selected moneywiz payee command with --apply"]
     C --> D["Bundled Swift host opens the persistent store"]
     D --> E["Core Data saves object changes and persistent history"]
@@ -65,17 +65,20 @@ not a wrapper around an external development checkout.
 These values are evidence for the observed profile, not a permanent schema
 guarantee. Revalidate after an app or model migration.
 
+The runtime register in `scripts/compatibility_matrix.json` identifies this
+profile as `moneywiz-2026-model-48`. It allows
+`write.reassign-payees-by-id` and blocks
+`write.merge-duplicate-payees` before the host is launched.
+
 ## Behavior at duplicate names
 
 The reassignment planner normalizes names before selecting a destination. It
 fails when more than one matching candidate remains, preventing accidental
 selection of a duplicate. Existing and new destination creation are supported.
 
-`merge-duplicate-payees` performs the separate exact-normalized merge
-operation. It migrates all model relationships whose destination is `Payee`,
-validates that the source has no remaining supported reference, and deletes
-the source in the same Core Data save. Similar-name pairs stay pending in an
-approval CSV.
+`merge-duplicate-payees` has a separate exact-normalized Core Data plan. Its
+application remains disabled until it has operation-specific acceptance
+evidence. Similar-name pairs stay pending in an approval CSV.
 
 See [Live Payee Structure](LIVE-PAYEE-STRUCTURE.md) for the recorded live
 mappings and [Live Write Compatibility](LIVE-WRITE-COMPATIBILITY.md) for the

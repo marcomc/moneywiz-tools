@@ -18,16 +18,16 @@ APP_PY := $(APP_VENV)/bin/python
 PREFIX ?= $(HOME)/.local
 BINDIR ?= $(PREFIX)/bin
 MONEYWIZ_PATH := $(BINDIR)/moneywiz
-MONEYWIZ_CLI_PATH := $(BINDIR)/moneywiz-cli
+LEGACY_MONEYWIZ_CLI_PATH := $(BINDIR)/moneywiz-cli
 
-API_DIR := $(CURDIR)/moneywiz-api
 HOST_SOURCE := $(CURDIR)/scripts/moneywiz_tools_host.swift
 HOST_PLIST := $(CURDIR)/scripts/MoneyWizTools-Info.plist
-CLI_LAUNCHER := $(CURDIR)/scripts/moneywiz_cli_launcher.sh
+PROJECT_FILE := $(CURDIR)/pyproject.toml
+LOCK_FILE := $(CURDIR)/uv.lock
 
 .DEFAULT_GOAL := help
 
-.PHONY: help check-deps configure-install-dir build-bundle sync app-venv install-runtime install install-cli install-moneywiz install-cli-link uninstall reinstall run clean
+.PHONY: help check-deps configure-install-dir build-bundle sync app-venv install-runtime install install-moneywiz uninstall reinstall run clean
 
 help: ## Show available targets
 	@awk 'BEGIN { FS = ":.*##" } /^[a-zA-Z_-]+:.*##/ { printf "  %-24s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -37,9 +37,9 @@ check-deps: ## Verify bundle build dependencies
 		|| { echo "x uv not found; install uv before building MoneyWiz Tools"; exit 1; }
 	@command -v swiftc >/dev/null 2>&1 \
 		|| { echo "x swiftc not found; install Xcode Command Line Tools"; exit 1; }
-	@if [ ! -d "$(API_DIR)" ]; then \
-		echo "x moneywiz-api directory not found at $(API_DIR)"; \
-		echo "  Run: git clone https://github.com/marcomc/moneywiz-api.git moneywiz-api"; \
+	@if [ ! -f "$(PROJECT_FILE)" ] || [ ! -f "$(LOCK_FILE)" ]; then \
+		echo "x pyproject.toml or uv.lock is missing"; \
+		echo "  Run: uv lock"; \
 		exit 1; \
 	fi
 	@mkdir -p "$(BINDIR)"
@@ -58,18 +58,15 @@ configure-install-dir: ## Persist APP_BUNDLE_DIR in ~/.config/moneywiz-tools/ins
 	@echo "Saved bundle location in $(INSTALL_CONFIG)"
 
 build-bundle: check-deps ## Build a self-contained MoneyWiz Tools.app bundle
+	@rm -rf "$(APP_RUNTIME)"
 	@mkdir -p "$(APP_CONTENTS)/MacOS"
 	@mkdir -p "$(APP_RUNTIME)/python" "$(APP_RUNTIME)/bin"
-	@mkdir -p "$(APP_RUNTIME)/moneywiz-api/src" "$(APP_RUNTIME)/scripts"
+	@mkdir -p "$(APP_RUNTIME)/scripts"
 	@mkdir -p "$(APP_RUNTIME)/tests" "$(APP_RUNTIME)/doc"
 	@cp -f "$(HOST_PLIST)" "$(APP_CONTENTS)/Info.plist"
 	@swiftc "$(HOST_SOURCE)" -o "$(APP_HOST)"
 	@cp -f "$(CURDIR)/moneywiz.sh" "$(APP_RUNTIME)/moneywiz.sh"
-	@cp -f "$(CURDIR)/requirements.txt" "$(APP_RUNTIME)/requirements.txt"
 	@cp -f "$(CURDIR)/.moneywizrc.example" "$(APP_RUNTIME)/.moneywizrc.example"
-	@cp -Rf "$(API_DIR)/src/." "$(APP_RUNTIME)/moneywiz-api/src/"
-	@cp -f "$(API_DIR)/pyproject.toml" "$(APP_RUNTIME)/moneywiz-api/pyproject.toml"
-	@cp -f "$(API_DIR)/README.md" "$(APP_RUNTIME)/moneywiz-api/README.md"
 	@cp -Rf "$(CURDIR)/scripts/." "$(APP_RUNTIME)/scripts/"
 	@cp -Rf "$(CURDIR)/tests/." "$(APP_RUNTIME)/tests/"
 	@cp -Rf "$(CURDIR)/doc/." "$(APP_RUNTIME)/doc/"
@@ -80,9 +77,9 @@ build-bundle: check-deps ## Build a self-contained MoneyWiz Tools.app bundle
 			exit 1; \
 		fi; \
 		uv venv --clear --relocatable --seed --link-mode copy --python "$$base_python" "$(APP_VENV)"
-	@uv pip install --python "$(APP_PY)" --quiet -r "$(CURDIR)/requirements.txt"
-	@cp -f "$(CLI_LAUNCHER)" "$(APP_RUNTIME)/bin/moneywiz-cli"
-	@chmod +x "$(APP_RUNTIME)/moneywiz.sh" "$(APP_RUNTIME)/bin/moneywiz-cli"
+	@uv export --project "$(CURDIR)" --frozen --no-dev --format requirements-txt --output-file "$(APP_RUNTIME)/requirements.txt"
+	@uv pip install --python "$(APP_PY)" --quiet --requirement "$(APP_RUNTIME)/requirements.txt"
+	@chmod +x "$(APP_RUNTIME)/moneywiz.sh"
 	@echo "Built self-contained bundle at $(APP_BUNDLE)"
 
 sync: build-bundle ## Build or refresh the application bundle
@@ -93,28 +90,18 @@ install-runtime: build-bundle ## Backward-compatible alias for building the appl
 
 install: build-bundle ## Install moneywiz as a symlink into ~/.local/bin
 	@$(MAKE) --no-print-directory install-moneywiz
+	@rm -f "$(LEGACY_MONEYWIZ_CLI_PATH)"
 	@echo ""
 	@echo "ok moneywiz installed successfully"
 	@echo "  Run: moneywiz --help"
-
-install-cli: build-bundle ## Install moneywiz-cli as a symlink into ~/.local/bin
-	@$(MAKE) --no-print-directory install-cli-link
-	@echo ""
-	@echo "ok moneywiz-cli installed successfully"
-	@echo "  Run: moneywiz-cli --help"
 
 install-moneywiz: ## Link the moneywiz command to the bundle runtime
 	@mkdir -p "$(BINDIR)"
 	@ln -sfn "$(APP_RUNTIME)/moneywiz.sh" "$(MONEYWIZ_PATH)"
 	@echo "ok linked moneywiz -> $(MONEYWIZ_PATH)"
 
-install-cli-link: ## Link the moneywiz-cli command to the bundle runtime
-	@mkdir -p "$(BINDIR)"
-	@ln -sfn "$(APP_RUNTIME)/bin/moneywiz-cli" "$(MONEYWIZ_CLI_PATH)"
-	@echo "ok linked moneywiz-cli -> $(MONEYWIZ_CLI_PATH)"
-
 uninstall: ## Remove the application bundle and command symlinks
-	@rm -f "$(MONEYWIZ_PATH)" "$(MONEYWIZ_CLI_PATH)"
+	@rm -f "$(MONEYWIZ_PATH)" "$(LEGACY_MONEYWIZ_CLI_PATH)"
 	@rm -rf "$(APP_BUNDLE)"
 	@echo "ok removed $(APP_BUNDLE) and command symlinks"
 

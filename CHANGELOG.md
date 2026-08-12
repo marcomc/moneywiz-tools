@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Consolidated the end-user interface on the `moneywiz` command and retired
+  product support for `moneywiz-cli` and generic raw-SQL mutation commands.
+- Replaced the nested runtime API checkout with a pinned Git dependency and
+  locked build graph.
+- Added a versioned `profile x capability` register: live payee reassignment
+  is enabled only for verified database profiles, while duplicate-payee merge
+  application is explicitly blocked pending separate acceptance evidence.
+
 ### Fixed
 
 - Added schema capability profiles and investment-column aliases so read-only

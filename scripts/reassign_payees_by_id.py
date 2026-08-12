@@ -15,6 +15,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Sequence
 
+from compatibility import CompatibilityError, require_write_capability
+
 
 DEFAULT_MONEYWIZ_APP = Path("/Applications/Setapp/MoneyWiz 2026.app")
 EXPECTED_BUNDLE_IDENTIFIER = "com.moneywiz.personalfinance-setapp"
@@ -375,18 +377,30 @@ def _resolve_model() -> Path:
     return model
 
 
-def apply_coredata_payload(db_path: Path, payload: dict[str, Any]) -> None:
+def apply_coredata_payload(
+    db_path: Path, payload: dict[str, Any], *, capability: str
+) -> None:
     if _moneywiz_is_running():
         raise ReassignmentError(
             "Quit MoneyWiz 2026 before --apply. The compatible writer needs exclusive "
             "access so MoneyWiz can consume the saved history when it is reopened."
         )
 
+    try:
+        assessment = require_write_capability(db_path, capability)
+    except CompatibilityError as exc:
+        raise ReassignmentError(str(exc)) from exc
+
     writer = _resolve_writer()
     model = _resolve_model()
+    writer_payload = dict(payload)
+    writer_payload["contract_version"] = 1
+    writer_payload["profile_id"] = assessment.profile_id
     with tempfile.TemporaryDirectory(prefix="moneywiz-coredata-") as temp_dir:
         plan_path = Path(temp_dir) / "plan.json"
-        plan_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        plan_path.write_text(
+            json.dumps(writer_payload, ensure_ascii=False), encoding="utf-8"
+        )
         completed = subprocess.run(
             [
                 str(writer),
@@ -419,6 +433,7 @@ def apply_plan(db_path: Path, plan: ReassignmentPlan) -> None:
             "schema_version": 1,
             "operations": [operation.writer_payload() for operation in plan.operations],
         },
+        capability="write.reassign-payees-by-id",
     )
 
 

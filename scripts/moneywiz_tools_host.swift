@@ -19,11 +19,15 @@ struct WriterArguments {
 }
 
 struct WriterPlan: Decodable {
+    let contractVersion: Int
+    let profileID: String
     let schemaVersion: Int
     let operations: [WriterOperation]
     let payeeMerges: [PayeeMerge]?
 
     enum CodingKeys: String, CodingKey {
+        case contractVersion = "contract_version"
+        case profileID = "profile_id"
         case schemaVersion = "schema_version"
         case operations
         case payeeMerges = "payee_merges"
@@ -314,6 +318,14 @@ func loadContainer(storeURL: URL, modelURL: URL) throws -> NSPersistentContainer
     guard let model = NSManagedObjectModel(contentsOf: modelURL) else {
         throw HostError.message("cannot load MoneyWiz managed-object model at \(modelURL.path)")
     }
+    let metadata = try NSPersistentStoreCoordinator.metadataForPersistentStore(
+        ofType: NSSQLiteStoreType,
+        at: storeURL,
+        options: nil
+    )
+    guard model.isConfiguration(withName: nil, compatibleWithStoreMetadata: metadata) else {
+        throw HostError.message("MoneyWiz managed-object model is incompatible with the database store")
+    }
     let container = NSPersistentContainer(name: "MoneyWizDataModel", managedObjectModel: model)
     let description = NSPersistentStoreDescription(url: storeURL)
     description.setOption(true as NSNumber, forKey: NSPersistentHistoryTrackingKey)
@@ -334,6 +346,9 @@ func loadContainer(storeURL: URL, modelURL: URL) throws -> NSPersistentContainer
 }
 
 func writePlan(_ plan: WriterPlan, container: NSPersistentContainer) throws -> WriterResult {
+    guard plan.contractVersion == 1, !plan.profileID.isEmpty else {
+        throw HostError.message("unsupported or incomplete Core Data writer contract")
+    }
     guard plan.schemaVersion == 1 || plan.schemaVersion == 2 else {
         throw HostError.message("unsupported writer plan version \(plan.schemaVersion)")
     }

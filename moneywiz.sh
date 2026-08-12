@@ -24,7 +24,6 @@ SCRIPT_DIR="$(cd -P "$(dirname "${SOURCE_PATH}")" && pwd)"
 DEFAULT_DB_PATH="${SCRIPT_DIR}/tests/test_db.sqlite"
 CONFIG_FILE_NAME=".moneywizrc"
 CONFIG_DB_PATH=""
-FORK_REPO_URL="https://github.com/marcomc/moneywiz-api.git"
 DEFAULT_REAL_DB_PATH="${HOME}/Library/Containers/com.moneywiz.personalfinance-setapp/Data/Documents/.AppData/ipadMoneyWiz.sqlite"
 BUNDLE_HOST="${SCRIPT_DIR}/../../MacOS/MoneyWizTools"
 BUNDLED_PY="${SCRIPT_DIR}/python/venv/bin/python"
@@ -109,15 +108,6 @@ generate_home_config() {
 }
 
 run_setup() {
-  local repo_dir="${SCRIPT_DIR}/moneywiz-api"
-  if [[ -x "${BUNDLE_HOST}" ]]; then
-    echo "MoneyWiz Tools is already self-contained at ${SCRIPT_DIR}."
-  elif [[ -d "${repo_dir}/.git" ]]; then
-    echo "moneywiz-api already present at ${repo_dir}"
-  else
-    echo "Cloning moneywiz-api fork from ${FORK_REPO_URL}"
-    git clone "${FORK_REPO_URL}" "${repo_dir}"
-  fi
   generate_home_config
   echo "Setup complete."
 }
@@ -147,20 +137,14 @@ else
   export UV_CACHE_DIR="${SCRIPT_DIR}/.uv-cache"
   mkdir -p "${UV_CACHE_DIR}"
   DEV_VENV="${SCRIPT_DIR}/.venv"
-  if [[ ! -d "${DEV_VENV}" ]]; then
-    uv venv --python 3.11 "${DEV_VENV}"
-  elif ! "${DEV_VENV}/bin/python" - <<'PY'
-import sys
-raise SystemExit(sys.version_info[:2] != (3, 11))
-PY
-  then
-    uv venv --clear --python 3.11 "${DEV_VENV}"
+  uv sync --project "${SCRIPT_DIR}" --frozen --no-dev
+  if [[ ! -x "${DEV_VENV}/bin/python" ]]; then
+    echo "Error: uv did not create the project environment at ${DEV_VENV}." >&2
+    exit 1
   fi
-  uv pip install -r "${SCRIPT_DIR}/requirements.txt" --python "${DEV_VENV}/bin/python"
   PY="${DEV_VENV}/bin/python"
 fi
 
-export PYTHONPATH="${SCRIPT_DIR}/moneywiz-api/src${PYTHONPATH:+:${PYTHONPATH}}"
 DB_PATH="${CONFIG_DB_PATH:-${DEFAULT_DB_PATH}}"
 
 run_python_script() {
@@ -205,26 +189,16 @@ Reads (support --format table|json; default: table):
   holdings --account ID
 
 Writes (dry-run by default; add --apply to commit):
-  insert --type TYPE --fields '{JSON cols}'
-  update --id ID --fields '{JSON cols}'
-  delete --id ID
-  safe-delete --id ID
-  rename --id ID --name NAME [--name-field COL]
-  assign-categories --tx ID --splits '[ [cat_id, amount], ... ]'
-  assign-tags --tx ID --tags '[ tag_id, ... ]'
-  link-refund --refund ID --withdraw ID
   reassign-payees-by-id [--from-payee-id ID] [--from-empty-payee]
                         [--empty-desc-target-payee-id ID]
                         [--apply] [--quiet] [--show-plan]
-                                      --apply uses the bundled Core Data host.
-                                      Quit MoneyWiz before applying, then reopen it.
+                                      --apply requires a verified Core Data capability.
   merge-duplicate-payees [--apply] [--quiet] [--show-plan]
                          [--fuzzy-map PATH] [--overwrite-fuzzy-map]
-                                      Merges exact-normalized groups through the
-                                      bundled Core Data host. Similar pairs are
-                                      exported for manual approval only.
+                                      Apply is blocked until its capability is verified.
 
 Introspection and misc:
+  compatibility [--capability NAME] [--format table|json]
   schema [--out-md PATH] [--out-json PATH]
   summary
   stats [--out DIR]
@@ -290,13 +264,12 @@ case "${SUBCMD}" in
   users|accounts|categories|payees|tags|transactions|holdings|record|stats|summary)
     run_python_script "${SCRIPT_DIR}/scripts/${SUBCMD}.py" "${BASE_DB_ARG[@]}" "$@"
     ;;
-  insert|update|delete|safe-delete|rename)
+  reassign-payees-by-id|merge-duplicate-payees)
     script_name="${SUBCMD//-/_}.py"
     run_python_script "${SCRIPT_DIR}/scripts/${script_name}" "${BASE_DB_ARG[@]}" "$@"
     ;;
-  assign-categories|assign-tags|link-refund|reassign-payees-by-id|merge-duplicate-payees)
-    script_name="${SUBCMD//-/_}.py"
-    run_python_script "${SCRIPT_DIR}/scripts/${script_name}" "${BASE_DB_ARG[@]}" "$@"
+  compatibility)
+    run_python_script "${SCRIPT_DIR}/scripts/compatibility.py" "${BASE_DB_ARG[@]}" "$@"
     ;;
   create-test-db)
     source_db="${GLOBAL_DB:-${CONFIG_DB_PATH:-${DEFAULT_REAL_DB_PATH}}}"

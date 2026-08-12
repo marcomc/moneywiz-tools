@@ -1,0 +1,13 @@
+[project]
+name = "moneywiz-tools"
+version = "0.2.0"
+description = "Core Data-backed command-line tools for MoneyWiz"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "click>=8",
+    "moneywiz-api @ git+https://github.com/marcomc/moneywiz-api.git@638b1f51c894a6b293a128203569cfa369866ddc",
+    "pandas>=2",
+]
+
+[tool.uv]
+package = false

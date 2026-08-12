@@ -10,8 +10,8 @@ The API detects capabilities from `PRAGMA table_info(ZSYNCOBJECT)`:
 
 | Profile | Shares column | Price column | Evidence |
 | --- | --- | --- | --- |
-| `suffixed-investment-columns` | `ZNUMBEROFSHARES1` | `ZPRICEPERSHARE1` | Existing test fixture |
-| `unsuffixed-investment-columns` | `ZNUMBEROFSHARES` | `ZPRICEPERSHARE` | MoneyWiz 2026 live store, model 48 |
+| `suffixed-investment-columns-fixture` | `ZNUMBEROFSHARES1` | `ZPRICEPERSHARE1` | Existing test fixture |
+| `moneywiz-2026-model-48` | `ZNUMBEROFSHARES` | `ZPRICEPERSHARE` | MoneyWiz 2026 live store, model 48 |
 
 The profile is a structural capability label. It is not a substitute for the
 MoneyWiz application version, managed-object model, or Core Data metadata
@@ -38,7 +38,9 @@ fingerprint.
   invariants and records the entity, ID, and parse error; it does not abort
   unrelated commands for the whole store.
 - Live writes remain stricter than reads and require a separately verified
-  Core Data model profile.
+  `profile x capability` entry in `scripts/compatibility_matrix.json`.
+- An unknown profile is diagnostic-only. A known profile is not enough to
+  authorize a write: the requested capability must be `verified`.
 - Keep fixtures for each supported profile and run the same read tests against
   every fixture.
 

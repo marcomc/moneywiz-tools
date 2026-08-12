@@ -13,12 +13,7 @@ override it per command with `--db PATH`.
 | `--setup` | `moneywiz --setup` | Create `~/.moneywizrc` when it does not exist. |
 | `--db PATH` | `moneywiz --db /absolute/path/store.sqlite payees` | Override `db_path` for one invocation. |
 
-`moneywiz-cli` is separate: it is the upstream read-only API shell and takes a
-database path positionally:
-
-~~~sh
-moneywiz-cli /absolute/path/to/MoneyWiz_iCloud.sqlite
-~~~
+`moneywiz` is the only supported end-user command.
 
 ## Read commands
 
@@ -40,17 +35,17 @@ otherwise.
 | `stats` | `moneywiz stats --out "$HOME/moneywiz-stats"` | Write statistics reports to a directory. |
 | `schema` | `moneywiz schema --out-md doc/DB-SCHEMA.md --out-json doc/schema.json` | Export schema documentation and JSON. |
 | `shell` | `moneywiz shell` | Start the configuration-aware interactive API shell. |
+| `compatibility` | `moneywiz compatibility --capability write.reassign-payees-by-id` | Show the detected profile and operation status. |
 
 Use `moneywiz transactions --list-fields` to discover selectable transaction
 fields. Use `--fields f1,f2` or `--all-fields` when a narrower or wider result
 is needed.
 
-## Test-copy write commands
+## Retired raw-SQL commands
 
-These generic SQL-oriented writers are for a disposable database or generated
-test copy. They dry-run by default; add `--apply` only after inspecting the
-result. They are not evidence that an equivalent direct SQL write is safe for
-the live iCloud store.
+The following historical examples document former development helpers. They
+are no longer exposed by the product command and must not be used as a live
+write contract.
 
 Create the test copy first:
 
@@ -75,8 +70,9 @@ Then target it explicitly:
 ## Live payee operations
 
 The following commands use the bundled Core Data host when `--apply` is
-present. Let MoneyWiz finish syncing, quit the app, inspect the plan, then run
-the apply command. Reopen MoneyWiz and confirm sync health afterwards.
+present and the detected profile marks that operation `verified`. Let
+MoneyWiz finish syncing, quit the app, inspect the plan, then run the apply
+command. Reopen MoneyWiz and confirm sync health afterwards.
 
 ### Reassign payees by transaction description
 
@@ -90,6 +86,12 @@ Apply the reviewed plan after quitting MoneyWiz:
 
 ~~~sh
 moneywiz reassign-payees-by-id --from-payee-id 9036 --apply
+~~~
+
+Confirm the gate before applying:
+
+~~~sh
+moneywiz compatibility --capability write.reassign-payees-by-id
 ~~~
 
 Other supported selectors:
@@ -121,14 +123,16 @@ perform a merge.
 2. Review the plan. The CSV may help identify future cleanup candidates, but
    changing it does not affect this command.
 
-3. Quit MoneyWiz after sync has settled, then apply exact groups only:
+3. The CLI application capability is currently blocked pending separate
+   acceptance evidence:
 
    ~~~sh
-   moneywiz merge-duplicate-payees --apply --show-plan
+   moneywiz compatibility --capability write.merge-duplicate-payees
    ~~~
 
-4. Reopen MoneyWiz, confirm iCloud Sync is `Up to Date`, and open a new
-   transaction form without saving it.
+4. For an approved exact group, merge it in MoneyWiz 2026 through
+   **Preferences > Payees > Edit**. Reopen the transaction form and confirm
+   iCloud Sync is `Up to Date`.
 
 Use `--quiet` on either live operation when only machine-readable output is
 needed.
@@ -191,9 +195,9 @@ CSV.
 
 | Database scope | Commands |
 | --- | --- |
-| Any configured store, read-only | `users`, `accounts`, `categories`, `payees`, `tags`, `transactions`, `holdings`, `record`, `summary`, `stats`, `schema`, `shell` |
-| Test copy only for writes | `insert`, `update`, `delete`, `safe-delete`, `rename`, `assign-categories`, `assign-tags`, `link-refund`, `create-test-db`, `sanitize-test-db` |
-| Live iCloud store through Core Data | `reassign-payees-by-id --apply`, `merge-duplicate-payees --apply` |
+| Any configured store, read-only | `users`, `accounts`, `categories`, `payees`, `tags`, `transactions`, `holdings`, `record`, `summary`, `stats`, `schema`, `shell`, `compatibility` |
+| Live iCloud store through Core Data | `reassign-payees-by-id --apply` when its profile capability is verified |
+| Planned but blocked | `merge-duplicate-payees --apply` until independent acceptance evidence is recorded |
 
 For the persistent-history and CloudKit contract, see
 [Core Data Writer](doc/CORE-DATA-WRITER.md),

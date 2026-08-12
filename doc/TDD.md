@@ -3,7 +3,7 @@
 ## Architecture
 
 ~~~text
-moneywiz or moneywiz-cli
+moneywiz
           |
           v
 ~/.local/bin symlink
@@ -11,37 +11,35 @@ moneywiz or moneywiz-cli
           v
 MoneyWiz Tools.app
   |- Python runtime and virtual environment
-  |- moneywiz-api source and dispatcher scripts
+  |- locked moneywiz-api dependency and dispatcher scripts
   `- MoneyWizTools Swift Core Data host
 ~~~
 
-`moneywiz` is the product dispatcher. `moneywiz-cli` is a separate upstream
-read-only API shell that receives an explicit database path.
+`moneywiz` is the sole product dispatcher.
 
 ## Build design
 
 Make owns the supported build and installation workflow:
 
-1. Validate `uv`, `swiftc`, and the local `moneywiz-api/` source.
+1. Validate `uv`, `swiftc`, `pyproject.toml`, and `uv.lock`.
 2. Build or refresh MoneyWiz Tools.app.
-3. Copy the runtime, scripts, and API source into the bundle.
-4. Create the requested command symlink in `~/.local/bin`.
+3. Install the locked dependency graph and scripts into the bundle.
+4. Create the `moneywiz` symlink in `~/.local/bin`.
 
-`make install` creates the `moneywiz` link. `make install-cli` creates the
-`moneywiz-cli` link. Both ensure the app bundle exists.
+`make install` creates the `moneywiz` link and ensures the app bundle exists.
 
 ## Data-access design
 
 | Path | Mechanism | Scope |
 | --- | --- | --- |
 | Reads | SQLite/API access | Live or copied store. |
-| Generic mutations | SQL-oriented helpers | Test copy only. |
 | Payee reassignment | Bundled Swift Core Data host | Verified live path. |
-| Exact duplicate consolidation | Bundled Swift Core Data host | Revalidate before first live batch. |
+| Exact duplicate consolidation | Bundled Swift Core Data host | Planned, capability blocked. |
 
 The live writer relies on Core Data to manage object identity, optimistic
-versions, persistent history, and the sync-visible save lifecycle. It is
-therefore intentionally narrower than the generic SQL helpers.
+versions, persistent history, and the sync-visible save lifecycle. A Python
+preflight must identify a known profile and a verified named capability before
+the host is launched.
 
 For exact duplicate groups, the host discovers each modeled relationship whose
 destination is `Payee`, migrates to-one and to-many references to the chosen

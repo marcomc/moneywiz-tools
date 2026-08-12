@@ -1,8 +1,7 @@
 # MoneyWiz Tools
 
 MoneyWiz Tools is a macOS command-line toolkit for inspecting a MoneyWiz
-SQLite store and performing one verified live payee-reassignment workflow
-through Core Data.
+store and performing verified, profile-gated live writes through Core Data.
 
 ## Table of Contents
 
@@ -10,8 +9,8 @@ through Core Data.
 - [Configure the database](#configure-the-database)
 - [Read data](#read-data)
 - [Write data](#write-data)
-- [Use the interactive API shell](#use-the-interactive-api-shell)
-- [Work on a test copy](#work-on-a-test-copy)
+- [Check compatibility](#check-compatibility)
+- [Use the interactive read shell](#use-the-interactive-read-shell)
 - [Documentation](#documentation)
 - [Development](#development)
 
@@ -26,20 +25,18 @@ Build-time prerequisites:
 
 - macOS with `swiftc` available through Xcode Command Line Tools.
 - `uv`.
-- This checkout, including the `moneywiz-api/` source directory.
+- This checkout, including `pyproject.toml` and `uv.lock`.
 
-Run `make` first to see the complete target list, then install the commands
-you need:
+Run `make` first to see the complete target list, then install the product:
 
 ~~~sh
 make
 make install
-make install-cli
 ~~~
 
 `make install` builds or refreshes the app bundle and installs `moneywiz`.
-`make install-cli` builds or refreshes the same bundle and installs
-`moneywiz-cli`. Both commands can be run independently.
+It also removes a legacy `moneywiz-cli` symlink if one is present.
+`moneywiz` is the only supported end-user command.
 
 The default bundle destination is `~/Applications/MoneyWiz Tools.app`. To use
 another parent directory, persist it before installing:
@@ -63,9 +60,8 @@ The shown location is the currently observed Setapp MoneyWiz 2026 store.
 Treat it as an example: confirm the actual store on the machine where the
 tool runs.
 
-Do not use `~` in `db_path`. The launcher does not expand it, so SQLite sees
-it as a literal directory name. A global command-line override always takes
-precedence:
+`db_path` may use `~`; the launcher expands it before opening the database.
+A global command-line override always takes precedence:
 
 ~~~sh
 moneywiz --db /absolute/path/to/MoneyWiz_iCloud.sqlite payees
@@ -92,15 +88,9 @@ MoneyWiz Tools.app.
 
 ## Write data
 
-There are two deliberately separate write scopes.
-
-| Scope | Supported use |
-| --- | --- |
-| Test copy or disposable database | Generic SQL-oriented insert, update, delete, category, tag, and refund helpers. |
-| Live MoneyWiz iCloud store | Payee reassignment and exact duplicate-payee consolidation through the bundled Core Data host. |
-
-The live Core Data operations first produce a plan, then write only when
-`--apply` is supplied:
+The product has no generic raw-SQL mutation command. Every live write uses the
+bundled Core Data host, requires `--apply`, and is admitted only when the
+detected schema profile lists that operation as `verified`:
 
 ~~~sh
 moneywiz reassign-payees-by-id --from-payee-id 1234 --show-plan
@@ -108,60 +98,47 @@ moneywiz reassign-payees-by-id --from-payee-id 1234 --show-plan
 moneywiz reassign-payees-by-id --from-payee-id 1234 --apply
 ~~~
 
-Exact normalized duplicates have a separate consolidation command. It chooses
-the readable canonical spelling deterministically, merges exact groups only,
-and exports near-name candidates for manual approval:
+Exact normalized duplicates can be planned and near-name candidates exported:
 
 ~~~sh
 moneywiz merge-duplicate-payees --show-plan \
   --fuzzy-map "$HOME/payee-fuzzy-review.csv"
-# After reviewing the plan and quitting MoneyWiz:
-moneywiz merge-duplicate-payees --apply --show-plan
 ~~~
 
-The fuzzy CSV is review-only: resolve each `pending` row through manual review,
-then apply any approved similar-name merge natively in MoneyWiz or through a
-separately reviewed Core Data plan. This command never reads the CSV to merge
-similar names. See [Functions Reference](FUNCTIONS.md) for the decision flow.
+The corresponding live merge capability is currently blocked pending separate
+Core Data acceptance evidence. Use MoneyWiz 2026's
+`Preferences > Payees > Edit` merge action for approved pairs. The fuzzy CSV
+is review-only; see [Functions Reference](FUNCTIONS.md) for the decision flow.
 
 The reassignment command can reuse an existing destination payee or create one
 from the transaction description. It refuses ambiguous normalized matches
 rather than choosing a duplicate silently.
 
-Do not treat a successful raw SQLite `--apply` operation as proof that it is
-safe for the live iCloud store. Direct live reassignment has a separate Core
-Data history and CloudKit contract documented in
+Direct live reassignment has a separate Core Data history and CloudKit contract
+documented in
 [Core Data Writer](doc/CORE-DATA-WRITER.md) and
 [Live Write Compatibility](doc/LIVE-WRITE-COMPATIBILITY.md).
 The exact-duplicate policy and the approval-only fuzzy map are documented in
 [Payee Consolidation](doc/PAYEE-CONSOLIDATION.md).
 
-## Use the interactive API shell
+## Check compatibility
 
-`moneywiz-cli` is the upstream read-only API shell. It takes an explicit
-database path and does not read `~/.moneywizrc`:
-
-~~~sh
-moneywiz-cli /absolute/path/to/MoneyWiz_iCloud.sqlite
-~~~
-
-It is not the command dispatcher, so `moneywiz-cli payees` is interpreted as
-a database path and fails. Use `moneywiz payees` for command output or
-`moneywiz shell` for the configuration-aware interactive path.
-
-## Work on a test copy
-
-Use the test-database commands when developing or inspecting generic write
-helpers:
+Inspect the detected schema profile and its operation capabilities before a
+write:
 
 ~~~sh
-moneywiz create-test-db
-moneywiz sanitize-test-db
+moneywiz compatibility
+moneywiz compatibility --capability write.reassign-payees-by-id
+moneywiz compatibility --format json
 ~~~
 
-Keep experiments that use raw SQL on a copied or generated store. Live
-compatibility is established per operation, not inherited from the test-copy
-helpers.
+An unknown profile is diagnostic-only. A listed operation may be `verified`,
+`supported`, or `blocked`; only `verified` permits a live write.
+
+## Use the interactive read shell
+
+`moneywiz shell` starts the configuration-aware interactive read path.
+`moneywiz-cli` is not a supported product entry point.
 
 ## Documentation
 
@@ -178,5 +155,6 @@ helpers.
 ## Development
 
 Use `make` as the entry point for supported build and installation targets.
-The source tree contains the dispatch scripts, the API source, and the Swift
-host that are assembled into the relocatable app bundle.
+The source tree contains the dispatch scripts, the compatibility register, and
+the Swift host. The locked API dependency graph is assembled into the
+relocatable app bundle.

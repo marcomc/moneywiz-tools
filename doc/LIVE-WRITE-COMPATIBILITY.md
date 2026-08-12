@@ -8,10 +8,10 @@ compatibility is defined per write path.
 | Operation | Current status | Required path |
 | --- | --- | --- |
 | Inspect the live store | Supported | Read-only SQLite access. |
-| Generic SQL mutation | Test-copy only | Do not infer iCloud compatibility from SQL success. |
+| Generic SQL mutation | Not a product capability | Do not infer iCloud compatibility from SQL success. |
 | Reassign a payee to an existing destination | Verified | Bundled Core Data writer. |
 | Reassign a payee and create its destination | Verified | Bundled Core Data writer. |
-| Merge exact-normalized duplicate payees | Implemented Core Data path | Revalidate the first live batch before treating it as verified. |
+| Merge exact-normalized duplicate payees | Blocked | Requires independent Core Data acceptance evidence. |
 | Merge similar-name payees | Not implemented | Requires an approved map and a separate reviewed contract. |
 
 No backup requirement is imposed by the command. The operator remains
@@ -35,16 +35,18 @@ Review the result. If the plan is correct:
 5. Confirm iCloud Sync reports **Up to Date**.
 
 The tool refuses ambiguous normalized payee names. Resolve or consolidate those
-duplicates through `merge-duplicate-payees` rather than forcing a target choice
-through raw SQL. Export similar pairs with `--fuzzy-map PATH`; they remain
-pending until a future explicitly approved workflow exists.
+duplicates through the MoneyWiz GUI while
+`write.merge-duplicate-payees` remains blocked. Export similar pairs with
+`--fuzzy-map PATH`; they remain pending until an explicitly approved workflow
+exists.
 
 ## Compatibility profile
 
 The verified writer was observed with MoneyWiz 2026.32.1, build 431, using
-managed-object model `MoneyWizDataModel 48`. The current live store places
-payees and transaction subclasses in Core Data storage with shared
-`ZSYNCOBJECT` identity and version fields.
+managed-object model `MoneyWizDataModel 48`. The runtime register calls this
+`moneywiz-2026-model-48`. The current live store places payees and
+transaction subclasses in Core Data storage with shared `ZSYNCOBJECT`
+identity and version fields.
 
 The relevant payee relationships are documented in
 [Live Payee Structure](LIVE-PAYEE-STRUCTURE.md). The writer itself is
@@ -60,10 +62,10 @@ The current host was tested against the live profile by:
 - Confirming the app consumed persistent history and iCloud export advanced.
 - Confirming the app reported a successful sync.
 
-This proves the listed operations for the observed profile. It does not prove
-that an arbitrary column-level SQL update, other app versions, or a
-similar-name merge has the same compatibility. Exact duplicate consolidation
-uses the same host and adds a model-driven inbound-relationship migration.
+This proves reassignment for the observed profile. It does not prove that an
+arbitrary column-level SQL update, other app versions, or a duplicate merge has
+the same compatibility. Exact duplicate consolidation needs its own acceptance
+evidence despite using the same host.
 
 ## Historical finding
 
@@ -89,3 +91,11 @@ these change:
 
 Keep the scope minimal, wait for sync completion, and restore any test
 transactions created solely for the test.
+
+## Runtime enforcement
+
+Run `moneywiz compatibility` to inspect the detected profile and
+`moneywiz compatibility --capability NAME` before applying a write. The
+Python preflight passes both the profile ID and writer-contract version to the
+Swift host. An unknown profile or any capability other than `verified` fails
+before opening the persistent store.

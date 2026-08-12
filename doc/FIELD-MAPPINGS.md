@@ -260,7 +260,12 @@ This is a first draft synthesized from the test DB and the current API models. A
 |49|User|
 |50|WithdrawRefundTransactionLink|
 
-## Per-type “Create” Recipes
+## Historical raw-SQL recipes (not product functionality)
+
+The examples below are retained only as historical mapping evidence. MoneyWiz
+Tools no longer exposes raw-SQL create or update commands. A live mutation must
+have an explicit, verified `profile x capability` entry and use the Core Data
+writer.
 
 The following recipes illustrate the minimal field sets to create objects via the SQL preview tool. All commands are dry-run unless `--apply` is provided; test on a DB copy.
 

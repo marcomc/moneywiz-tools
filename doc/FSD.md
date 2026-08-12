@@ -3,15 +3,14 @@
 ## Product purpose
 
 MoneyWiz Tools provides local command-line access to a MoneyWiz SQLite store.
-It separates routine inspection, test-copy data manipulation, and explicitly
-verified live write operations.
+It separates routine inspection from explicitly verified live write
+operations.
 
 ## User-facing entrypoints
 
 | Entrypoint | Intended use |
 | --- | --- |
 | `moneywiz` | Main installed dispatcher. |
-| `moneywiz-cli` | Read-only upstream API shell with an explicit database path. |
 | `moneywiz.sh` | Development-tree dispatcher. |
 
 ## Functional scope
@@ -21,25 +20,19 @@ verified live write operations.
 The main dispatcher lists and inspects users, accounts, categories, payees,
 tags, transactions, holdings, records, summaries, statistics, and schema.
 
-### Test-copy operations
-
-Generic insert, update, delete, rename, category, tag, and refund helpers
-support development and controlled experiments on a copied or generated
-database.
-
 ### Live payee operations
 
-`reassign-payees-by-id --apply` is the current supported live writer. It
-plans the change, refuses ambiguous normalized targets, and uses the bundled
-Core Data host to reuse or create a destination payee.
+`reassign-payees-by-id --apply` is the current verified live writer for a
+matching profile. It plans the change, refuses ambiguous normalized targets,
+and uses the bundled Core Data host to reuse or create a destination payee.
 
-`merge-duplicate-payees --apply` consolidates only exact-normalized groups
-through the same host. Similar-name pairs are exported for manual review and
-are not applied.
+`merge-duplicate-payees` plans exact-normalized groups. Its live application
+capability remains blocked until it has independent acceptance evidence.
+Similar-name pairs are exported for manual review and are not applied.
 
 ### Explicit exclusions
 
-- No claim that generic raw SQL writes are sync-compatible.
+- No generic raw-SQL product writer.
 - No similar-name duplicate merge yet.
 - No GUI yet.
 - No claim that test-store entity numbers describe every live model.
@@ -47,8 +40,6 @@ are not applied.
 ## Acceptance criteria
 
 - `make install` creates or refreshes the app bundle and installs `moneywiz`.
-- `make install-cli` creates or refreshes the app bundle and installs
-  `moneywiz-cli`.
 - Installed commands run without a development repository path.
 - Reassignment preview requires no live write.
 - A verified live reassignment completes through Core Data only after the app

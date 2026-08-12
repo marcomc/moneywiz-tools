@@ -1,0 +1,53 @@
+{
+  "format_version": 1,
+  "profiles": [
+    {
+      "id": "moneywiz-2026-model-48",
+      "fingerprint": {
+        "required_tables": ["ZSYNCOBJECT", "Z_PRIMARYKEY", "ZUSER"],
+        "required_columns": [
+          "ZGID",
+          "ZDESC2",
+          "ZPAYEE2",
+          "ZNAME5",
+          "ZUSER7",
+          "ZNUMBEROFSHARES",
+          "ZPRICEPERSHARE",
+          "ZPRICEPERSHARE1"
+        ],
+        "required_entity_names": [
+          "Payee",
+          "DepositTransaction",
+          "WithdrawTransaction",
+          "RefundTransaction",
+          "TransferDepositTransaction",
+          "TransferWithdrawTransaction"
+        ]
+      },
+      "evidence": {
+        "moneywiz_application": "MoneyWiz 2026.32.1 (build 431)",
+        "managed_object_model": "MoneyWizDataModel 48",
+        "observed_at": "2026-08-08"
+      },
+      "capabilities": {
+        "read.core": "supported",
+        "write.reassign-payees-by-id": "verified",
+        "write.merge-duplicate-payees": "blocked"
+      }
+    },
+    {
+      "id": "suffixed-investment-columns-fixture",
+      "fingerprint": {
+        "required_tables": ["ZSYNCOBJECT", "Z_PRIMARYKEY", "ZUSER"],
+        "required_columns": ["ZNUMBEROFSHARES1", "ZPRICEPERSHARE1"],
+        "required_entity_names": ["Payee"]
+      },
+      "evidence": {
+        "source": "sanitized regression fixture"
+      },
+      "capabilities": {
+        "read.core": "supported"
+      }
+    }
+  ]
+}

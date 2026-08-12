@@ -14,11 +14,10 @@ The source checkout, `uv`, and `swiftc` are build-time requirements only.
 ```mermaid
 flowchart TD
     accTitle: MoneyWiz Tools installation workflow
-    accDescr: Both installation targets validate build dependencies and refresh the app bundle. Each target then installs only its own command symlink.
-    A["make install or make install-cli"] --> B["Validate uv, swiftc, and moneywiz-api source"]
+    accDescr: Installation validates build dependencies and refreshes the app bundle before installing the product command symlink.
+    A["make install"] --> B["Validate uv, swiftc, pyproject.toml, and uv.lock"]
     B --> C["Build or refresh MoneyWiz Tools.app"]
     C --> D["make install: link ~/.local/bin/moneywiz"]
-    C --> E["make install-cli: link ~/.local/bin/moneywiz-cli"]
 ```
 
 ## Prerequisites
@@ -26,7 +25,7 @@ flowchart TD
 - macOS.
 - `swiftc`, normally supplied by Xcode Command Line Tools.
 - `uv`.
-- This repository with `moneywiz-api/` present.
+- This repository with `pyproject.toml` and `uv.lock`.
 
 Run `make` to print the available targets and their short descriptions.
 
@@ -34,12 +33,10 @@ Run `make` to print the available targets and their short descriptions.
 
 ```sh
 make install
-make install-cli
 ```
 
-`make install` installs the app bundle and the `moneywiz` command.
-`make install-cli` installs the same app bundle and the `moneywiz-cli`
-command. Run both commands when both entrypoints are wanted.
+`make install` installs the app bundle and the `moneywiz` command. It also
+removes a legacy `moneywiz-cli` symlink.
 
 The default app location is:
 
@@ -66,7 +63,6 @@ MoneyWiz Tools.app/
     Resources/runtime/
       python/
       .venv/
-      moneywiz-api/
       scripts/
 ```
 
@@ -79,11 +75,9 @@ Re-run the relevant install target after changing the source:
 
 ```sh
 make install
-make install-cli
 ```
 
-`make install` refreshes only the `moneywiz` symlink. Run
-`make install-cli` as well when the API-shell symlink needs refreshing.
+`make install` refreshes the `moneywiz` symlink.
 
 Removal is destructive to the installed bundle and both symlinks:
 
@@ -101,5 +95,5 @@ routine source-tree cleanup command.
 | Command not found | Add `~/.local/bin` to `PATH`, then run the matching install target. |
 | Build cannot find `swiftc` | Install Xcode Command Line Tools. |
 | Build cannot find `uv` | Install `uv` in the build environment. |
-| Build cannot find `moneywiz-api/` | Build from a complete checkout, not from a copied script alone. |
+| Build cannot find `uv.lock` | Regenerate the lockfile from `pyproject.toml` during development, then commit it with the dependency change. |
 | Command resolves into a deleted checkout | Re-run the relevant install target; the symlink should target the app bundle. |
