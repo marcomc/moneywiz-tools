@@ -27,7 +27,7 @@ LOCK_FILE := $(CURDIR)/uv.lock
 
 .DEFAULT_GOAL := help
 
-.PHONY: help check-deps configure-install-dir build-bundle sync app-venv install-runtime install install-moneywiz uninstall reinstall run clean
+.PHONY: help check-deps configure-install-dir build-bundle _build-bundle _validate-bundle sync app-venv install-runtime install install-moneywiz uninstall reinstall run clean
 
 help: ## Show available targets
 	@awk 'BEGIN { FS = ":.*##" } /^[a-zA-Z_-]+:.*##/ { printf "  %-24s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -57,8 +57,7 @@ configure-install-dir: ## Persist APP_BUNDLE_DIR in ~/.config/moneywiz-tools/ins
 	@printf 'APP_BUNDLE_DIR := %s\n' "$(APP_BUNDLE_DIR)" > "$(INSTALL_CONFIG)"
 	@echo "Saved bundle location in $(INSTALL_CONFIG)"
 
-build-bundle: check-deps ## Build a self-contained MoneyWiz Tools.app bundle
-	@rm -rf "$(APP_RUNTIME)"
+_build-bundle:
 	@mkdir -p "$(APP_CONTENTS)/MacOS"
 	@mkdir -p "$(APP_RUNTIME)/python" "$(APP_RUNTIME)/bin"
 	@mkdir -p "$(APP_RUNTIME)/scripts"
@@ -76,10 +75,82 @@ build-bundle: check-deps ## Build a self-contained MoneyWiz Tools.app bundle
 			echo "x bundled Python 3 interpreter was not installed"; \
 			exit 1; \
 		fi; \
-		uv venv --clear --relocatable --seed --link-mode copy --python "$$base_python" "$(APP_VENV)"
+		uv venv --clear --relocatable --seed --link-mode copy --python "$$base_python" "$(APP_VENV)"; \
+		managed_python="$${base_python#$(APP_RUNTIME)/python/}"; \
+		if [ "$$managed_python" = "$$base_python" ]; then \
+			echo "x bundled Python path is outside the staged runtime"; \
+			exit 1; \
+		fi; \
+		ln -sfn "../../$$managed_python" "$(APP_VENV)/bin/python"
 	@uv export --project "$(CURDIR)" --frozen --no-dev --format requirements-txt --output-file "$(APP_RUNTIME)/requirements.txt"
 	@uv pip install --python "$(APP_PY)" --quiet --requirement "$(APP_RUNTIME)/requirements.txt"
 	@chmod +x "$(APP_RUNTIME)/moneywiz.sh"
+
+_validate-bundle:
+	@test -f "$(APP_CONTENTS)/Info.plist" \
+		|| { echo "x bundle is missing Contents/Info.plist"; exit 1; }
+	@test -x "$(APP_HOST)" \
+		|| { echo "x bundle is missing the executable Core Data host"; exit 1; }
+	@test -x "$(APP_RUNTIME)/moneywiz.sh" \
+		|| { echo "x bundle is missing the executable moneywiz launcher"; exit 1; }
+	@test -x "$(APP_PY)" \
+		|| { echo "x bundle is missing the bundled Python interpreter"; exit 1; }
+
+build-bundle: ## Build a self-contained MoneyWiz Tools.app bundle
+	@set -eu; \
+		mkdir -p "$(APP_BUNDLE_DIR)"; \
+		backup_bundle="$(APP_BUNDLE_DIR)/.$(APP_BUNDLE_NAME).previous"; \
+		if [ -e "$$backup_bundle" ] || [ -L "$$backup_bundle" ]; then \
+			if [ -e "$(APP_BUNDLE)" ] || [ -L "$(APP_BUNDLE)" ]; then \
+				if ! $(MAKE) --no-print-directory _validate-bundle; then \
+					echo "x both active and recovery bundles exist; leaving both for manual inspection" >&2; \
+					exit 1; \
+				fi; \
+				rm -rf "$$backup_bundle"; \
+			else \
+				mv "$$backup_bundle" "$(APP_BUNDLE)"; \
+				echo "ok restored interrupted bundle promotion"; \
+			fi; \
+		fi; \
+		$(MAKE) --no-print-directory check-deps; \
+		staging_bundle="$$(mktemp -d "$(APP_BUNDLE_DIR)/.$(APP_BUNDLE_NAME).staging.XXXXXX")"; \
+		previous_moved=0; \
+		cleanup() { \
+			status="$$?"; \
+			trap - EXIT HUP INT TERM; \
+			if [ "$$previous_moved" -eq 1 ] && { [ -e "$$backup_bundle" ] || [ -L "$$backup_bundle" ]; }; then \
+				if [ ! -e "$(APP_BUNDLE)" ] && [ ! -L "$(APP_BUNDLE)" ]; then \
+					mv "$$backup_bundle" "$(APP_BUNDLE)" \
+						|| { echo "x failed to restore the previous bundle from $$backup_bundle" >&2; status=1; }; \
+				elif [ ! -e "$$staging_bundle" ] && [ ! -L "$$staging_bundle" ]; then \
+					rm -rf "$$backup_bundle"; \
+				else \
+					echo "x bundle recovery requires manual inspection: $$backup_bundle" >&2; \
+					status=1; \
+				fi; \
+			fi; \
+			if [ -e "$$staging_bundle" ] || [ -L "$$staging_bundle" ]; then \
+				rm -rf "$$staging_bundle"; \
+			fi; \
+			exit "$$status"; \
+		}; \
+		trap cleanup EXIT; \
+		trap 'exit 1' HUP INT TERM; \
+		$(MAKE) --no-print-directory _build-bundle APP_BUNDLE="$$staging_bundle"; \
+		$(MAKE) --no-print-directory _validate-bundle APP_BUNDLE="$$staging_bundle"; \
+		if [ -e "$(APP_BUNDLE)" ] || [ -L "$(APP_BUNDLE)" ]; then \
+			mv "$(APP_BUNDLE)" "$$backup_bundle"; \
+			previous_moved=1; \
+		fi; \
+		if ! mv "$$staging_bundle" "$(APP_BUNDLE)"; then \
+			echo "x failed to publish the staged bundle" >&2; \
+			exit 1; \
+		fi; \
+		if [ "$$previous_moved" -eq 1 ]; then \
+			rm -rf "$$backup_bundle"; \
+			previous_moved=0; \
+		fi; \
+		trap - EXIT HUP INT TERM
 	@echo "Built self-contained bundle at $(APP_BUNDLE)"
 
 sync: build-bundle ## Build or refresh the application bundle
@@ -96,8 +167,19 @@ install: build-bundle ## Install moneywiz as a symlink into ~/.local/bin
 	@echo "  Run: moneywiz --help"
 
 install-moneywiz: ## Link the moneywiz command to the bundle runtime
-	@mkdir -p "$(BINDIR)"
-	@ln -sfn "$(APP_RUNTIME)/moneywiz.sh" "$(MONEYWIZ_PATH)"
+	@$(MAKE) --no-print-directory _validate-bundle
+	@set -eu; \
+		mkdir -p "$(BINDIR)"; \
+		if [ -d "$(MONEYWIZ_PATH)" ] && [ ! -L "$(MONEYWIZ_PATH)" ]; then \
+			echo "x cannot replace directory at $(MONEYWIZ_PATH)" >&2; \
+			exit 1; \
+		fi; \
+		temporary_link="$$(mktemp "$(BINDIR)/.moneywiz.link.XXXXXX")"; \
+		trap 'rm -f "$$temporary_link"' EXIT HUP INT TERM; \
+		rm -f "$$temporary_link"; \
+		ln -s "$(APP_RUNTIME)/moneywiz.sh" "$$temporary_link"; \
+		mv -f "$$temporary_link" "$(MONEYWIZ_PATH)"; \
+		trap - EXIT HUP INT TERM
 	@echo "ok linked moneywiz -> $(MONEYWIZ_PATH)"
 
 uninstall: ## Remove the application bundle and command symlinks
@@ -106,7 +188,6 @@ uninstall: ## Remove the application bundle and command symlinks
 	@echo "ok removed $(APP_BUNDLE) and command symlinks"
 
 reinstall: ## Rebuild and reinstall the application bundle
-	@$(MAKE) --no-print-directory uninstall
 	@$(MAKE) --no-print-directory install
 
 run: install ## Show moneywiz help from the installed bundle

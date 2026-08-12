@@ -14,10 +14,14 @@ The source checkout, `uv`, and `swiftc` are build-time requirements only.
 ```mermaid
 flowchart TD
     accTitle: MoneyWiz Tools installation workflow
-    accDescr: Installation validates build dependencies and refreshes the app bundle before installing the product command symlink.
+    accDescr: Installation builds and validates a staging bundle, atomically promotes it with rollback, and then publishes the product command symlink.
     A["make install"] --> B["Validate uv, swiftc, pyproject.toml, and uv.lock"]
-    B --> C["Build or refresh MoneyWiz Tools.app"]
-    C --> D["make install: link ~/.local/bin/moneywiz"]
+    B --> C["Build a unique sibling staging bundle"]
+    C --> D["Validate the complete staged runtime"]
+    D --> E["Move active bundle to backup"]
+    E --> F["Promote staging bundle"]
+    F --> G["Remove backup"]
+    G --> H["Validate active bundle and publish ~/.local/bin/moneywiz"]
 ```
 
 ## Prerequisites
@@ -36,7 +40,13 @@ make install
 ```
 
 `make install` installs the app bundle and the `moneywiz` command. It also
-removes a legacy `moneywiz-cli` symlink.
+removes a legacy `moneywiz-cli` symlink. All build work happens in a unique
+sibling staging directory on the bundle filesystem. A failed build leaves the
+active bundle and command symlink unchanged. If promotion fails after the
+active bundle is moved aside, the installer restores that backup. If the
+process is forcibly terminated in that interval, the next build restores the
+backup before checking build dependencies. The bundled virtual environment
+uses a relative interpreter link so it remains valid after staging is promoted.
 
 The default app location is:
 
@@ -62,7 +72,8 @@ MoneyWiz Tools.app/
     MacOS/MoneyWizTools
     Resources/runtime/
       python/
-      .venv/
+        managed/
+        venv/
       scripts/
 ```
 
@@ -77,7 +88,10 @@ Re-run the relevant install target after changing the source:
 make install
 ```
 
-`make install` refreshes the `moneywiz` symlink.
+`make install` and `make reinstall` use the same rollback-safe upgrade path;
+neither removes the active bundle before the replacement is complete. The
+installer validates the promoted bundle again before atomically refreshing the
+`moneywiz` symlink.
 
 Removal is destructive to the installed bundle and both symlinks:
 

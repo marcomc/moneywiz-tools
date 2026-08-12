@@ -42,11 +42,16 @@ exists.
 
 ## Compatibility profile
 
-The verified writer was observed with MoneyWiz 2026.32.1, build 431, using
+The verified writer was observed with MoneyWiz 2026.32.1, builds 431 and 433, using
 managed-object model `MoneyWizDataModel 48`. The runtime register calls this
 `moneywiz-2026-model-48`. The current live store places payees and
 transaction subclasses in Core Data storage with shared `ZSYNCOBJECT`
 identity and version fields.
+
+The exact `NSStoreModelVersionChecksumKey` for this verified model is
+`+6BY8eaTke2jfAd5Bzt5D49JRMZld5o8ZoUW+4G2ElQ=`. Structural table, column,
+and entity requirements remain useful diagnostics, but they do not authorize
+a write without that exact checksum.
 
 The relevant payee relationships are documented in
 [Live Payee Structure](LIVE-PAYEE-STRUCTURE.md). The writer itself is
@@ -96,6 +101,10 @@ transactions created solely for the test.
 
 Run `moneywiz compatibility` to inspect the detected profile and
 `moneywiz compatibility --capability NAME` before applying a write. The
-Python preflight passes both the profile ID and writer-contract version to the
-Swift host. An unknown profile or any capability other than `verified` fails
-before opening the persistent store.
+Python parses the store's Core Data metadata, selects a profile by both its
+structure and exact model checksum, and passes the profile ID, checksum, and
+writer-contract version to the Swift host. Before opening the persistent
+store, the host independently requires the exact supported profile ID and
+compares the expected checksum with both the store metadata and the selected
+MoneyWiz managed-object model. An unknown profile or any capability other than
+`verified` fails closed.

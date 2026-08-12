@@ -56,8 +56,9 @@ not a wrapper around an external development checkout.
 
 | Property | Observed value |
 | --- | --- |
-| Application | MoneyWiz 2026.32.1, build 431 |
+| Application | MoneyWiz 2026.32.1, builds 431 and 433 |
 | Managed-object model | MoneyWizDataModel 48 |
+| Exact model checksum | `+6BY8eaTke2jfAd5Bzt5D49JRMZld5o8ZoUW+4G2ElQ=` |
 | Payee entity in live profile | `Z_ENT = 29` |
 | Root transaction entities | `Z_ENT = 37` through `48` |
 | Persistent-history writer | Core Data through the bundled host |
@@ -69,6 +70,10 @@ The runtime register in `scripts/compatibility_matrix.json` identifies this
 profile as `moneywiz-2026-model-48`. It allows
 `write.reassign-payees-by-id` and blocks
 `write.merge-duplicate-payees` before the host is launched.
+
+The Python preflight and Swift host both enforce the exact model checksum. The
+host also validates the exact profile ID and checks the selected `.mom` against
+the store metadata before it opens the persistent store.
 
 ## Behavior at duplicate names
 

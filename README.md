@@ -132,8 +132,12 @@ moneywiz compatibility --capability write.reassign-payees-by-id
 moneywiz compatibility --format json
 ~~~
 
-An unknown profile is diagnostic-only. A listed operation may be `verified`,
-`supported`, or `blocked`; only `verified` permits a live write.
+An unknown profile is diagnostic-only. Profile selection includes the exact
+Core Data model checksum, so a future model that retains the same tables and
+columns is not treated as the verified model. A listed operation may be
+`verified`, `supported`, or `blocked`; only `verified` permits a live write.
+Table and JSON output use the same nonzero status for unknown profiles and
+blocked or unknown requested capabilities.
 
 ## Use the interactive read shell
 

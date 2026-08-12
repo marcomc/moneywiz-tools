@@ -4,6 +4,10 @@ import Foundation
 
 private let expectedBundleIdentifier = "com.marcomc.moneywiz-tools"
 private let transactionAuthor = "MWLocalAuthor"
+private let modelChecksumMetadataKey = "NSStoreModelVersionChecksumKey"
+private let supportedProfileChecksums = [
+    "moneywiz-2026-model-48": "+6BY8eaTke2jfAd5Bzt5D49JRMZld5o8ZoUW+4G2ElQ=",
+]
 
 final class PassthroughTransformer: ValueTransformer {
     override class func allowsReverseTransformation() -> Bool { true }
@@ -21,6 +25,7 @@ struct WriterArguments {
 struct WriterPlan: Decodable {
     let contractVersion: Int
     let profileID: String
+    let modelChecksum: String
     let schemaVersion: Int
     let operations: [WriterOperation]
     let payeeMerges: [PayeeMerge]?
@@ -28,6 +33,7 @@ struct WriterPlan: Decodable {
     enum CodingKeys: String, CodingKey {
         case contractVersion = "contract_version"
         case profileID = "profile_id"
+        case modelChecksum = "model_checksum"
         case schemaVersion = "schema_version"
         case operations
         case payeeMerges = "payee_merges"
@@ -163,6 +169,28 @@ func validatePayeeMerge(_ merge: PayeeMerge) throws {
           !merge.targetPayeeGID.isEmpty,
           merge.sourcePayeeGID != merge.targetPayeeGID else {
         throw HostError.message("payee merge must define two distinct non-empty GIDs")
+    }
+}
+
+func expectedModelChecksum(for plan: WriterPlan) throws -> String {
+    guard plan.contractVersion == 1,
+          let expectedChecksum = supportedProfileChecksums[plan.profileID],
+          plan.modelChecksum == expectedChecksum else {
+        throw HostError.message("unsupported or incomplete Core Data writer contract")
+    }
+    return expectedChecksum
+}
+
+func validateExactModelChecksum(
+    expected: String,
+    store: String?,
+    selectedModel: String
+) throws {
+    guard store == expected else {
+        throw HostError.message("database store does not match the verified Core Data model checksum")
+    }
+    guard selectedModel == expected else {
+        throw HostError.message("selected managed-object model does not match the verified checksum")
     }
 }
 
@@ -314,7 +342,12 @@ func mergePayee(
     return migrated
 }
 
-func loadContainer(storeURL: URL, modelURL: URL) throws -> NSPersistentContainer {
+func loadContainer(
+    storeURL: URL,
+    modelURL: URL,
+    plan: WriterPlan
+) throws -> NSPersistentContainer {
+    let expectedChecksum = try expectedModelChecksum(for: plan)
     guard let model = NSManagedObjectModel(contentsOf: modelURL) else {
         throw HostError.message("cannot load MoneyWiz managed-object model at \(modelURL.path)")
     }
@@ -322,6 +355,11 @@ func loadContainer(storeURL: URL, modelURL: URL) throws -> NSPersistentContainer
         ofType: NSSQLiteStoreType,
         at: storeURL,
         options: nil
+    )
+    try validateExactModelChecksum(
+        expected: expectedChecksum,
+        store: metadata[modelChecksumMetadataKey] as? String,
+        selectedModel: model.versionChecksum
     )
     guard model.isConfiguration(withName: nil, compatibleWithStoreMetadata: metadata) else {
         throw HostError.message("MoneyWiz managed-object model is incompatible with the database store")
@@ -346,9 +384,7 @@ func loadContainer(storeURL: URL, modelURL: URL) throws -> NSPersistentContainer
 }
 
 func writePlan(_ plan: WriterPlan, container: NSPersistentContainer) throws -> WriterResult {
-    guard plan.contractVersion == 1, !plan.profileID.isEmpty else {
-        throw HostError.message("unsupported or incomplete Core Data writer contract")
-    }
+    _ = try expectedModelChecksum(for: plan)
     guard plan.schemaVersion == 1 || plan.schemaVersion == 2 else {
         throw HostError.message("unsupported writer plan version \(plan.schemaVersion)")
     }
@@ -462,8 +498,13 @@ func run() throws {
     }
     let data = try Data(contentsOf: arguments.plan)
     let plan = try JSONDecoder().decode(WriterPlan.self, from: data)
+    _ = try expectedModelChecksum(for: plan)
     configureTransformers()
-    let container = try loadContainer(storeURL: arguments.store, modelURL: arguments.model)
+    let container = try loadContainer(
+        storeURL: arguments.store,
+        modelURL: arguments.model,
+        plan: plan
+    )
     let result = try writePlan(plan, container: container)
     let encoded = try JSONEncoder().encode(result)
     FileHandle.standardOutput.write(encoded)

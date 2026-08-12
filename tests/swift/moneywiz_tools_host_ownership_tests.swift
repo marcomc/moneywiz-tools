@@ -145,11 +145,77 @@ func operation(transactionGID: String, payeeGID: String) -> WriterOperation {
 func plan(_ operations: [WriterOperation]) -> WriterPlan {
     WriterPlan(
         contractVersion: 1,
-        profileID: "ownership-test",
+        profileID: "moneywiz-2026-model-48",
+        modelChecksum: "+6BY8eaTke2jfAd5Bzt5D49JRMZld5o8ZoUW+4G2ElQ=",
         schemaVersion: 1,
         operations: operations,
         payeeMerges: nil
     )
+}
+
+func testWriterContractRequiresExactProfileAndChecksum() throws {
+    let valid = plan([])
+    let validatedChecksum = try expectedModelChecksum(for: valid)
+    try require(
+        validatedChecksum == valid.modelChecksum,
+        "valid writer profile checksum was rejected"
+    )
+
+    let wrongProfile = WriterPlan(
+        contractVersion: 1,
+        profileID: "future-model",
+        modelChecksum: valid.modelChecksum,
+        schemaVersion: 1,
+        operations: [],
+        payeeMerges: nil
+    )
+    do {
+        _ = try expectedModelChecksum(for: wrongProfile)
+        throw OwnershipTestError.failure("unknown writer profile unexpectedly succeeded")
+    } catch is HostError {
+        // Expected.
+    }
+
+    let wrongChecksum = WriterPlan(
+        contractVersion: 1,
+        profileID: valid.profileID,
+        modelChecksum: "KxT0qIvWI+7n1S58SHjQOJ8x50TIqI0l+sXzUGx8y18=",
+        schemaVersion: 1,
+        operations: [],
+        payeeMerges: nil
+    )
+    do {
+        _ = try expectedModelChecksum(for: wrongChecksum)
+        throw OwnershipTestError.failure("wrong writer checksum unexpectedly succeeded")
+    } catch is HostError {
+        // Expected.
+    }
+}
+
+func testStoreAndSelectedModelChecksumsMustBothMatch() throws {
+    let checksum = "+6BY8eaTke2jfAd5Bzt5D49JRMZld5o8ZoUW+4G2ElQ="
+    try validateExactModelChecksum(
+        expected: checksum,
+        store: checksum,
+        selectedModel: checksum
+    )
+
+    for (store, selectedModel) in [
+        (nil, checksum),
+        ("wrong-store-checksum", checksum),
+        (checksum, "wrong-model-checksum"),
+    ] {
+        do {
+            try validateExactModelChecksum(
+                expected: checksum,
+                store: store,
+                selectedModel: selectedModel
+            )
+            throw OwnershipTestError.failure("checksum mismatch unexpectedly succeeded")
+        } catch is HostError {
+            // Expected.
+        }
+    }
 }
 
 func payeeGID(
@@ -256,6 +322,8 @@ func testMixedUserPlanRollsBack() throws {
 @main
 struct MoneyWizToolsHostOwnershipTests {
     static func main() throws {
+        try testWriterContractRequiresExactProfileAndChecksum()
+        try testStoreAndSelectedModelChecksumsMustBothMatch()
         try testSameUserAssignment()
         try testCrossUserAssignmentRejected()
         try testMixedUserPlanRollsBack()

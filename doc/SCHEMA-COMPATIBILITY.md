@@ -13,9 +13,9 @@ The API detects capabilities from `PRAGMA table_info(ZSYNCOBJECT)`:
 | `suffixed-investment-columns-fixture` | `ZNUMBEROFSHARES1` | `ZPRICEPERSHARE1` | Existing test fixture |
 | `moneywiz-2026-model-48` | `ZNUMBEROFSHARES` | `ZPRICEPERSHARE` | MoneyWiz 2026 live store, model 48 |
 
-The profile is a structural capability label. It is not a substitute for the
-MoneyWiz application version, managed-object model, or Core Data metadata
-fingerprint.
+The structural requirements are diagnostic capability labels. Runtime profile
+selection also requires the exact Core Data model checksum; a structural
+superset from a future model must not inherit a verified write capability.
 
 ## Compatibility policy
 
@@ -33,7 +33,7 @@ fingerprint.
 - Optional relationship tables, such as tag and refund joins, produce an empty
   relationship map when absent from a store profile.
 - Unknown profiles must be reported before a feature relies on an unsupported
-  field.
+  field. Table and JSON diagnostics must return the same failure status.
 - Best-effort read loading skips an individual record that violates model
   invariants and records the entity, ID, and parse error; it does not abort
   unrelated commands for the whole store.
@@ -50,7 +50,7 @@ Record these values for each compatibility profile:
 
 1. MoneyWiz app version and build.
 2. Selected `.mom` model version.
-3. `Z_METADATA.Z_PLIST` fingerprint.
+3. `NSStoreModelVersionChecksumKey` from `Z_METADATA.Z_PLIST`.
 4. `Z_PRIMARYKEY` entity mapping.
 5. Relevant table columns and relationship names.
 

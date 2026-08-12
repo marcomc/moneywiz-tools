@@ -2,8 +2,9 @@
 
 ## Scope and compatibility boundary
 
-This is the observed live-store profile for MoneyWiz 2026.32.1, build 431,
-using `MoneyWizDataModel 48`, captured on 2026-08-08.
+This live-store profile uses `MoneyWizDataModel 48`. It was captured with
+MoneyWiz 2026.32.1 build 431 on 2026-08-08 and revalidated with build 433 on
+2026-08-13.
 
 It supplements the generated [`DB-SCHEMA.md`](DB-SCHEMA.md) test fixture. Do
 not transfer entity numbers or physical column mappings from that fixture to a
@@ -12,9 +13,9 @@ live iCloud store: the observed test fixture maps `Payee` to `Z_ENT=28` and
 `37` respectively.
 
 The store's `Z_METADATA.Z_VERSION` is Core Data metadata, not the MoneyWiz
-model version. Record the app version, build, selected `.mom` version, and
-`Z_METADATA.Z_PLIST` fingerprint for every new compatibility profile. The
-current fingerprint is recorded in
+model version. Record the app version, build, selected `.mom` version, and the
+`NSStoreModelVersionChecksumKey` from `Z_METADATA.Z_PLIST` for every new
+compatibility profile. The current exact checksum is recorded in
 [`LIVE-WRITE-COMPATIBILITY.md`](LIVE-WRITE-COMPATIBILITY.md).
 
 ## Entity storage

@@ -408,6 +408,7 @@ def apply_coredata_payload(
     writer_payload = dict(payload)
     writer_payload["contract_version"] = 1
     writer_payload["profile_id"] = assessment.profile_id
+    writer_payload["model_checksum"] = assessment.model_checksum
     with tempfile.TemporaryDirectory(prefix="moneywiz-coredata-") as temp_dir:
         plan_path = Path(temp_dir) / "plan.json"
         plan_path.write_text(
