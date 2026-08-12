@@ -37,15 +37,14 @@ moneywiz merge-duplicate-payees --show-plan \
 moneywiz merge-duplicate-payees --apply --show-plan
 ~~~
 
-`--apply` submits exact groups only through the bundled Core Data host. The
-host moves every modeled inbound relationship that points at `Payee`, checks
-that no supported reference remains on the source, then deletes the source
-payee in the same Core Data save.
+`--apply` is currently blocked by the compatibility gate before the native
+host can open or mutate the store. Exact-duplicate application remains pending
+until operation-specific Core Data and sync acceptance evidence is recorded.
 
-The active MoneyWiz 2026 model exposes inbound payee references from
-transactions, string history, scheduled transaction handlers, payment plans,
-and info cards. `User.payees` is ownership metadata and is removed naturally
-when the source object is deleted.
+For future acceptance work, the active MoneyWiz 2026 model exposes inbound
+payee references from transactions, string history, scheduled transaction
+handlers, payment plans, and info cards. `User.payees` is ownership metadata.
+This relationship inventory does not authorize native merge mutation.
 
 ## Similar-name approval map
 

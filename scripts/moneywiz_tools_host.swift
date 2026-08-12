@@ -1,13 +1,29 @@
+import AppKit
 import CoreData
 import Darwin
 import Foundation
 
 private let expectedBundleIdentifier = "com.marcomc.moneywiz-tools"
+private let moneyWizBundleIdentifiers = [
+    "com.moneywiz.personalfinance-setapp",
+    "com.moneywiz.personalfinance",
+]
 private let transactionAuthor = "MWLocalAuthor"
 private let modelChecksumMetadataKey = "NSStoreModelVersionChecksumKey"
-private let supportedProfileChecksums = [
-    "moneywiz-2026-model-48": "+6BY8eaTke2jfAd5Bzt5D49JRMZld5o8ZoUW+4G2ElQ=",
-]
+
+struct WriterPolicy {
+    let profileID: String
+    let modelChecksum: String
+    let capability: String
+    let schemaVersion: Int
+}
+
+private let supportedWriterPolicy = WriterPolicy(
+    profileID: "moneywiz-2026-model-48",
+    modelChecksum: "+6BY8eaTke2jfAd5Bzt5D49JRMZld5o8ZoUW+4G2ElQ=",
+    capability: "write.reassign-payees-by-id",
+    schemaVersion: 1
+)
 
 final class PassthroughTransformer: ValueTransformer {
     override class func allowsReverseTransformation() -> Bool { true }
@@ -26,6 +42,7 @@ struct WriterPlan: Decodable {
     let contractVersion: Int
     let profileID: String
     let modelChecksum: String
+    let capability: String
     let schemaVersion: Int
     let operations: [WriterOperation]
     let payeeMerges: [PayeeMerge]?
@@ -34,6 +51,7 @@ struct WriterPlan: Decodable {
         case contractVersion = "contract_version"
         case profileID = "profile_id"
         case modelChecksum = "model_checksum"
+        case capability
         case schemaVersion = "schema_version"
         case operations
         case payeeMerges = "payee_merges"
@@ -155,6 +173,9 @@ func fetchObject(
 }
 
 func validateOperation(_ operation: WriterOperation) throws {
+    guard !operation.transactionGID.isEmpty, !operation.transactionEntity.isEmpty else {
+        throw HostError.message("writer operation must identify a transaction and entity")
+    }
     let hasExistingTarget = !(operation.existingPayeeGID?.isEmpty ?? true)
     let hasNewTarget = !(operation.newPayeeKey?.isEmpty ?? true) && !(operation.newPayeeName?.isEmpty ?? true)
     guard hasExistingTarget != hasNewTarget else {
@@ -164,21 +185,52 @@ func validateOperation(_ operation: WriterOperation) throws {
     }
 }
 
-func validatePayeeMerge(_ merge: PayeeMerge) throws {
-    guard !merge.sourcePayeeGID.isEmpty,
-          !merge.targetPayeeGID.isEmpty,
-          merge.sourcePayeeGID != merge.targetPayeeGID else {
-        throw HostError.message("payee merge must define two distinct non-empty GIDs")
+func validateWriterPlan(_ plan: WriterPlan) throws -> String {
+    let policy = supportedWriterPolicy
+    guard plan.contractVersion == 1,
+          plan.profileID == policy.profileID,
+          plan.modelChecksum == policy.modelChecksum,
+          plan.capability == policy.capability,
+          plan.schemaVersion == policy.schemaVersion else {
+        throw HostError.message("unsupported or incomplete Core Data writer contract")
+    }
+    guard !plan.operations.isEmpty else {
+        throw HostError.message("reassignment writer plan must contain at least one operation")
+    }
+    guard plan.payeeMerges == nil else {
+        throw HostError.message("reassignment writer plan must not contain payee merges")
+    }
+    for operation in plan.operations {
+        try validateOperation(operation)
+    }
+    return policy.modelChecksum
+}
+
+func requireMoneyWizStopped(
+    isRunning: (String) throws -> Bool
+) throws {
+    do {
+        for bundleIdentifier in moneyWizBundleIdentifiers
+            where try isRunning(bundleIdentifier) {
+            throw HostError.message(
+                "Quit MoneyWiz 2026 before applying a Core Data writer plan"
+            )
+        }
+    } catch let error as HostError {
+        throw error
+    } catch {
+        throw HostError.message(
+            "cannot verify whether MoneyWiz 2026 is running: \(error.localizedDescription)"
+        )
     }
 }
 
-func expectedModelChecksum(for plan: WriterPlan) throws -> String {
-    guard plan.contractVersion == 1,
-          let expectedChecksum = supportedProfileChecksums[plan.profileID],
-          plan.modelChecksum == expectedChecksum else {
-        throw HostError.message("unsupported or incomplete Core Data writer contract")
+func requireMoneyWizStopped() throws {
+    try requireMoneyWizStopped { bundleIdentifier in
+        !NSRunningApplication.runningApplications(
+            withBundleIdentifier: bundleIdentifier
+        ).isEmpty
     }
-    return expectedChecksum
 }
 
 func validateExactModelChecksum(
@@ -194,160 +246,11 @@ func validateExactModelChecksum(
     }
 }
 
-func isPayeeEntity(_ entity: NSEntityDescription?) -> Bool {
-    var candidate = entity
-    while let current = candidate {
-        if current.name == "Payee" {
-            return true
-        }
-        candidate = current.superentity
-    }
-    return false
-}
-
-func inboundPayeeRelationships(
-    in model: NSManagedObjectModel
-) -> [(NSEntityDescription, NSRelationshipDescription)] {
-    var relationships: [(NSEntityDescription, NSRelationshipDescription)] = []
-    for entity in model.entities where !entity.isAbstract && entity.name != "Payee" {
-        for relationship in entity.relationshipsByName.values
-            where isPayeeEntity(relationship.destinationEntity) {
-            // This is the Payee.user inverse and is removed naturally when the
-            // source payee is deleted. Repointing it would detach the source early.
-            if entity.name == "User" && relationship.name == "payees" {
-                continue
-            }
-            relationships.append((entity, relationship))
-        }
-    }
-    return relationships.sorted {
-        let leftKey = "\($0.0.name ?? "")::\($0.1.name)"
-        let rightKey = "\($1.0.name ?? "")::\($1.1.name)"
-        return leftKey < rightKey
-    }
-}
-
-func objectsReferencing(
-    _ source: NSManagedObject,
-    entity: NSEntityDescription,
-    relationship: NSRelationshipDescription,
-    context: NSManagedObjectContext
-) throws -> [NSManagedObject] {
-    guard let entityName = entity.name else {
-        throw HostError.message("payee relationship has no entity name")
-    }
-    let request = NSFetchRequest<NSManagedObject>(entityName: entityName)
-    request.includesSubentities = false
-    if relationship.isToMany {
-        request.predicate = NSPredicate(
-            format: "ANY \(relationship.name) == %@",
-            source
-        )
-    } else {
-        request.predicate = NSPredicate(
-            format: "%K == %@",
-            relationship.name,
-            source
-        )
-    }
-    return try context.fetch(request)
-}
-
-func migrateInboundPayeeRelationships(
-    from source: NSManagedObject,
-    to target: NSManagedObject,
-    model: NSManagedObjectModel,
-    context: NSManagedObjectContext
-) throws -> Int {
-    var migrated = 0
-    for (entity, relationship) in inboundPayeeRelationships(in: model) {
-        let objects = try objectsReferencing(
-            source,
-            entity: entity,
-            relationship: relationship,
-            context: context
-        )
-        for object in objects {
-            if relationship.isToMany {
-                let references = object.mutableSetValue(forKey: relationship.name)
-                if references.contains(source) {
-                    references.remove(source)
-                    references.add(target)
-                    migrated += 1
-                }
-            } else {
-                object.setValue(target, forKey: relationship.name)
-                migrated += 1
-            }
-        }
-    }
-    context.processPendingChanges()
-    return migrated
-}
-
-func assertNoInboundPayeeReferences(
-    _ source: NSManagedObject,
-    model: NSManagedObjectModel,
-    context: NSManagedObjectContext
-) throws {
-    for (entity, relationship) in inboundPayeeRelationships(in: model) {
-        let remaining = try objectsReferencing(
-            source,
-            entity: entity,
-            relationship: relationship,
-            context: context
-        )
-        if !remaining.isEmpty {
-            let entityName = entity.name ?? "<unknown>"
-            throw HostError.message(
-                "payee merge left \(remaining.count) reference(s) in "
-                    + "\(entityName).\(relationship.name)"
-            )
-        }
-    }
-}
-
-func mergePayee(
-    _ merge: PayeeMerge,
-    model: NSManagedObjectModel,
-    context: NSManagedObjectContext
-) throws -> Int {
-    try validatePayeeMerge(merge)
-    let source = try fetchObject(
-        entityName: "Payee",
-        gid: merge.sourcePayeeGID,
-        context: context
-    )
-    let target = try fetchObject(
-        entityName: "Payee",
-        gid: merge.targetPayeeGID,
-        context: context
-    )
-    guard source.objectID != target.objectID else {
-        throw HostError.message("payee merge source and target resolve to the same object")
-    }
-    guard let sourceUser = source.value(forKey: "user") as? NSManagedObject,
-          let targetUser = target.value(forKey: "user") as? NSManagedObject,
-          sourceUser.objectID == targetUser.objectID else {
-        throw HostError.message("payee merge source and target must belong to the same user")
-    }
-    let migrated = try migrateInboundPayeeRelationships(
-        from: source,
-        to: target,
-        model: model,
-        context: context
-    )
-    try assertNoInboundPayeeReferences(source, model: model, context: context)
-    context.delete(source)
-    return migrated
-}
-
 func loadContainer(
     storeURL: URL,
     modelURL: URL,
-    plan: WriterPlan
+    expectedChecksum: String
 ) throws -> NSPersistentContainer {
-    let expectedChecksum = try expectedModelChecksum(for: plan)
     guard let model = NSManagedObjectModel(contentsOf: modelURL) else {
         throw HostError.message("cannot load MoneyWiz managed-object model at \(modelURL.path)")
     }
@@ -384,10 +287,7 @@ func loadContainer(
 }
 
 func writePlan(_ plan: WriterPlan, container: NSPersistentContainer) throws -> WriterResult {
-    _ = try expectedModelChecksum(for: plan)
-    guard plan.schemaVersion == 1 || plan.schemaVersion == 2 else {
-        throw HostError.message("unsupported writer plan version \(plan.schemaVersion)")
-    }
+    _ = try validateWriterPlan(plan)
     let context = container.newBackgroundContext()
     context.transactionAuthor = transactionAuthor
     var result: Result<WriterResult, Error> = .failure(HostError.message("writer did not run"))
@@ -396,10 +296,7 @@ func writePlan(_ plan: WriterPlan, container: NSPersistentContainer) throws -> W
         do {
             var createdPayees: [String: NSManagedObject] = [:]
             var createdPayeeUsers: [String: String] = [:]
-            var mergedPayees = 0
-            var migratedRelationships = 0
             for operation in plan.operations {
-                try validateOperation(operation)
                 let transaction = try fetchObject(
                     entityName: operation.transactionEntity,
                     gid: operation.transactionGID,
@@ -458,14 +355,6 @@ func writePlan(_ plan: WriterPlan, container: NSPersistentContainer) throws -> W
                 }
                 transaction.setValue(targetPayee, forKey: "payee")
             }
-            for merge in plan.payeeMerges ?? [] {
-                migratedRelationships += try mergePayee(
-                    merge,
-                    model: container.managedObjectModel,
-                    context: context
-                )
-                mergedPayees += 1
-            }
             if context.hasChanges {
                 try context.save()
             }
@@ -473,8 +362,8 @@ func writePlan(_ plan: WriterPlan, container: NSPersistentContainer) throws -> W
                 WriterResult(
                     createdPayees: createdPayees.count,
                     reassignedTransactions: plan.operations.count,
-                    mergedPayees: mergedPayees,
-                    migratedRelationships: migratedRelationships
+                    mergedPayees: 0,
+                    migratedRelationships: 0
                 )
             )
         } catch {
@@ -498,12 +387,13 @@ func run() throws {
     }
     let data = try Data(contentsOf: arguments.plan)
     let plan = try JSONDecoder().decode(WriterPlan.self, from: data)
-    _ = try expectedModelChecksum(for: plan)
+    let expectedChecksum = try validateWriterPlan(plan)
+    try requireMoneyWizStopped()
     configureTransformers()
     let container = try loadContainer(
         storeURL: arguments.store,
         modelURL: arguments.model,
-        plan: plan
+        expectedChecksum: expectedChecksum
     )
     let result = try writePlan(plan, container: container)
     let encoded = try JSONEncoder().encode(result)

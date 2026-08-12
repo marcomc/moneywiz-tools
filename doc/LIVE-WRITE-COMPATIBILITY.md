@@ -34,6 +34,11 @@ Review the result. If the plan is correct:
 4. Reopen MoneyWiz.
 5. Confirm iCloud Sync reports **Up to Date**.
 
+Keep MoneyWiz closed for the full write. Python checks the process name and the
+native host checks both known MoneyWiz bundle identifiers. Either check fails
+closed when inspection is unavailable or abnormal. This is a defensive
+preflight, not an atomic process or store lock.
+
 The tool refuses ambiguous normalized payee names. Resolve or consolidate those
 duplicates through the MoneyWiz GUI while
 `write.merge-duplicate-payees` remains blocked. Export similar pairs with
@@ -100,11 +105,12 @@ transactions created solely for the test.
 ## Runtime enforcement
 
 Run `moneywiz compatibility` to inspect the detected profile and
-`moneywiz compatibility --capability NAME` before applying a write. The
-Python parses the store's Core Data metadata, selects a profile by both its
-structure and exact model checksum, and passes the profile ID, checksum, and
-writer-contract version to the Swift host. Before opening the persistent
-store, the host independently requires the exact supported profile ID and
-compares the expected checksum with both the store metadata and the selected
-MoneyWiz managed-object model. An unknown profile or any capability other than
-`verified` fails closed.
+`moneywiz compatibility --capability NAME` before applying a write. Python
+parses the store's Core Data metadata, selects a profile by both its
+structure and exact model checksum, and passes the verified capability,
+profile ID, checksum, and writer-contract version to the Swift host. Before
+opening the persistent store, the host independently requires the exact
+supported profile, checksum, `write.reassign-payees-by-id` capability, schema
+version 1, and reassignment-only payload shape. It then compares the expected
+checksum with both the store metadata and the selected MoneyWiz managed-object
+model. Unknown, blocked, merge, mixed, or schema 2 plans fail closed.

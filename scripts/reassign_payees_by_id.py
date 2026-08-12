@@ -317,7 +317,7 @@ def build_plan(
         con.close()
 
 
-def _moneywiz_is_running() -> bool:
+def _require_moneywiz_stopped() -> None:
     try:
         completed = subprocess.run(
             ["pgrep", "-x", "MoneyWiz"],
@@ -325,9 +325,20 @@ def _moneywiz_is_running() -> bool:
             stderr=subprocess.DEVNULL,
             check=False,
         )
-    except OSError:
-        return False
-    return completed.returncode == 0
+    except OSError as exc:
+        raise ReassignmentError(
+            f"Cannot verify whether MoneyWiz 2026 is running: {exc}"
+        ) from exc
+    if completed.returncode == 0:
+        raise ReassignmentError(
+            "Quit MoneyWiz 2026 before --apply and keep it closed until the write "
+            "finishes."
+        )
+    if completed.returncode != 1:
+        raise ReassignmentError(
+            "Cannot verify whether MoneyWiz 2026 is running: "
+            f"pgrep exited with status {completed.returncode}"
+        )
 
 
 def _resolve_writer() -> Path:
@@ -392,11 +403,7 @@ def _resolve_model() -> Path:
 def apply_coredata_payload(
     db_path: Path, payload: dict[str, Any], *, capability: str
 ) -> None:
-    if _moneywiz_is_running():
-        raise ReassignmentError(
-            "Quit MoneyWiz 2026 before --apply. The compatible writer needs exclusive "
-            "access so MoneyWiz can consume the saved history when it is reopened."
-        )
+    _require_moneywiz_stopped()
 
     try:
         assessment = require_write_capability(db_path, capability)
@@ -409,6 +416,7 @@ def apply_coredata_payload(
     writer_payload["contract_version"] = 1
     writer_payload["profile_id"] = assessment.profile_id
     writer_payload["model_checksum"] = assessment.model_checksum
+    writer_payload["capability"] = capability
     with tempfile.TemporaryDirectory(prefix="moneywiz-coredata-") as temp_dir:
         plan_path = Path(temp_dir) / "plan.json"
         plan_path.write_text(

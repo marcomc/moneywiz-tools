@@ -147,6 +147,7 @@ func plan(_ operations: [WriterOperation]) -> WriterPlan {
         contractVersion: 1,
         profileID: "moneywiz-2026-model-48",
         modelChecksum: "+6BY8eaTke2jfAd5Bzt5D49JRMZld5o8ZoUW+4G2ElQ=",
+        capability: "write.reassign-payees-by-id",
         schemaVersion: 1,
         operations: operations,
         payeeMerges: nil
@@ -154,8 +155,8 @@ func plan(_ operations: [WriterOperation]) -> WriterPlan {
 }
 
 func testWriterContractRequiresExactProfileAndChecksum() throws {
-    let valid = plan([])
-    let validatedChecksum = try expectedModelChecksum(for: valid)
+    let valid = plan([operation(transactionGID: "transaction", payeeGID: "payee")])
+    let validatedChecksum = try validateWriterPlan(valid)
     try require(
         validatedChecksum == valid.modelChecksum,
         "valid writer profile checksum was rejected"
@@ -165,12 +166,13 @@ func testWriterContractRequiresExactProfileAndChecksum() throws {
         contractVersion: 1,
         profileID: "future-model",
         modelChecksum: valid.modelChecksum,
+        capability: valid.capability,
         schemaVersion: 1,
-        operations: [],
+        operations: valid.operations,
         payeeMerges: nil
     )
     do {
-        _ = try expectedModelChecksum(for: wrongProfile)
+        _ = try validateWriterPlan(wrongProfile)
         throw OwnershipTestError.failure("unknown writer profile unexpectedly succeeded")
     } catch is HostError {
         // Expected.
@@ -180,15 +182,125 @@ func testWriterContractRequiresExactProfileAndChecksum() throws {
         contractVersion: 1,
         profileID: valid.profileID,
         modelChecksum: "KxT0qIvWI+7n1S58SHjQOJ8x50TIqI0l+sXzUGx8y18=",
+        capability: valid.capability,
         schemaVersion: 1,
-        operations: [],
+        operations: valid.operations,
         payeeMerges: nil
     )
     do {
-        _ = try expectedModelChecksum(for: wrongChecksum)
+        _ = try validateWriterPlan(wrongChecksum)
         throw OwnershipTestError.failure("wrong writer checksum unexpectedly succeeded")
     } catch is HostError {
         // Expected.
+    }
+}
+
+func requireWriterPlanRejected(_ candidate: WriterPlan, _ message: String) throws {
+    do {
+        _ = try validateWriterPlan(candidate)
+        throw OwnershipTestError.failure(message)
+    } catch is HostError {
+        // Expected.
+    }
+}
+
+func testWriterContractRejectsBlockedAndMixedPlanShapes() throws {
+    let valid = plan([operation(transactionGID: "transaction", payeeGID: "payee")])
+    let merge = PayeeMerge(sourcePayeeGID: "source", targetPayeeGID: "target")
+
+    try requireWriterPlanRejected(
+        WriterPlan(
+            contractVersion: 1,
+            profileID: valid.profileID,
+            modelChecksum: valid.modelChecksum,
+            capability: "write.merge-duplicate-payees",
+            schemaVersion: 2,
+            operations: [],
+            payeeMerges: [merge]
+        ),
+        "blocked merge capability unexpectedly succeeded"
+    )
+    try requireWriterPlanRejected(
+        WriterPlan(
+            contractVersion: 1,
+            profileID: valid.profileID,
+            modelChecksum: valid.modelChecksum,
+            capability: valid.capability,
+            schemaVersion: 1,
+            operations: valid.operations,
+            payeeMerges: [merge]
+        ),
+        "mixed reassignment and merge payload unexpectedly succeeded"
+    )
+    try requireWriterPlanRejected(
+        WriterPlan(
+            contractVersion: 1,
+            profileID: valid.profileID,
+            modelChecksum: valid.modelChecksum,
+            capability: "write.unknown",
+            schemaVersion: 1,
+            operations: valid.operations,
+            payeeMerges: nil
+        ),
+        "unknown capability unexpectedly succeeded"
+    )
+    try requireWriterPlanRejected(
+        WriterPlan(
+            contractVersion: 1,
+            profileID: valid.profileID,
+            modelChecksum: valid.modelChecksum,
+            capability: valid.capability,
+            schemaVersion: 2,
+            operations: valid.operations,
+            payeeMerges: nil
+        ),
+        "schema 2 reassignment unexpectedly succeeded"
+    )
+    try requireWriterPlanRejected(
+        WriterPlan(
+            contractVersion: 1,
+            profileID: valid.profileID,
+            modelChecksum: valid.modelChecksum,
+            capability: valid.capability,
+            schemaVersion: 1,
+            operations: [],
+            payeeMerges: nil
+        ),
+        "empty reassignment payload unexpectedly succeeded"
+    )
+}
+
+func testMoneyWizProcessInspectionFailsClosed() throws {
+    var inspectedIdentifiers: [String] = []
+    try requireMoneyWizStopped { identifier in
+        inspectedIdentifiers.append(identifier)
+        return false
+    }
+    try require(
+        Set(inspectedIdentifiers) == Set([
+            "com.moneywiz.personalfinance-setapp",
+            "com.moneywiz.personalfinance",
+        ]),
+        "process inspection did not check every known MoneyWiz bundle identifier"
+    )
+
+    do {
+        try requireMoneyWizStopped { _ in true }
+        throw OwnershipTestError.failure("running MoneyWiz unexpectedly succeeded")
+    } catch is HostError {
+        // Expected.
+    }
+
+    do {
+        try requireMoneyWizStopped { _ in
+            throw OwnershipTestError.failure("inspection failed")
+        }
+        throw OwnershipTestError.failure("process inspection error unexpectedly succeeded")
+    } catch let error as HostError {
+        try require(
+            error.localizedDescription.contains("cannot verify"),
+            "process inspection failure returned the wrong error"
+        )
     }
 }
 
@@ -319,14 +431,52 @@ func testMixedUserPlanRollsBack() throws {
     )
 }
 
+func testWritePlanRejectsMixedMergePayloadWithoutMutation() throws {
+    let container = try makeContainer()
+    try seed(
+        container,
+        users: ["user-one"],
+        transactions: [("transaction-one", "user-one")],
+        payees: [("payee-one", "user-one")]
+    )
+    let mixedPlan = WriterPlan(
+        contractVersion: 1,
+        profileID: "moneywiz-2026-model-48",
+        modelChecksum: "+6BY8eaTke2jfAd5Bzt5D49JRMZld5o8ZoUW+4G2ElQ=",
+        capability: "write.reassign-payees-by-id",
+        schemaVersion: 1,
+        operations: [
+            operation(transactionGID: "transaction-one", payeeGID: "payee-one")
+        ],
+        payeeMerges: [
+            PayeeMerge(sourcePayeeGID: "payee-source", targetPayeeGID: "payee-one")
+        ]
+    )
+
+    do {
+        _ = try writePlan(mixedPlan, container: container)
+        throw OwnershipTestError.failure("mixed merge payload unexpectedly succeeded")
+    } catch is HostError {
+        // Expected before the context can mutate the transaction.
+    }
+    let assignedPayeeGID = try payeeGID(for: "transaction-one", in: container)
+    try require(
+        assignedPayeeGID == nil,
+        "rejected mixed merge payload changed the transaction"
+    )
+}
+
 @main
 struct MoneyWizToolsHostOwnershipTests {
     static func main() throws {
         try testWriterContractRequiresExactProfileAndChecksum()
+        try testWriterContractRejectsBlockedAndMixedPlanShapes()
+        try testMoneyWizProcessInspectionFailsClosed()
         try testStoreAndSelectedModelChecksumsMustBothMatch()
         try testSameUserAssignment()
         try testCrossUserAssignmentRejected()
         try testMixedUserPlanRollsBack()
+        try testWritePlanRejectsMixedMergePayloadWithoutMutation()
         print("MoneyWiz Tools host ownership tests passed")
     }
 }

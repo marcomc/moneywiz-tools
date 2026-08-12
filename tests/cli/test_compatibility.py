@@ -183,7 +183,9 @@ def test_writer_payload_binds_verified_model_checksum(
         plan_payload.update(json.loads(plan_path.read_text(encoding="utf-8")))
         return subprocess.CompletedProcess(command, 0, "", "")
 
-    monkeypatch.setattr(reassign_payees_by_id, "_moneywiz_is_running", lambda: False)
+    monkeypatch.setattr(
+        reassign_payees_by_id, "_require_moneywiz_stopped", lambda: None
+    )
     monkeypatch.setattr(
         reassign_payees_by_id,
         "require_write_capability",
@@ -201,3 +203,4 @@ def test_writer_payload_binds_verified_model_checksum(
 
     assert plan_payload["profile_id"] == "moneywiz-2026-model-48"
     assert plan_payload["model_checksum"] == LIVE_CHECKSUM
+    assert plan_payload["capability"] == "write.reassign-payees-by-id"

@@ -34,8 +34,12 @@ flowchart LR
     F --> G["Confirm iCloud Sync is Up to Date"]
 ```
 
-Do not run `--apply` while MoneyWiz has the database open. Do not use a
-generic raw SQL helper as a substitute for this protocol.
+Do not run `--apply` while MoneyWiz has the database open. The Python preflight
+requires `pgrep` to confirm that the MoneyWiz process is stopped, and the Swift
+host independently checks both known MoneyWiz bundle identifiers before it
+reads store metadata. Inspection failures stop the write. These checks are not
+an atomic exclusion lock, so keep MoneyWiz closed until the command finishes.
+Do not use a generic raw SQL helper as a substitute for this protocol.
 
 ## Host arrangement
 
@@ -72,8 +76,11 @@ profile as `moneywiz-2026-model-48`. It allows
 `write.merge-duplicate-payees` before the host is launched.
 
 The Python preflight and Swift host both enforce the exact model checksum. The
-host also validates the exact profile ID and checks the selected `.mom` against
-the store metadata before it opens the persistent store.
+Python payload also binds the verified capability. Before it opens the
+persistent store, the host requires the exact profile ID, checksum,
+`write.reassign-payees-by-id` capability, schema version 1, and a non-empty
+reassignment-only operation list. Schema 2, merge, mixed, blocked, and unknown
+capability payloads fail closed.
 
 ## Behavior at duplicate names
 

@@ -3,6 +3,13 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
+
+import reassign_payees_by_id
+
 TRANSACTION_TYPES = (
     "DepositTransaction",
     "InvestmentExchangeTransaction",
@@ -73,6 +80,80 @@ def run_reassign(db_path: Path, *arguments: str) -> subprocess.CompletedProcess[
         text=True,
         check=False,
     )
+
+
+def test_moneywiz_process_check_accepts_only_stopped_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        reassign_payees_by_id.subprocess,
+        "run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess([], 1),
+    )
+
+    reassign_payees_by_id._require_moneywiz_stopped()
+
+
+@pytest.mark.parametrize("returncode", [0, 2, -9])
+def test_moneywiz_process_check_rejects_running_or_abnormal_status(
+    monkeypatch: pytest.MonkeyPatch, returncode: int
+) -> None:
+    monkeypatch.setattr(
+        reassign_payees_by_id.subprocess,
+        "run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess([], returncode),
+    )
+
+    with pytest.raises(reassign_payees_by_id.ReassignmentError):
+        reassign_payees_by_id._require_moneywiz_stopped()
+
+
+def test_moneywiz_process_check_rejects_inspection_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_inspection(*_args: object, **_kwargs: object) -> None:
+        raise OSError("pgrep unavailable")
+
+    monkeypatch.setattr(reassign_payees_by_id.subprocess, "run", fail_inspection)
+
+    with pytest.raises(
+        reassign_payees_by_id.ReassignmentError,
+        match="Cannot verify whether MoneyWiz 2026 is running",
+    ):
+        reassign_payees_by_id._require_moneywiz_stopped()
+
+
+@pytest.mark.parametrize("outcome", [0, 2, OSError("pgrep unavailable")])
+def test_process_check_failure_stops_before_writer_preflight(
+    monkeypatch: pytest.MonkeyPatch, outcome: int | OSError
+) -> None:
+    commands: list[list[str]] = []
+
+    def inspect(
+        command: list[str], **_kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        commands.append(command)
+        if isinstance(outcome, OSError):
+            raise outcome
+        return subprocess.CompletedProcess(command, outcome)
+
+    monkeypatch.setattr(reassign_payees_by_id.subprocess, "run", inspect)
+    monkeypatch.setattr(
+        reassign_payees_by_id,
+        "require_write_capability",
+        lambda *_args, **_kwargs: pytest.fail(
+            "writer compatibility preflight ran after process-check failure"
+        ),
+    )
+
+    with pytest.raises(reassign_payees_by_id.ReassignmentError):
+        reassign_payees_by_id.apply_coredata_payload(
+            Path("unused.sqlite"),
+            {"schema_version": 1, "operations": []},
+            capability="write.reassign-payees-by-id",
+        )
+
+    assert commands == [["pgrep", "-x", "MoneyWiz"]]
 
 
 def test_reassign_plan_normalizes_existing_unicode_payee(tmp_path: Path) -> None:
