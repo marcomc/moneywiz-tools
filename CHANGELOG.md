@@ -17,6 +17,12 @@
 
 ### Fixed
 
+- Made setup and test-database seeding discover the current MoneyWiz 2026
+  store before falling back to the legacy store path, while preserving
+  explicit and configured database choices.
+- Made empty and already-satisfied apply plans validate their write capability
+  without invoking the MoneyWiz process check, model resolver, writer resolver,
+  or native host.
 - Made normalized new-payee groups use one deterministic display name and made
   the model resolver handle both extensionless and `.mom` manifest leaves
   without duplicating the extension.

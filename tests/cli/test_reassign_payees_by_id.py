@@ -543,6 +543,123 @@ def test_process_check_failure_stops_before_writer_preflight(
     assert commands == [["pgrep", "-x", "MoneyWiz"]]
 
 
+@pytest.mark.parametrize("noop_count", [0, 1], ids=["empty-selection", "all-noop"])
+@pytest.mark.parametrize("capability_state", ["verified", "blocked", "unrecognized"])
+def test_empty_reassign_apply_checks_capability_without_host_preflight(
+    monkeypatch: pytest.MonkeyPatch, noop_count: int, capability_state: str
+) -> None:
+    capability_calls: list[tuple[Path, str]] = []
+    noops = (
+        (
+            reassign_payees_by_id.ReassignmentNoOp(
+                transaction_id=1,
+                transaction_gid="already-target",
+                reason="already assigned to target payee",
+            ),
+        )
+        if noop_count
+        else ()
+    )
+    plan = reassign_payees_by_id.ReassignmentPlan(
+        processed=noop_count, operations=(), noops=noops
+    )
+
+    def check_capability(db_path: Path, capability: str) -> object:
+        capability_calls.append((db_path, capability))
+        if capability_state != "verified":
+            raise reassign_payees_by_id.CompatibilityError(capability_state)
+        return object()
+
+    monkeypatch.setattr(
+        reassign_payees_by_id, "require_write_capability", check_capability
+    )
+
+    def fail_host_preflight() -> None:
+        pytest.fail("host preflight ran for an empty apply plan")
+
+    for name in ("_require_moneywiz_stopped", "_resolve_writer", "_resolve_model"):
+        monkeypatch.setattr(
+            reassign_payees_by_id,
+            name,
+            fail_host_preflight,
+        )
+    monkeypatch.setattr(
+        reassign_payees_by_id.subprocess,
+        "run",
+        lambda *_args, **_kwargs: pytest.fail(
+            "native host ran for an empty apply plan"
+        ),
+    )
+
+    db_path = Path("store.sqlite")
+    if capability_state == "verified":
+        reassign_payees_by_id.apply_plan(db_path, plan)
+    else:
+        with pytest.raises(
+            reassign_payees_by_id.ReassignmentError,
+            match=capability_state,
+        ):
+            reassign_payees_by_id.apply_plan(db_path, plan)
+
+    assert capability_calls == [(db_path, "write.reassign-payees-by-id")]
+
+
+def test_nonempty_apply_preserves_process_before_capability_and_host_order(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    events: list[str] = []
+    assessment = reassign_payees_by_id.CompatibilityAssessment(
+        profile_id="verified",
+        model_checksum="checksum",
+        capabilities={"write.reassign-payees-by-id": "verified"},
+        missing_by_profile={},
+    )
+    writer = tmp_path / "writer"
+    model = tmp_path / "model.mom"
+    writer.touch(mode=0o755)
+    model.touch()
+
+    monkeypatch.setattr(
+        reassign_payees_by_id,
+        "_require_moneywiz_stopped",
+        lambda: events.append("process"),
+    )
+
+    def check_capability(
+        _db_path: Path, _capability: str
+    ) -> reassign_payees_by_id.CompatibilityAssessment:
+        events.append("capability")
+        return assessment
+
+    monkeypatch.setattr(
+        reassign_payees_by_id, "require_write_capability", check_capability
+    )
+    monkeypatch.setattr(
+        reassign_payees_by_id,
+        "_resolve_writer",
+        lambda: events.append("writer") or writer,
+    )
+    monkeypatch.setattr(
+        reassign_payees_by_id,
+        "_resolve_model",
+        lambda: events.append("model") or model,
+    )
+
+    def run_host(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        events.append("host")
+        return subprocess.CompletedProcess([], 0, "", "")
+
+    monkeypatch.setattr(reassign_payees_by_id.subprocess, "run", run_host)
+
+    reassign_payees_by_id.apply_coredata_payload(
+        tmp_path / "store.sqlite",
+        {"schema_version": 1, "operations": [{}]},
+        capability="write.reassign-payees-by-id",
+    )
+
+    assert events == ["process", "capability", "writer", "model", "host"]
+
+
 def test_reassign_plan_normalizes_existing_unicode_payee(tmp_path: Path) -> None:
     db_path = tmp_path / "moneywiz.sqlite"
     make_database(db_path)

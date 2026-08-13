@@ -10,7 +10,7 @@ beginning with `~/`, or override it per command with `--db PATH`.
 | --- | --- | --- |
 | `--help`, `-h` | `moneywiz --help` | Show the current command syntax. |
 | `--version`, `-V` | `moneywiz --version` | Show the installed bundle version without starting Python or opening a database. |
-| `--setup` | `moneywiz --setup` | Create `~/.moneywizrc` when it does not exist. |
+| `--setup` | `moneywiz --setup` | Create `~/.moneywizrc` when it does not exist, preferring the current MoneyWiz 2026 store and falling back to the legacy store. |
 | `--db PATH` | `moneywiz --db /absolute/path/store.sqlite payees` | Override `db_path` for one invocation. |
 
 `moneywiz` is the only supported end-user command.
@@ -56,7 +56,8 @@ The source checkout still provides only the test-database lifecycle commands:
 ~~~
 
 These commands create and sanitize a disposable copy; they do not restore the
-retired raw-SQL routes.
+retired raw-SQL routes. `create-test-db` uses `--db PATH`, then configured
+`db_path`, then the same current-before-legacy store discovery as `--setup`.
 
 ## Live payee operations
 

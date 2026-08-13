@@ -6,6 +6,8 @@ import textwrap
 import tomllib
 from pathlib import Path
 
+import pytest
+
 
 def _write_executable(path: Path, contents: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -320,3 +322,102 @@ Path(os.environ["FAKE_PYTHON_LOG"]).write_text("\\n".join(sys.argv))
     assert (source_root / "tests/test_db.sqlite").read_bytes() == b"source database"
     assert sanitized.returncode == 0, sanitized.stderr
     assert "scripts/sanitize_test_db.py" in python_log.read_text()
+
+
+@pytest.mark.parametrize(
+    ("store_state", "expected_kind"),
+    [
+        ("current", "current"),
+        ("legacy", "legacy"),
+        ("both", "current"),
+        ("neither", "commented-current"),
+    ],
+)
+def test_setup_and_test_db_creation_share_store_discovery(
+    tmp_path: Path, store_state: str, expected_kind: str
+) -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    source_root = tmp_path / "source"
+    source_root.mkdir()
+    shutil.copy2(repo_root / "moneywiz.sh", source_root / "moneywiz.sh")
+    _write_executable(source_root / ".venv/bin/python", "#!/bin/sh\nexit 0\n")
+    fake_bin = tmp_path / "bin"
+    _write_executable(fake_bin / "uv", "#!/bin/sh\nexit 0\n")
+    home = tmp_path / "home"
+    home.mkdir()
+    current_store = (
+        home
+        / "Library/Containers/com.moneywiz.personalfinance-setapp/Data/Library"
+        / "Application Support/MoneyWiz_iCloud.sqlite"
+    )
+    legacy_store = (
+        home
+        / "Library/Containers/com.moneywiz.personalfinance-setapp/Data/Documents"
+        / ".AppData/ipadMoneyWiz.sqlite"
+    )
+    if store_state in {"current", "both"}:
+        current_store.parent.mkdir(parents=True)
+        current_store.write_bytes(b"current store")
+    if store_state in {"legacy", "both"}:
+        legacy_store.parent.mkdir(parents=True)
+        legacy_store.write_bytes(b"legacy store")
+    expected_store = current_store if expected_kind != "legacy" else legacy_store
+    env = os.environ.copy()
+    env.update({"HOME": str(home), "PATH": f"{fake_bin}:{env['PATH']}"})
+    dispatcher = source_root / "moneywiz.sh"
+
+    setup = subprocess.run(
+        [str(dispatcher), "--setup"],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert setup.returncode == 0, setup.stderr
+    config_path = home / ".moneywizrc"
+    expected_config = (
+        f"# db_path={expected_store}"
+        if expected_kind == "commented-current"
+        else f"db_path={expected_store}"
+    )
+    assert expected_config in config_path.read_text()
+    config_path.write_text("db_path=/preserved.sqlite\n")
+    repeated_setup = subprocess.run(
+        [str(dispatcher), "--setup"],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert repeated_setup.returncode == 0, repeated_setup.stderr
+    assert config_path.read_text() == "db_path=/preserved.sqlite\n"
+
+    config_path.unlink()
+    created = subprocess.run(
+        [str(dispatcher), "create-test-db"],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if expected_kind == "commented-current":
+        assert created.returncode == 1
+        assert f"source database not found: {current_store}" in created.stderr
+    else:
+        assert created.returncode == 0, created.stderr
+        assert (source_root / "tests/test_db.sqlite").read_bytes() == (
+            expected_store.read_bytes()
+        )
+
+    explicit_store = tmp_path / "explicit.sqlite"
+    explicit_store.write_bytes(b"explicit store")
+    explicit = subprocess.run(
+        [str(dispatcher), "--db", str(explicit_store), "create-test-db"],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert explicit.returncode == 0, explicit.stderr
+    assert (source_root / "tests/test_db.sqlite").read_bytes() == b"explicit store"

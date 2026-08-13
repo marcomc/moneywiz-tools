@@ -131,6 +131,40 @@ def test_exact_only_modes_do_not_build_fuzzy_candidates(
     assert "fuzzy_candidates=not-requested" in captured.out
 
 
+def test_empty_merge_apply_checks_blocked_capability_without_host(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan = merge_duplicate_payees.DuplicatePayeePlan(
+        payees_analyzed=0, exact_groups=(), fuzzy_candidates=None
+    )
+    capability_calls: list[tuple[Path, str]] = []
+
+    def reject_capability(db_path: Path, capability: str) -> object:
+        capability_calls.append((db_path, capability))
+        raise merge_duplicate_payees.ReassignmentError("capability is blocked")
+
+    monkeypatch.setattr(
+        merge_duplicate_payees,
+        "require_coredata_write_capability",
+        reject_capability,
+    )
+    monkeypatch.setattr(
+        merge_duplicate_payees,
+        "apply_coredata_payload",
+        lambda *_args, **_kwargs: pytest.fail(
+            "native host ran for an empty merge apply plan"
+        ),
+    )
+
+    db_path = Path("store.sqlite")
+    with pytest.raises(
+        merge_duplicate_payees.ReassignmentError, match="capability is blocked"
+    ):
+        merge_duplicate_payees.apply_exact_groups(db_path, plan)
+
+    assert capability_calls == [(db_path, "write.merge-duplicate-payees")]
+
+
 def test_fuzzy_map_is_pending_review_only(tmp_path: Path) -> None:
     db_path = tmp_path / "moneywiz.sqlite"
     map_path = tmp_path / "payee-fuzzy-review.csv"

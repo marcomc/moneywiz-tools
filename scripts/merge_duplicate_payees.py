@@ -19,6 +19,7 @@ from reassign_payees_by_id import (
     _entity_ids,
     apply_coredata_payload,
     normalize_payee_name,
+    require_coredata_write_capability,
 )
 
 SIMILARITY_THRESHOLD = 0.88
@@ -370,6 +371,7 @@ def apply_exact_groups(db_path: Path, plan: DuplicatePayeePlan) -> None:
         for duplicate in group.duplicates
     ]
     if not payee_merges:
+        require_coredata_write_capability(db_path, "write.merge-duplicate-payees")
         return
     apply_coredata_payload(
         db_path,

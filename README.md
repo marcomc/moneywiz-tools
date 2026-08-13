@@ -61,6 +61,12 @@ The shown location is the currently observed Setapp MoneyWiz 2026 store.
 Treat it as an example: confirm the actual store on the machine where the
 tool runs.
 
+`moneywiz --setup` probes that current location first and the legacy
+`Data/Documents/.AppData/ipadMoneyWiz.sqlite` location second. It records the
+first existing store in a new `~/.moneywizrc`, or leaves the current location
+commented for manual correction when neither exists. An existing config is
+never replaced.
+
 `db_path` may use `~`; the launcher expands it before opening the database.
 A global command-line override always takes precedence:
 

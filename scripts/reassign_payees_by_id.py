@@ -16,7 +16,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from compatibility import CompatibilityError, require_write_capability
+from compatibility import (
+    CompatibilityAssessment,
+    CompatibilityError,
+    require_write_capability,
+)
 
 DEFAULT_MONEYWIZ_APP = Path("/Applications/Setapp/MoneyWiz 2026.app")
 EXPECTED_BUNDLE_IDENTIFIER = "com.moneywiz.personalfinance-setapp"
@@ -585,15 +589,20 @@ def _resolve_model() -> Path:
     return model
 
 
+def require_coredata_write_capability(
+    db_path: Path, capability: str
+) -> CompatibilityAssessment:
+    try:
+        return require_write_capability(db_path, capability)
+    except CompatibilityError as exc:
+        raise ReassignmentError(str(exc)) from exc
+
+
 def apply_coredata_payload(
     db_path: Path, payload: dict[str, Any], *, capability: str
 ) -> None:
     _require_moneywiz_stopped()
-
-    try:
-        assessment = require_write_capability(db_path, capability)
-    except CompatibilityError as exc:
-        raise ReassignmentError(str(exc)) from exc
+    assessment = require_coredata_write_capability(db_path, capability)
 
     writer = _resolve_writer()
     model = _resolve_model()
@@ -633,6 +642,7 @@ def apply_coredata_payload(
 
 def apply_plan(db_path: Path, plan: ReassignmentPlan) -> None:
     if not plan.operations:
+        require_coredata_write_capability(db_path, "write.reassign-payees-by-id")
         return
     apply_coredata_payload(
         db_path,

@@ -422,6 +422,53 @@ def test_installed_dispatcher_help_does_not_require_default_database(
     assert "Database file not found" in result.stderr
 
 
+def test_installed_setup_discovers_current_then_legacy_store(
+    install_environment: dict[str, Path | dict[str, str]],
+) -> None:
+    result = _run_make(install_environment, "install")
+    assert result.returncode == 0, result.stderr
+    env = install_environment["env"]
+    assert isinstance(env, dict)
+    home = Path(env["HOME"])
+    config = home / ".moneywizrc"
+    current_store = (
+        home
+        / "Library/Containers/com.moneywiz.personalfinance-setapp/Data/Library"
+        / "Application Support/MoneyWiz_iCloud.sqlite"
+    )
+    legacy_store = (
+        home
+        / "Library/Containers/com.moneywiz.personalfinance-setapp/Data/Documents"
+        / ".AppData/ipadMoneyWiz.sqlite"
+    )
+
+    for state, expected_line in (
+        ("current", f"db_path={current_store}"),
+        ("legacy", f"db_path={legacy_store}"),
+        ("both", f"db_path={current_store}"),
+        ("neither", f"# db_path={current_store}"),
+    ):
+        config.unlink(missing_ok=True)
+        current_store.unlink(missing_ok=True)
+        legacy_store.unlink(missing_ok=True)
+        if state in {"current", "both"}:
+            current_store.parent.mkdir(parents=True, exist_ok=True)
+            current_store.touch()
+        if state in {"legacy", "both"}:
+            legacy_store.parent.mkdir(parents=True, exist_ok=True)
+            legacy_store.touch()
+
+        setup = _run_installed(install_environment, "--setup")
+
+        assert setup.returncode == 0, setup.stderr
+        assert expected_line in config.read_text()
+
+    config.write_text("db_path=/preserved.sqlite\n")
+    repeated_setup = _run_installed(install_environment, "--setup")
+    assert repeated_setup.returncode == 0, repeated_setup.stderr
+    assert config.read_text() == "db_path=/preserved.sqlite\n"
+
+
 def test_reinstall_build_failure_preserves_previous_install(
     install_environment: dict[str, Path | dict[str, str]],
 ) -> None:

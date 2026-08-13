@@ -24,7 +24,8 @@ SCRIPT_DIR="$(cd -P "$(dirname "${SOURCE_PATH}")" && pwd)"
 DEFAULT_DB_PATH="${SCRIPT_DIR}/tests/test_db.sqlite"
 CONFIG_FILE_NAME=".moneywizrc"
 CONFIG_DB_PATH=""
-DEFAULT_REAL_DB_PATH="${HOME}/Library/Containers/com.moneywiz.personalfinance-setapp/Data/Documents/.AppData/ipadMoneyWiz.sqlite"
+CURRENT_REAL_DB_PATH="${HOME}/Library/Containers/com.moneywiz.personalfinance-setapp/Data/Library/Application Support/MoneyWiz_iCloud.sqlite"
+LEGACY_REAL_DB_PATH="${HOME}/Library/Containers/com.moneywiz.personalfinance-setapp/Data/Documents/.AppData/ipadMoneyWiz.sqlite"
 BUNDLE_HOST="${SCRIPT_DIR}/../../MacOS/MoneyWizTools"
 BUNDLED_PY="${SCRIPT_DIR}/python/venv/bin/python"
 BUNDLE_INFO_PLIST="${SCRIPT_DIR}/../../Info.plist"
@@ -56,6 +57,19 @@ trim_ws() {
   value="${value%"${value##*[![:space:]]}"}"
   printf '%s' "${value}"
 }
+
+discover_real_db_path() {
+  local candidate=""
+  for candidate in "${CURRENT_REAL_DB_PATH}" "${LEGACY_REAL_DB_PATH}"; do
+    if [[ -f "${candidate}" ]]; then
+      printf '%s' "${candidate}"
+      return
+    fi
+  done
+  printf '%s' "${CURRENT_REAL_DB_PATH}"
+}
+
+DEFAULT_REAL_DB_PATH="$(discover_real_db_path)"
 
 read_config_file() {
   local file="$1"
