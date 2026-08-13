@@ -201,10 +201,25 @@ def test_concepts_links_to_pinned_installed_dependency_source() -> None:
         f"{revision}/src/moneywiz_api/utils.py#L6-L15"
     )
     concepts = (repo_root / "doc/CONCEPTS.md").read_text()
+    dependency_ticket = (
+        repo_root / "doc/wayfinder/tickets/pinned-dependency-bundle-mechanism.md"
+    ).read_text()
+    normalized_ticket = " ".join(dependency_ticket.split())
+    wayfinder_map = (repo_root / "doc/wayfinder/MAP.md").read_text()
+    frontier = wayfinder_map.partition("## Frontier\n")[2].partition("\n## ")[0]
 
     assert "installed `moneywiz_api` module" in concepts
     assert pinned_source_url in concepts
     assert "moneywiz-api/src" not in concepts
+    assert "**Status:** Closed" in dependency_ticket
+    assert "## Resolution" in dependency_ticket
+    assert revision in dependency_ticket
+    assert "`uv.lock` resolves that same commit" in normalized_ticket
+    assert "`uv export --frozen`" in dependency_ticket
+    assert "`uv pip install`" in dependency_ticket
+    assert "`Contents/Resources/runtime/python/venv`" in dependency_ticket
+    assert "No local checkout is required, consumed, or bundled." in normalized_ticket
+    assert "tickets/pinned-dependency-bundle-mechanism.md" not in frontier
 
 
 def test_source_dispatcher_preserves_test_database_workflow(tmp_path: Path) -> None:

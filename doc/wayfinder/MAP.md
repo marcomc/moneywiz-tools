@@ -36,7 +36,6 @@ supported path for live MoneyWiz database writes.
 | Ticket | Type | Status | Blocks |
 | --- | --- | --- | --- |
 | [Compare upstream `v1.0.8` with the compatibility fork](tickets/upstream-v1.0.8-intake.md) | Research | Open | Fork baseline and migration |
-| [Choose the pinned dependency and bundle mechanism](tickets/pinned-dependency-bundle-mechanism.md) | Research | Open | Reproducible build migration |
 | [Define the Python-to-Core-Data writer contract](tickets/python-coredata-writer-contract.md) | Grilling | Open | Writer migration and future GUI boundary |
 
 ## Not yet specified
