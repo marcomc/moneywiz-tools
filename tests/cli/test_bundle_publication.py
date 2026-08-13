@@ -1,20 +1,17 @@
 import os
+import plistlib
 import shlex
 import shutil
 import subprocess
 import sys
 import textwrap
+import tomllib
 from pathlib import Path
 
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 APP_NAME = "MoneyWiz Tools.app"
-DEVELOPMENT_ONLY_PROGRAMS = (
-    "scripts/run_tests.sh",
-    "scripts/sanitize_test_db.py",
-    "scripts/shell_examples_test.py",
-)
 REQUIRED_DISPATCHER_PROGRAMS = (
     "scripts/accounts.py",
     "scripts/categories.py",
@@ -33,6 +30,12 @@ REQUIRED_DISPATCHER_PROGRAMS = (
     "scripts/transactions.py",
     "scripts/users.py",
 )
+
+
+def _project_version(source_root: Path) -> str:
+    with (source_root / "pyproject.toml").open("rb") as project_file:
+        project = tomllib.load(project_file)
+    return project["project"]["version"]
 
 
 def _write_executable(path: Path, contents: str) -> None:
@@ -532,10 +535,12 @@ def test_successful_reinstall_publishes_complete_bundle_and_command(
     )
     assert (runtime / "doc/BUNDLE-INSTALLATION.md").is_file()
     assert (runtime / ".moneywizrc.example").is_file()
-    for relative_path in REQUIRED_DISPATCHER_PROGRAMS:
-        assert (runtime / relative_path).is_file()
-    for relative_path in DEVELOPMENT_ONLY_PROGRAMS:
-        assert not (runtime / relative_path).exists()
+    installed_scripts = {
+        path.relative_to(runtime).as_posix()
+        for path in (runtime / "scripts").rglob("*")
+        if path.is_file()
+    }
+    assert installed_scripts == set(REQUIRED_DISPATCHER_PROGRAMS)
     assert not (runtime / "tests").exists()
     assert not (runtime / "tests/test_db.sqlite").exists()
     assert not (runtime / "tests/test_db.sqlite-wal").exists()
@@ -557,11 +562,63 @@ def test_successful_reinstall_publishes_complete_bundle_and_command(
         install_environment,
         "--db",
         str(database),
-        "compatibility",
+        "merge-duplicate-payees",
         "--help",
     )
     assert dispatcher_result.returncode == 0, dispatcher_result.stderr
-    assert "usage:" in dispatcher_result.stdout
+    assert "Merge exact-normalized payee duplicates" in dispatcher_result.stdout
+    assert not (runtime / "scripts/__pycache__").exists()
+    validation_result = _run_make(install_environment, "_validate-bundle")
+    assert validation_result.returncode == 0, validation_result.stdout
+
+
+def test_installed_version_flags_need_no_database_python_or_source_plist(
+    install_environment: dict[str, Path | dict[str, str]],
+) -> None:
+    result = _run_make(install_environment, "install")
+    assert result.returncode == 0, result.stderr
+
+    app_bundle = install_environment["app_bundle"]
+    source_root = install_environment["source_root"]
+    assert isinstance(app_bundle, Path)
+    assert isinstance(source_root, Path)
+    runtime = app_bundle / "Contents/Resources/runtime"
+    assert not (runtime / "scripts/MoneyWizTools-Info.plist").exists()
+    shutil.rmtree(runtime / "python")
+
+    expected = f"moneywiz {_project_version(source_root)}\n"
+    for option in ("--version", "-V"):
+        result = _run_installed(install_environment, option)
+        assert result.returncode == 0, result.stderr
+        assert result.stdout == expected
+        assert result.stderr == ""
+
+
+def test_bundle_plist_version_matches_project_metadata() -> None:
+    with (REPO_ROOT / "scripts/MoneyWizTools-Info.plist").open("rb") as plist_file:
+        bundle_metadata = plistlib.load(plist_file)
+
+    assert bundle_metadata["CFBundleShortVersionString"] == _project_version(REPO_ROOT)
+
+
+@pytest.mark.parametrize("mutation", ["missing", "additional"])
+def test_bundle_validation_enforces_exact_runtime_script_manifest(
+    install_environment: dict[str, Path | dict[str, str]], mutation: str
+) -> None:
+    result = _run_make(install_environment, "install")
+    assert result.returncode == 0, result.stderr
+
+    app_bundle = install_environment["app_bundle"]
+    assert isinstance(app_bundle, Path)
+    scripts = app_bundle / "Contents/Resources/runtime/scripts"
+    if mutation == "missing":
+        (scripts / "users.py").unlink()
+    else:
+        (scripts / "unexpected-build-input.py").write_text("BUILD_ONLY = True\n")
+
+    result = _run_make(install_environment, "_validate-bundle")
+    assert result.returncode != 0
+    assert "runtime script payload does not match the product manifest" in result.stdout
 
 
 def test_install_moneywiz_rejects_incomplete_bundle_before_relinking(

@@ -30,9 +30,12 @@
   observed in the MoneyWiz 2026 live store.
 - Moved installed schema-export defaults to the user data directory while
   preserving explicit output paths and source-tree development defaults.
-- Restricted bundle payload assembly to tracked runtime scripts and
-  documentation, excluding tests and ignored or untracked databases, SQLite
-  sidecars, logs, caches, and scratch files.
+- Restricted bundle payload assembly to one exact runtime-program manifest and
+  separately selected tracked documentation, excluding development and build
+  inputs, tests, and ignored or untracked databases, SQLite sidecars, logs,
+  caches, and scratch files.
+- Fixed dependency-free installed version reporting from the application
+  bundle metadata.
 - Made read-only transfer parsing tolerate the live profile's zero-valued
   `ZORIGINALAMOUNT` when the counterparty amount and exchange rate are present.
 - Made read-only API loading isolate malformed or model-incompatible records

@@ -1,7 +1,9 @@
 import os
+import plistlib
 import shutil
 import subprocess
 import textwrap
+import tomllib
 from pathlib import Path
 
 
@@ -9,6 +11,38 @@ def _write_executable(path: Path, contents: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(contents)
     path.chmod(0o755)
+
+
+def test_source_version_flags_need_no_database_or_python(tmp_path: Path) -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    source_root = tmp_path / "nested/source"
+    (source_root / "scripts").mkdir(parents=True)
+    shutil.copy2(repo_root / "moneywiz.sh", source_root / "moneywiz.sh")
+    shutil.copy2(
+        repo_root / "scripts/MoneyWizTools-Info.plist",
+        source_root / "scripts/MoneyWizTools-Info.plist",
+    )
+    with (repo_root / "pyproject.toml").open("rb") as project_file:
+        expected_version = tomllib.load(project_file)["project"]["version"]
+    with (tmp_path / "Info.plist").open("wb") as ancestor_plist:
+        plistlib.dump({"CFBundleShortVersionString": "9.9.9"}, ancestor_plist)
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / ".moneywizrc").write_text(f"db_path={tmp_path / 'missing.sqlite'}\n")
+    env = os.environ.copy()
+    env.update({"HOME": str(home), "PATH": "/usr/bin:/bin"})
+
+    for option in ("--version", "-V"):
+        result = subprocess.run(
+            [str(source_root / "moneywiz.sh"), option],
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
+        assert result.stdout == f"moneywiz {expected_version}\n"
+        assert result.stderr == ""
 
 
 def test_dispatcher_can_load_scripts_with_sibling_imports_from_other_directory(

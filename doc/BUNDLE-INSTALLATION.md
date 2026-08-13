@@ -49,14 +49,14 @@ process is forcibly terminated in that interval, the next build restores the
 backup before checking build dependencies. The bundled virtual environment
 uses a relative interpreter link so it remains valid after staging is promoted.
 
-The staged payload is selected from Git-tracked product files under `scripts/`
-and `doc/`, plus the launcher and configuration example required at runtime.
-The tracked development-only programs `scripts/run_tests.sh`,
-`scripts/shell_examples_test.py`, and `scripts/sanitize_test_db.py` are excluded
-from the product manifest. The builder copies the current worktree contents for
-the selected tracked paths, without reading file contents from the Git index.
-It never copies `tests/` or untracked and ignored artifacts such as local
-databases, SQLite sidecars, logs, or Python caches into the product bundle.
+The staged script payload comes from one explicit positive product manifest;
+validation rejects both missing and additional files under `runtime/scripts/`.
+Tracked documentation is selected and copied separately, and the launcher and
+configuration example are explicit runtime roots. The builder copies current
+worktree contents without reading file contents from the Git index. It never
+copies development helpers, build inputs, `tests/`, or untracked and ignored
+artifacts such as local databases, SQLite sidecars, logs, or Python caches into
+the product bundle.
 
 The default app location is:
 
@@ -90,6 +90,9 @@ MoneyWiz Tools.app/
 
 The shell entrypoints resolve their target inside this bundle. An installed
 command therefore does not use the repository path that created it.
+`moneywiz --version` and `moneywiz -V` read `Contents/Info.plist` before Python
+or database initialization, so version reporting remains available when those
+runtime resources are unavailable.
 `create-test-db` and `sanitize-test-db` are source-checkout-only development
 commands and fail clearly when requested through the installed dispatcher.
 

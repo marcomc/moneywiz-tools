@@ -27,15 +27,15 @@ CONFIG_DB_PATH=""
 DEFAULT_REAL_DB_PATH="${HOME}/Library/Containers/com.moneywiz.personalfinance-setapp/Data/Documents/.AppData/ipadMoneyWiz.sqlite"
 BUNDLE_HOST="${SCRIPT_DIR}/../../MacOS/MoneyWizTools"
 BUNDLED_PY="${SCRIPT_DIR}/python/venv/bin/python"
-BUNDLE_INFO_PLIST="${SCRIPT_DIR}/../Info.plist"
+BUNDLE_INFO_PLIST="${SCRIPT_DIR}/../../Info.plist"
 SOURCE_INFO_PLIST="${SCRIPT_DIR}/scripts/MoneyWizTools-Info.plist"
 IS_BUNDLED=0
 
 print_version() {
-  local info_plist="${BUNDLE_INFO_PLIST}"
+  local info_plist="${SOURCE_INFO_PLIST}"
   local version=""
-  if [[ ! -r "${info_plist}" ]]; then
-    info_plist="${SOURCE_INFO_PLIST}"
+  if [[ -x "${BUNDLE_HOST}" ]]; then
+    info_plist="${BUNDLE_INFO_PLIST}"
   fi
   if [[ -r "${info_plist}" ]]; then
     version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${info_plist}" 2>/dev/null || true)"
@@ -152,7 +152,7 @@ DB_PATH="${CONFIG_DB_PATH:-${DEFAULT_DB_PATH}}"
 run_python_script() {
   local script_path="$1"
   shift
-  "${PY}" -c '
+  "${PY}" -B -c '
 import os
 import runpy
 import sys

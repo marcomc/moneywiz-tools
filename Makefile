@@ -25,7 +25,7 @@ HOST_PLIST := $(CURDIR)/scripts/MoneyWizTools-Info.plist
 PROJECT_FILE := $(CURDIR)/pyproject.toml
 LOCK_FILE := $(CURDIR)/uv.lock
 BUNDLE_RUNTIME_ROOTS := moneywiz.sh .moneywizrc.example
-BUNDLE_REQUIRED_RUNTIME_SCRIPTS := \
+BUNDLE_RUNTIME_SCRIPT_PAYLOAD := \
 	scripts/accounts.py \
 	scripts/categories.py \
 	scripts/compatibility.py \
@@ -42,10 +42,6 @@ BUNDLE_REQUIRED_RUNTIME_SCRIPTS := \
 	scripts/tags.py \
 	scripts/transactions.py \
 	scripts/users.py
-BUNDLE_DEVELOPMENT_ONLY_SCRIPTS := \
-	scripts/run_tests.sh \
-	scripts/sanitize_test_db.py \
-	scripts/shell_examples_test.py
 
 .DEFAULT_GOAL := help
 
@@ -90,15 +86,12 @@ _build-bundle:
 	@cp -f "$(HOST_PLIST)" "$(APP_CONTENTS)/Info.plist"
 	@swiftc -parse-as-library "$(HOST_SOURCE)" -o "$(APP_HOST)"
 	@set -eu; \
-		for payload_path in $(BUNDLE_RUNTIME_ROOTS); do \
+		for payload_path in $(BUNDLE_RUNTIME_ROOTS) $(BUNDLE_RUNTIME_SCRIPT_PAYLOAD); do \
 			cp -f "$(CURDIR)/$$payload_path" "$(APP_RUNTIME)/$$payload_path"; \
-		done; \
-		manifest="$(APP_RUNTIME)/.tracked-payload"; \
-		git -C "$(CURDIR)" ls-files -z -- \
-		scripts doc \
-		':(exclude)scripts/run_tests.sh' \
-		':(exclude)scripts/sanitize_test_db.py' \
-		':(exclude)scripts/shell_examples_test.py' > "$$manifest"; \
+		done
+	@set -eu; \
+		manifest="$(APP_RUNTIME)/.tracked-docs"; \
+		git -C "$(CURDIR)" ls-files -z -- doc > "$$manifest"; \
 		while IFS= read -r -d '' payload_path; do \
 			destination="$(APP_RUNTIME)/$$payload_path"; \
 			mkdir -p "$$(dirname "$$destination")"; \
@@ -132,14 +125,20 @@ _validate-bundle:
 	@test -x "$(APP_PY)" \
 		|| { echo "x bundle is missing the bundled Python interpreter"; exit 1; }
 	@set -eu; \
-		for payload_path in $(BUNDLE_REQUIRED_RUNTIME_SCRIPTS); do \
-			test -f "$(APP_RUNTIME)/$$payload_path" \
-				|| { echo "x bundle is missing required runtime payload $$payload_path"; exit 1; }; \
-		done; \
-		for payload_path in $(BUNDLE_DEVELOPMENT_ONLY_SCRIPTS); do \
-			test ! -e "$(APP_RUNTIME)/$$payload_path" \
-				|| { echo "x bundle contains development-only payload $$payload_path"; exit 1; }; \
-		done
+		expected_manifest="$$(mktemp)"; \
+		actual_manifest="$$(mktemp)"; \
+		trap 'rm -f "$$expected_manifest" "$$actual_manifest"' EXIT HUP INT TERM; \
+		for payload_path in $(BUNDLE_RUNTIME_SCRIPT_PAYLOAD); do \
+			printf '%s\n' "$$payload_path"; \
+		done | LC_ALL=C sort > "$$expected_manifest"; \
+		find "$(APP_RUNTIME)/scripts" -type f -print | while IFS= read -r payload_path; do \
+			printf '%s\n' "$${payload_path#$(APP_RUNTIME)/}"; \
+		done | LC_ALL=C sort > "$$actual_manifest"; \
+		if ! cmp -s "$$expected_manifest" "$$actual_manifest"; then \
+			echo "x bundle runtime script payload does not match the product manifest"; \
+			diff -u "$$expected_manifest" "$$actual_manifest" || true; \
+			exit 1; \
+		fi
 
 build-bundle: ## Build a self-contained MoneyWiz Tools.app bundle
 	@set -eu; \

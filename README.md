@@ -170,8 +170,9 @@ The source tree contains the dispatch scripts, the compatibility register, and
 the Swift host. The locked API dependency graph uses the pinned `moneywiz-api`
 Git revision in `pyproject.toml`; no nested or local API checkout is required.
 It is assembled into the relocatable app bundle. Bundle publication selects
-Git-tracked product scripts and documentation plus the required
-launcher/configuration files. Tracked development-only test and sanitization
-helpers, tests, local databases, SQLite sidecars, logs, caches, and other
-untracked files are not installed. The `create-test-db` and `sanitize-test-db`
-commands remain available only through the source-tree dispatcher.
+runtime programs from one explicit product manifest, copies tracked
+documentation separately, and adds the required launcher/configuration files.
+Development helpers and build inputs, tests, local databases, SQLite sidecars,
+logs, caches, and other untracked files are not installed. The `create-test-db`
+and `sanitize-test-db` commands remain available only through the source-tree
+dispatcher.
