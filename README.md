@@ -28,12 +28,16 @@ Build-time prerequisites:
 - `uv`.
 - This checkout, including `pyproject.toml` and `uv.lock`.
 
-Install from a clean checkout on macOS. The build requires `git`, `uv`, and
-`swiftc`; users do not need Python, `pyenv`, or `uv` after installation.
+Install from the checkout you intend to package. The builder uses current
+worktree contents, so review uncommitted changes before installing. The build
+requires `git`, `uv`, and `swiftc`; users do not need Python, `pyenv`, or `uv`
+after installation.
 
-Check the available targets, validate the build prerequisites, then install:
+For the default installation prefix, make `moneywiz` available in the current
+shell before verifying the installation:
 
 ~~~sh
+export PATH="$HOME/.local/bin:$PATH"
 make
 make check-deps
 make install
@@ -53,7 +57,8 @@ make configure-install-dir APP_BUNDLE_DIR="$HOME/LocalApps"
 make install
 ~~~
 
-Ensure `~/.local/bin` is on `PATH`.
+Add `~/.local/bin` to your shell startup configuration to make that PATH change
+permanent.
 
 To update an existing installation, pull or check out the desired revision and
 run `make install` again. The build stages and validates a replacement bundle

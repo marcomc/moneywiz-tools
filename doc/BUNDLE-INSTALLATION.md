@@ -37,6 +37,7 @@ Run `make` to print the available targets and their short descriptions.
 ## Install commands
 
 ```sh
+export PATH="$HOME/.local/bin:$PATH"
 make check-deps
 make install
 moneywiz --version
@@ -74,8 +75,9 @@ make configure-install-dir APP_BUNDLE_DIR="$HOME/LocalApps"
 make install
 ```
 
-The chosen location is persisted in the user configuration used by Make.
-Ensure `~/.local/bin` is on `PATH`.
+The chosen location is persisted in the user configuration used by Make. For
+the default prefix, add `~/.local/bin` to your shell startup configuration;
+the command above makes it available in the current shell.
 
 `make check-deps` is a prerequisite preflight check. It verifies `git`, `uv`,
 `swiftc`, the project files, the Git worktree, and whether the command
