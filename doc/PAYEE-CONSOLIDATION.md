@@ -30,7 +30,10 @@ Known reference counts include `ZSYNCOBJECT.ZPAYEE2` and
 ## Exact merge workflow
 
 ~~~sh
-moneywiz merge-duplicate-payees --show-plan \
+moneywiz merge-duplicate-payees --show-plan
+
+# Run the separate similar-name analysis only when an export is needed.
+moneywiz merge-duplicate-payees \
   --fuzzy-map "$HOME/payee-fuzzy-review.csv"
 
 # Quit MoneyWiz after sync has settled.
@@ -48,7 +51,9 @@ This relationship inventory does not authorize native merge mutation.
 
 ## Similar-name approval map
 
-`--fuzzy-map PATH` writes an editable CSV. Every row begins with:
+`--fuzzy-map PATH` opts into the similar-name comparison pass and writes an
+editable CSV. Without that option, exact-plan display and application do not
+build fuzzy candidates. Every row begins with:
 
 | Field | Meaning |
 | --- | --- |
@@ -64,6 +69,9 @@ of the exact merge plan.
 
 The current command never reads the approval fields to write fuzzy pairs.
 That future operation requires an explicit, separately reviewed design.
+Exported payee names beginning with `=`, `+`, `-`, or `@` receive a leading
+apostrophe so spreadsheet applications keep the untrusted name as literal
+text. Other names are preserved unchanged.
 
 ## Native behavior evidence
 

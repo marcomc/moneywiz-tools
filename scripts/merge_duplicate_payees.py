@@ -8,10 +8,10 @@ import csv
 import os
 import sqlite3
 import unicodedata
+from collections.abc import Sequence
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 from pathlib import Path
-from typing import Any, Sequence
 
 from reassign_payees_by_id import (
     ReassignmentError,
@@ -20,7 +20,6 @@ from reassign_payees_by_id import (
     apply_coredata_payload,
     normalize_payee_name,
 )
-
 
 SIMILARITY_THRESHOLD = 0.88
 
@@ -69,7 +68,7 @@ class DuplicatePayeePlan:
 
     payees_analyzed: int
     exact_groups: tuple[ExactDuplicateGroup, ...]
-    fuzzy_candidates: tuple[FuzzyCandidate, ...]
+    fuzzy_candidates: tuple[FuzzyCandidate, ...] | None
 
     @property
     def merge_count(self) -> int:
@@ -101,12 +100,10 @@ def _reference_counts(
     if not _table_exists(con, table_name):
         return {}
     rows = con.execute(
-        (
-            f"SELECT {column_name} AS payee_id, COUNT(*) AS reference_count "
-            f"FROM {table_name} "
-            f"WHERE {column_name} IS NOT NULL AND {column_name} != 0 "
-            f"GROUP BY {column_name}"
-        )
+        f"SELECT {column_name} AS payee_id, COUNT(*) AS reference_count "
+        f"FROM {table_name} "
+        f"WHERE {column_name} IS NOT NULL AND {column_name} != 0 "
+        f"GROUP BY {column_name}"
     ).fetchall()
     return {
         int(row["payee_id"]): int(row["reference_count"])
@@ -238,7 +235,9 @@ def _build_fuzzy_candidates(payees: Sequence[Payee]) -> tuple[FuzzyCandidate, ..
     )
 
 
-def build_plan(db_path: Path) -> DuplicatePayeePlan:
+def build_plan(
+    db_path: Path, *, include_fuzzy_candidates: bool = False
+) -> DuplicatePayeePlan:
     """Inspect a store without modifying it."""
     con = _dict_connection(db_path)
     try:
@@ -258,7 +257,8 @@ def build_plan(db_path: Path) -> DuplicatePayeePlan:
             duplicates = ordered[1:]
             without_gid = [payee.id for payee in ordered if not payee.gid]
             blocked_reason = (
-                "missing GID for payee ids " + ", ".join(str(payee_id) for payee_id in without_gid)
+                "missing GID for payee ids "
+                + ", ".join(str(payee_id) for payee_id in without_gid)
                 if without_gid
                 else None
             )
@@ -274,7 +274,9 @@ def build_plan(db_path: Path) -> DuplicatePayeePlan:
         return DuplicatePayeePlan(
             payees_analyzed=len(payees),
             exact_groups=tuple(exact_groups),
-            fuzzy_candidates=_build_fuzzy_candidates(payees),
+            fuzzy_candidates=(
+                _build_fuzzy_candidates(payees) if include_fuzzy_candidates else None
+            ),
         )
     finally:
         con.close()
@@ -288,10 +290,7 @@ def write_fuzzy_map(
 ) -> Path:
     """Write an editable approval map; it is never used by the apply path."""
     destination = path.expanduser()
-    if destination.exists() and not overwrite:
-        raise ReassignmentError(
-            f"fuzzy map already exists: {destination}; use --overwrite-fuzzy-map to replace it"
-        )
+    _require_writable_fuzzy_map_destination(destination, overwrite=overwrite)
     destination.parent.mkdir(parents=True, exist_ok=True)
     with destination.open("w", newline="", encoding="utf-8") as map_file:
         writer = csv.DictWriter(
@@ -317,15 +316,27 @@ def write_fuzzy_map(
                     "similarity": f"{candidate.similarity:.3f}",
                     "reason": candidate.reason,
                     "left_id": candidate.left.id,
-                    "left_name": candidate.left.name,
+                    "left_name": _spreadsheet_literal(candidate.left.name),
                     "right_id": candidate.right.id,
-                    "right_name": candidate.right.name,
+                    "right_name": _spreadsheet_literal(candidate.right.name),
                     "review_decision": "pending",
                     "approved_canonical_id": "",
                     "review_notes": "",
                 }
             )
     return destination
+
+
+def _require_writable_fuzzy_map_destination(path: Path, *, overwrite: bool) -> None:
+    if path.exists() and not overwrite:
+        raise ReassignmentError(
+            f"fuzzy map already exists: {path}; use --overwrite-fuzzy-map to replace it"
+        )
+
+
+def _spreadsheet_literal(value: str) -> str:
+    """Prevent payee names from being interpreted as spreadsheet formulas."""
+    return f"'{value}" if value.startswith(("=", "+", "-", "@")) else value
 
 
 def apply_exact_groups(db_path: Path, plan: DuplicatePayeePlan) -> None:
@@ -388,7 +399,8 @@ def make_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Merge exact-normalized payee duplicates through the MoneyWiz Core Data "
-            "writer and export similar-name pairs for manual review."
+            "writer. Fuzzy analysis runs only when --fuzzy-map requests a manual "
+            "review export."
         )
     )
     parser.add_argument(
@@ -410,7 +422,10 @@ def make_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--fuzzy-map",
         type=Path,
-        help="Write similar-but-nonexact pairs as an editable pending-review CSV",
+        help=(
+            "Analyze similar-but-nonexact pairs and write an editable "
+            "pending-review CSV"
+        ),
     )
     parser.add_argument(
         "--overwrite-fuzzy-map",
@@ -432,11 +447,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
 
     try:
-        plan = build_plan(db_path)
+        if args.fuzzy_map is not None:
+            _require_writable_fuzzy_map_destination(
+                args.fuzzy_map.expanduser(), overwrite=args.overwrite_fuzzy_map
+            )
+        plan = build_plan(db_path, include_fuzzy_candidates=args.fuzzy_map is not None)
         print("-- " + ("APPLY" if args.apply else "DRY-RUN") + " --")
         if (not args.quiet) or args.show_plan:
             _print_plan(plan)
         if args.fuzzy_map is not None:
+            assert plan.fuzzy_candidates is not None
             destination = write_fuzzy_map(
                 args.fuzzy_map,
                 plan.fuzzy_candidates,
@@ -446,18 +466,18 @@ def main(argv: Sequence[str] | None = None) -> int:
                 f"Fuzzy review map: {destination} "
                 f"({len(plan.fuzzy_candidates)} pending candidates)"
             )
-        elif plan.fuzzy_candidates:
-            print(
-                "Fuzzy review map not written; use --fuzzy-map PATH to export "
-                f"{len(plan.fuzzy_candidates)} pending candidates."
-            )
         if args.apply:
             apply_exact_groups(db_path, plan)
+        fuzzy_summary = (
+            "not-requested"
+            if plan.fuzzy_candidates is None
+            else str(len(plan.fuzzy_candidates))
+        )
         print(
             f"\nSummary: payees={plan.payees_analyzed}, "
             f"exact_groups={len(plan.exact_groups)}, merges={plan.merge_count}, "
             f"blocked_groups={len(plan.blocked_groups)}, "
-            f"fuzzy_candidates={len(plan.fuzzy_candidates)}"
+            f"fuzzy_candidates={fuzzy_summary}"
         )
         if args.apply and plan.merge_count:
             print("Reopen MoneyWiz and wait for iCloud Sync to report Up to Date.")

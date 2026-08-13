@@ -113,24 +113,34 @@ the same user after Unicode NFKC normalization, whitespace collapse, and case
 folding. Similar names are review data only; the fuzzy CSV is never read to
 perform a merge.
 
-1. Create and inspect an exact-merge plan, and export similar-name candidates:
+1. Create and inspect an exact-merge plan:
 
    ~~~sh
-   moneywiz merge-duplicate-payees --show-plan \
+   moneywiz merge-duplicate-payees --show-plan
+   ~~~
+
+2. When a similar-name review is needed, request the separate fuzzy analysis
+   and CSV export explicitly:
+
+   ~~~sh
+   moneywiz merge-duplicate-payees \
      --fuzzy-map "$HOME/payee-fuzzy-review.csv"
    ~~~
 
-2. Review the plan. The CSV may help identify future cleanup candidates, but
+   Exact-only dry runs and apply attempts do not perform the quadratic fuzzy
+   comparison pass.
+
+3. Review the plan. The CSV may help identify future cleanup candidates, but
    changing it does not affect this command.
 
-3. The CLI application capability is currently blocked pending separate
+4. The CLI application capability is currently blocked pending separate
    acceptance evidence:
 
    ~~~sh
    moneywiz compatibility --capability write.merge-duplicate-payees
    ~~~
 
-4. For an approved exact group, merge it in MoneyWiz 2026 through
+5. For an approved exact group, merge it in MoneyWiz 2026 through
    **Preferences > Payees > Edit**. Reopen the transaction form and confirm
    iCloud Sync is `Up to Date`.
 
@@ -141,7 +151,9 @@ needed.
 
 `pending` means no reviewer has decided whether the two names identify the same
 merchant. The CSV is audit metadata only: `merge-duplicate-payees --apply`
-never reads or applies it.
+never reads or applies it. Names beginning with `=`, `+`, `-`, or `@` are
+prefixed with an apostrophe in the export so spreadsheet applications treat
+them as literal text.
 
 | Decision | CSV fields to record | Next action |
 | --- | --- | --- |
