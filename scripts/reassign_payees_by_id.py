@@ -40,6 +40,17 @@ PAYEE_RELEVANT_EMPTY_TYPENAMES: tuple[str, ...] = (
     "WithdrawTransaction",
 )
 
+ACCOUNT_TYPENAMES: tuple[str, ...] = (
+    "Account",
+    "BankChequeAccount",
+    "BankSavingAccount",
+    "CashAccount",
+    "CreditCardAccount",
+    "ForexAccount",
+    "InvestmentAccount",
+    "LoanAccount",
+)
+
 
 class ReassignmentError(Exception):
     """A user-facing failure with no Python traceback."""
@@ -79,6 +90,15 @@ class Reassignment:
 class ReassignmentPlan:
     processed: int
     operations: tuple[Reassignment, ...]
+    noops: tuple[ReassignmentNoOp, ...] = ()
+
+    def __post_init__(self) -> None:
+        classified = len(self.operations) + len(self.noops)
+        if self.processed != classified:
+            raise ReassignmentError(
+                "Internal plan error: selected transaction reconciliation failed "
+                f"({self.processed} selected, {classified} classified)"
+            )
 
     @property
     def created_count(self) -> int:
@@ -87,6 +107,17 @@ class ReassignmentPlan:
     @property
     def updated_count(self) -> int:
         return len(self.operations)
+
+    @property
+    def noop_count(self) -> int:
+        return len(self.noops)
+
+
+@dataclass(frozen=True)
+class ReassignmentNoOp:
+    transaction_id: int
+    transaction_gid: str
+    reason: str
 
 
 def default_db() -> Path:
@@ -172,8 +203,9 @@ def build_plan(
     """Build a read-only plan; all actual writes occur in the Swift writer."""
     con = _dict_connection(db_path)
     try:
-        typenames = (*TRANSACTION_TYPENAMES, "Payee")
+        typenames = (*TRANSACTION_TYPENAMES, *ACCOUNT_TYPENAMES, "Payee")
         entity_ids = _entity_ids(con, typenames)
+        account_entities = [entity_ids[name] for name in ACCOUNT_TYPENAMES]
         payee_entity = entity_ids["Payee"]
         transaction_entity_by_id = {
             entity_ids[name]: name for name in TRANSACTION_TYPENAMES
@@ -241,30 +273,68 @@ def build_plan(
                 if row.get("ZACCOUNT2") is not None
             }
         )
-        account_user_by_id: dict[int, int] = {}
+        account_owner_by_id: dict[int, int | None] = {}
         if account_ids:
-            placeholders = ",".join("?" * len(account_ids))
+            account_placeholders = ",".join("?" * len(account_ids))
+            entity_placeholders = ",".join("?" * len(account_entities))
             for row in con.execute(
-                f"SELECT Z_PK, ZUSER FROM ZSYNCOBJECT WHERE Z_PK IN ({placeholders})",
-                account_ids,
+                f"SELECT Z_PK, ZUSER FROM ZSYNCOBJECT "
+                f"WHERE Z_ENT IN ({entity_placeholders}) "
+                f"AND Z_PK IN ({account_placeholders})",
+                (*account_entities, *account_ids),
             ).fetchall():
-                if row.get("ZUSER") is not None:
-                    account_user_by_id[int(row["Z_PK"])] = int(row["ZUSER"])
+                account_owner_by_id[int(row["Z_PK"])] = (
+                    int(row["ZUSER"]) if row.get("ZUSER") is not None else None
+                )
+
+        owner_ids = sorted(
+            {
+                owner_id
+                for owner_id in account_owner_by_id.values()
+                if owner_id is not None
+            }
+        )
+        valid_owner_ids: set[int] = set()
+        if owner_ids:
+            placeholders = ",".join("?" * len(owner_ids))
+            valid_owner_ids = {
+                int(row["Z_PK"])
+                for row in con.execute(
+                    f"SELECT Z_PK FROM ZUSER WHERE Z_PK IN ({placeholders})",
+                    owner_ids,
+                ).fetchall()
+            }
 
         operations: list[Reassignment] = []
+        noops: list[ReassignmentNoOp] = []
         for row in transaction_rows:
             transaction_id = int(row["Z_PK"])
             account_id = row.get("ZACCOUNT2")
             if account_id is None:
-                continue
-            user_id = account_user_by_id.get(int(account_id))
+                raise ReassignmentError(
+                    f"Transaction {transaction_id} has no account and cannot be reassigned"
+                )
+            account_id = int(account_id)
+            if account_id not in account_owner_by_id:
+                raise ReassignmentError(
+                    f"Transaction {transaction_id} references missing or invalid account {account_id}"
+                )
+            user_id = account_owner_by_id[account_id]
             if user_id is None:
-                continue
+                raise ReassignmentError(
+                    f"Account {account_id} for transaction {transaction_id} has no owner"
+                )
+            if user_id not in valid_owner_ids:
+                raise ReassignmentError(
+                    f"Account {account_id} for transaction {transaction_id} references "
+                    f"missing or invalid owner {user_id}"
+                )
             transaction_gid = row.get("ZGID")
-            if not transaction_gid:
+            if not transaction_gid or not str(transaction_gid).strip():
                 raise ReassignmentError(
                     f"Transaction {transaction_id} has no GID and cannot be used by the Core Data writer"
                 )
+            transaction_gid = str(transaction_gid)
 
             description_raw = row.get("ZDESC2")
             description = (
@@ -294,15 +364,24 @@ def build_plan(
                     )
                 target_existing = fallback_payee
             else:
-                continue
+                raise ReassignmentError(
+                    f"Transaction {transaction_id} has an empty description and no fallback payee"
+                )
 
             target_id = target_existing.id if target_existing is not None else None
             if target_id is not None and row.get("ZPAYEE2") == target_id:
+                noops.append(
+                    ReassignmentNoOp(
+                        transaction_id=transaction_id,
+                        transaction_gid=transaction_gid,
+                        reason="already assigned to target payee",
+                    )
+                )
                 continue
             operations.append(
                 Reassignment(
                     transaction_id=transaction_id,
-                    transaction_gid=str(transaction_gid),
+                    transaction_gid=transaction_gid,
                     transaction_entity=transaction_entity_by_id[int(row["Z_ENT"])],
                     user_id=user_id,
                     existing_payee=target_existing,
@@ -311,7 +390,9 @@ def build_plan(
                 )
             )
         return ReassignmentPlan(
-            processed=len(transaction_rows), operations=tuple(operations)
+            processed=len(transaction_rows),
+            operations=tuple(operations),
+            noops=tuple(noops),
         )
     finally:
         con.close()
@@ -472,6 +553,8 @@ def _print_plan(plan: ReassignmentPlan) -> None:
             f"[{index}] tx {operation.transaction_id} ({operation.transaction_entity}) "
             f"-> {target}"
         )
+    for noop in plan.noops:
+        print(f"[-] tx {noop.transaction_id} -> no-op ({noop.reason})")
 
 
 def make_parser() -> argparse.ArgumentParser:
@@ -539,7 +622,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             apply_plan(db_path, plan)
         print(
             f"\nSummary: processed={plan.processed}, created={plan.created_count}, "
-            f"updated={plan.updated_count}"
+            f"updated={plan.updated_count}, noops={plan.noop_count}"
         )
         if args.apply and plan.operations:
             print("Reopen MoneyWiz and wait for iCloud Sync to report Up to Date.")

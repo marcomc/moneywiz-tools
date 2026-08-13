@@ -16,8 +16,9 @@
 
 - Limited quadratic similar-name comparisons to explicit `--fuzzy-map`
   exports, while distinguishing a skipped analysis from an empty result.
-- Escaped formula-like payee names in fuzzy-review CSV exports so spreadsheet
-  applications treat both name columns as literal data.
+- Escaped direct, compatibility-normalized, and whitespace- or control-prefixed
+  formula-like payee names in both fuzzy-review CSV name columns so spreadsheet
+  applications treat them as literal data.
 - Added schema capability profiles and investment-column aliases so read-only
   commands support both suffixed fixture columns and the unsuffixed columns
   observed in the MoneyWiz 2026 live store.

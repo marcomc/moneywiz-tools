@@ -71,7 +71,10 @@ The current command never reads the approval fields to write fuzzy pairs.
 That future operation requires an explicit, separately reviewed design.
 Exported payee names beginning with `=`, `+`, `-`, or `@` receive a leading
 apostrophe so spreadsheet applications keep the untrusted name as literal
-text. Other names are preserved unchanged.
+text. Classification uses a Unicode NFKC view and ignores leading Unicode
+whitespace and control characters, which also catches compatibility-equivalent
+sigils and hidden formula prefixes. The apostrophe is added to the original
+name; other names are preserved unchanged.
 
 ## Native behavior evidence
 

@@ -334,9 +334,19 @@ def _require_writable_fuzzy_map_destination(path: Path, *, overwrite: bool) -> N
         )
 
 
+def _is_spreadsheet_formula(value: str) -> bool:
+    """Classify formula-capable CSV text without changing its rendered value."""
+    normalized = unicodedata.normalize("NFKC", value)
+    for character in normalized:
+        if character.isspace() or unicodedata.category(character).startswith("C"):
+            continue
+        return character in ("=", "+", "-", "@")
+    return False
+
+
 def _spreadsheet_literal(value: str) -> str:
     """Prevent payee names from being interpreted as spreadsheet formulas."""
-    return f"'{value}" if value.startswith(("=", "+", "-", "@")) else value
+    return f"'{value}" if _is_spreadsheet_formula(value) else value
 
 
 def apply_exact_groups(db_path: Path, plan: DuplicatePayeePlan) -> None:

@@ -82,6 +82,31 @@ persistent store, the host requires the exact profile ID, checksum,
 reassignment-only operation list. Schema 2, merge, mixed, blocked, and unknown
 capability payloads fail closed.
 
+The planner classifies every selected transaction as either one writer
+operation or an explicit no-op. A missing or dangling account or owner, a
+missing transaction GID, or an empty description without a configured fallback
+rejects the entire plan. The summary reports selected, updated, and no-op
+counts so `selected = updated + no-ops` is always visible.
+Account references must resolve to the verified `Account` Core Data entity
+family; an arbitrary `ZSYNCOBJECT` row with an owner field is not accepted as
+an account.
+
+The host admits only the ten transaction entities used by the Python planner:
+`DepositTransaction`, `InvestmentExchangeTransaction`,
+`InvestmentBuyTransaction`, `InvestmentSellTransaction`,
+`ReconcileTransaction`, `RefundTransaction`, `TransferBudgetTransaction`,
+`TransferDepositTransaction`, `TransferWithdrawTransaction`, and
+`WithdrawTransaction`. It rejects parent, sibling, payee, user, and arbitrary
+entity names even when a supplied GID exists elsewhere in the model.
+
+Before any insert or relationship assignment, the host validates the complete
+payload and resolves every transaction by exact entity and GID, every account
+owner, every existing payee owner, and every shared new-payee key. Duplicate
+transaction GIDs, partial or mixed targets, inconsistent key-to-name mappings,
+and keys spanning users stop the write before mutation. Only after this
+read-only preflight succeeds does one mutation phase create payees, assign
+relationships, and save.
+
 ## Behavior at duplicate names
 
 The reassignment planner normalizes names before selecting a destination. It

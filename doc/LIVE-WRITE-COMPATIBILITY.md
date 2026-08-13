@@ -39,6 +39,14 @@ native host checks both known MoneyWiz bundle identifiers. Either check fails
 closed when inspection is unavailable or abnormal. This is a defensive
 preflight, not an atomic process or store lock.
 
+Every selected row must become either a writer operation or an explicit
+already-target no-op. The planner rejects the complete selection if any row has
+a missing or dangling account or owner, a missing GID, or an empty description
+without a fallback payee. Its summary reconciles selected rows as
+`processed = updated + noops`.
+The account lookup is restricted to the verified `Account` entity family, so a
+different `ZSYNCOBJECT` row cannot satisfy the ownership check accidentally.
+
 The tool refuses ambiguous normalized payee names. Resolve or consolidate those
 duplicates through the MoneyWiz GUI while
 `write.merge-duplicate-payees` remains blocked. Export similar pairs with
@@ -111,6 +119,13 @@ structure and exact model checksum, and passes the verified capability,
 profile ID, checksum, and writer-contract version to the Swift host. Before
 opening the persistent store, the host independently requires the exact
 supported profile, checksum, `write.reassign-payees-by-id` capability, schema
-version 1, and reassignment-only payload shape. It then compares the expected
-checksum with both the store metadata and the selected MoneyWiz managed-object
-model. Unknown, blocked, merge, mixed, or schema 2 plans fail closed.
+version 1, ten-entity transaction allowlist, and reassignment-only payload
+shape. It rejects blank or duplicate transaction GIDs, partial or mixed target
+fields, and inconsistent new-payee keys. It then compares the expected checksum
+with both the store metadata and the selected MoneyWiz managed-object model.
+
+After the store opens, a read-only Core Data preflight resolves the complete
+plan using exact-entity fetches with subentities excluded. It verifies account
+users, existing-payee ownership, and shared new-payee ownership before any
+payee insert or relationship change. Unknown, blocked, merge, mixed, schema 2,
+entity-mismatched, or ownership-invalid plans fail closed without mutation.

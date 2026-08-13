@@ -16,13 +16,26 @@ struct WriterPolicy {
     let modelChecksum: String
     let capability: String
     let schemaVersion: Int
+    let transactionEntities: Set<String>
 }
 
 private let supportedWriterPolicy = WriterPolicy(
     profileID: "moneywiz-2026-model-48",
     modelChecksum: "+6BY8eaTke2jfAd5Bzt5D49JRMZld5o8ZoUW+4G2ElQ=",
     capability: "write.reassign-payees-by-id",
-    schemaVersion: 1
+    schemaVersion: 1,
+    transactionEntities: Set([
+        "DepositTransaction",
+        "InvestmentExchangeTransaction",
+        "InvestmentBuyTransaction",
+        "InvestmentSellTransaction",
+        "ReconcileTransaction",
+        "RefundTransaction",
+        "TransferBudgetTransaction",
+        "TransferDepositTransaction",
+        "TransferWithdrawTransaction",
+        "WithdrawTransaction",
+    ])
 )
 
 final class PassthroughTransformer: ValueTransformer {
@@ -157,31 +170,72 @@ func configureTransformers() {
     }
 }
 
-func fetchObject(
+func fetchExactObject(
     entityName: String,
     gid: String,
     context: NSManagedObjectContext
 ) throws -> NSManagedObject {
     let request = NSFetchRequest<NSManagedObject>(entityName: entityName)
     request.fetchLimit = 2
+    request.includesSubentities = false
     request.predicate = NSPredicate(format: "GID == %@", gid)
     let results = try context.fetch(request)
-    guard results.count == 1, let object = results.first else {
+    guard results.count == 1,
+          let object = results.first,
+          object.entity.name == entityName else {
         throw HostError.message("expected one \(entityName) with GID \(gid), found \(results.count)")
     }
     return object
 }
 
-func validateOperation(_ operation: WriterOperation) throws {
-    guard !operation.transactionGID.isEmpty, !operation.transactionEntity.isEmpty else {
-        throw HostError.message("writer operation must identify a transaction and entity")
-    }
-    let hasExistingTarget = !(operation.existingPayeeGID?.isEmpty ?? true)
-    let hasNewTarget = !(operation.newPayeeKey?.isEmpty ?? true) && !(operation.newPayeeName?.isEmpty ?? true)
-    guard hasExistingTarget != hasNewTarget else {
+func isBlank(_ value: String) -> Bool {
+    value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+}
+
+func validateOperation(_ operation: WriterOperation, policy: WriterPolicy) throws {
+    guard !isBlank(operation.transactionGID),
+          policy.transactionEntities.contains(operation.transactionEntity) else {
         throw HostError.message(
-            "transaction \(operation.transactionGID) must define exactly one payee target"
+            "writer operation must identify an allowed transaction entity and nonblank GID"
         )
+    }
+
+    if let existingPayeeGID = operation.existingPayeeGID {
+        guard !isBlank(existingPayeeGID),
+              operation.newPayeeKey == nil,
+              operation.newPayeeName == nil else {
+            throw HostError.message(
+                "transaction \(operation.transactionGID) has an incomplete or mixed payee target"
+            )
+        }
+    } else {
+        guard let newPayeeKey = operation.newPayeeKey,
+              let newPayeeName = operation.newPayeeName,
+              !isBlank(newPayeeKey),
+              !isBlank(newPayeeName) else {
+            throw HostError.message(
+                "transaction \(operation.transactionGID) has an incomplete or mixed payee target"
+            )
+        }
+    }
+}
+
+func validateOperations(_ operations: [WriterOperation], policy: WriterPolicy) throws {
+    var transactionGIDs: Set<String> = []
+    var newPayeeNames: [String: String] = [:]
+    for operation in operations {
+        try validateOperation(operation, policy: policy)
+        guard transactionGIDs.insert(operation.transactionGID).inserted else {
+            throw HostError.message(
+                "transaction GID \(operation.transactionGID) appears more than once"
+            )
+        }
+        if let key = operation.newPayeeKey, let name = operation.newPayeeName {
+            if let previousName = newPayeeNames[key], previousName != name {
+                throw HostError.message("new payee key \(key) maps to inconsistent names")
+            }
+            newPayeeNames[key] = name
+        }
     }
 }
 
@@ -200,9 +254,7 @@ func validateWriterPlan(_ plan: WriterPlan) throws -> String {
     guard plan.payeeMerges == nil else {
         throw HostError.message("reassignment writer plan must not contain payee merges")
     }
-    for operation in plan.operations {
-        try validateOperation(operation)
-    }
+    try validateOperations(plan.operations, policy: policy)
     return policy.modelChecksum
 }
 
@@ -286,6 +338,115 @@ func loadContainer(
     return container
 }
 
+struct ResolvedWriterOperation {
+    let operation: WriterOperation
+    let transaction: NSManagedObject
+    let transactionUser: NSManagedObject
+    let existingPayee: NSManagedObject?
+}
+
+func preflightOperations(
+    _ operations: [WriterOperation],
+    context: NSManagedObjectContext
+) throws -> [ResolvedWriterOperation] {
+    var resolved: [ResolvedWriterOperation] = []
+    var newPayeeUsers: [String: NSManagedObjectID] = [:]
+    for operation in operations {
+        let transaction = try fetchExactObject(
+            entityName: operation.transactionEntity,
+            gid: operation.transactionGID,
+            context: context
+        )
+        guard let account = transaction.value(forKey: "account") as? NSManagedObject,
+              let transactionUser = account.value(forKey: "user") as? NSManagedObject else {
+            throw HostError.message(
+                "transaction \(operation.transactionGID) has no account user for payee assignment"
+            )
+        }
+
+        var existingPayee: NSManagedObject?
+        if let existingPayeeGID = operation.existingPayeeGID {
+            let payee = try fetchExactObject(
+                entityName: "Payee", gid: existingPayeeGID, context: context
+            )
+            guard let payeeUser = payee.value(forKey: "user") as? NSManagedObject,
+                  payeeUser.objectID == transactionUser.objectID else {
+                throw HostError.message(
+                    "transaction \(operation.transactionGID) and target payee must belong to the same user"
+                )
+            }
+            existingPayee = payee
+        } else if let key = operation.newPayeeKey {
+            if let priorUser = newPayeeUsers[key], priorUser != transactionUser.objectID {
+                throw HostError.message(
+                    "new payee key \(key) resolved to more than one MoneyWiz user"
+                )
+            }
+            newPayeeUsers[key] = transactionUser.objectID
+        } else {
+            throw HostError.message(
+                "transaction \(operation.transactionGID) has no resolved payee target"
+            )
+        }
+        resolved.append(
+            ResolvedWriterOperation(
+                operation: operation,
+                transaction: transaction,
+                transactionUser: transactionUser,
+                existingPayee: existingPayee
+            )
+        )
+    }
+    return resolved
+}
+
+func mutateResolvedOperations(
+    _ resolvedOperations: [ResolvedWriterOperation],
+    context: NSManagedObjectContext
+) throws -> WriterResult {
+    var createdPayees: [String: NSManagedObject] = [:]
+    for resolved in resolvedOperations {
+        let operation = resolved.operation
+        let targetPayee: NSManagedObject
+        if let existingPayee = resolved.existingPayee {
+            targetPayee = existingPayee
+        } else {
+            guard let key = operation.newPayeeKey,
+                  let name = operation.newPayeeName else {
+                throw HostError.message(
+                    "transaction \(operation.transactionGID) lost its preflighted payee target"
+                )
+            }
+            if let createdPayee = createdPayees[key] {
+                targetPayee = createdPayee
+            } else {
+                let payee = NSEntityDescription.insertNewObject(
+                    forEntityName: "Payee", into: context
+                )
+                payee.setValue(
+                    UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased(),
+                    forKey: "GID"
+                )
+                payee.setValue(name, forKey: "name")
+                payee.setValue(Date(), forKey: "objectCreationDate")
+                payee.setValue(resolved.transactionUser, forKey: "user")
+                createdPayees[key] = payee
+                targetPayee = payee
+            }
+        }
+        resolved.transaction.setValue(targetPayee, forKey: "payee")
+    }
+    if context.hasChanges {
+        try context.save()
+    }
+    return WriterResult(
+        createdPayees: createdPayees.count,
+        reassignedTransactions: resolvedOperations.count,
+        mergedPayees: 0,
+        migratedRelationships: 0
+    )
+}
+
 func writePlan(_ plan: WriterPlan, container: NSPersistentContainer) throws -> WriterResult {
     _ = try validateWriterPlan(plan)
     let context = container.newBackgroundContext()
@@ -294,77 +455,12 @@ func writePlan(_ plan: WriterPlan, container: NSPersistentContainer) throws -> W
 
     context.performAndWait {
         do {
-            var createdPayees: [String: NSManagedObject] = [:]
-            var createdPayeeUsers: [String: String] = [:]
-            for operation in plan.operations {
-                let transaction = try fetchObject(
-                    entityName: operation.transactionEntity,
-                    gid: operation.transactionGID,
-                    context: context
-                )
-                guard let account = transaction.value(forKey: "account") as? NSManagedObject,
-                      let transactionUser = account.value(forKey: "user") as? NSManagedObject else {
-                    throw HostError.message(
-                        "transaction \(operation.transactionGID) has no account user for payee assignment"
-                    )
-                }
-
-                let targetPayee: NSManagedObject
-                if let existingPayeeGID = operation.existingPayeeGID, !existingPayeeGID.isEmpty {
-                    targetPayee = try fetchObject(
-                        entityName: "Payee", gid: existingPayeeGID, context: context
-                    )
-                    guard let payeeUser = targetPayee.value(forKey: "user") as? NSManagedObject,
-                          payeeUser.objectID == transactionUser.objectID else {
-                        throw HostError.message(
-                            "transaction \(operation.transactionGID) and target payee must belong to the same user"
-                        )
-                    }
-                } else {
-                    guard let key = operation.newPayeeKey,
-                          let name = operation.newPayeeName,
-                          !key.isEmpty,
-                          !name.isEmpty else {
-                        throw HostError.message(
-                            "transaction \(operation.transactionGID) has an incomplete new payee target"
-                        )
-                    }
-                    let userIdentifier = transactionUser.objectID.uriRepresentation().absoluteString
-                    if let existingCreatedPayee = createdPayees[key] {
-                        guard createdPayeeUsers[key] == userIdentifier else {
-                            throw HostError.message(
-                                "new payee key \(key) resolved to more than one MoneyWiz user"
-                            )
-                        }
-                        targetPayee = existingCreatedPayee
-                    } else {
-                        let payee = NSEntityDescription.insertNewObject(
-                            forEntityName: "Payee", into: context
-                        )
-                        payee.setValue(
-                            UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased(),
-                            forKey: "GID"
-                        )
-                        payee.setValue(name, forKey: "name")
-                        payee.setValue(Date(), forKey: "objectCreationDate")
-                        payee.setValue(transactionUser, forKey: "user")
-                        createdPayees[key] = payee
-                        createdPayeeUsers[key] = userIdentifier
-                        targetPayee = payee
-                    }
-                }
-                transaction.setValue(targetPayee, forKey: "payee")
-            }
-            if context.hasChanges {
-                try context.save()
-            }
+            let resolvedOperations = try preflightOperations(
+                plan.operations,
+                context: context
+            )
             result = .success(
-                WriterResult(
-                    createdPayees: createdPayees.count,
-                    reassignedTransactions: plan.operations.count,
-                    mergedPayees: 0,
-                    migratedRelationships: 0
-                )
+                try mutateResolvedOperations(resolvedOperations, context: context)
             )
         } catch {
             context.rollback()

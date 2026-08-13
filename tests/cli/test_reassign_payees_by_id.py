@@ -23,12 +23,24 @@ TRANSACTION_TYPES = (
     "WithdrawTransaction",
 )
 
+ACCOUNT_TYPES = (
+    "Account",
+    "BankChequeAccount",
+    "BankSavingAccount",
+    "CashAccount",
+    "CreditCardAccount",
+    "ForexAccount",
+    "InvestmentAccount",
+    "LoanAccount",
+)
+
 
 def make_database(path: Path) -> None:
     con = sqlite3.connect(path)
     con.executescript(
         """
         CREATE TABLE Z_PRIMARYKEY (Z_ENT INTEGER, Z_NAME TEXT);
+        CREATE TABLE ZUSER (Z_PK INTEGER PRIMARY KEY);
         CREATE TABLE ZSYNCOBJECT (
             Z_PK INTEGER PRIMARY KEY,
             Z_ENT INTEGER,
@@ -45,10 +57,12 @@ def make_database(path: Path) -> None:
     con.executemany(
         "INSERT INTO Z_PRIMARYKEY (Z_ENT, Z_NAME) VALUES (?, ?)",
         [(index + 40, name) for index, name in enumerate(TRANSACTION_TYPES)]
+        + [(index + 10, name) for index, name in enumerate(ACCOUNT_TYPES)]
         + [(29, "Payee")],
     )
     withdraw_entity = 40 + TRANSACTION_TYPES.index("WithdrawTransaction")
     con.execute("INSERT INTO ZSYNCOBJECT (Z_PK, Z_ENT, ZUSER) VALUES (100, 10, 1)")
+    con.execute("INSERT INTO ZUSER (Z_PK) VALUES (1)")
     con.execute(
         """
         INSERT INTO ZSYNCOBJECT (Z_PK, Z_ENT, ZGID, ZNAME5, ZUSER7)
@@ -180,6 +194,92 @@ def test_reassign_plan_reuses_one_new_payee_for_matching_descriptions(
     assert "created=1, updated=3" in result.stdout
 
 
+def test_reassign_plan_reports_explicit_already_target_noop(tmp_path: Path) -> None:
+    db_path = tmp_path / "moneywiz.sqlite"
+    make_database(db_path)
+    with sqlite3.connect(db_path) as con:
+        con.execute("UPDATE ZSYNCOBJECT SET ZPAYEE2 = 200 WHERE Z_PK = 300")
+
+    result = run_reassign(db_path, "--from-payee-id", "200", "--show-plan")
+
+    assert result.returncode == 0, result.stderr
+    assert "tx 300 -> no-op (already assigned to target payee)" in result.stdout
+    assert "Summary: processed=1, created=0, updated=0, noops=1" in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("setup_sql", "message"),
+    [
+        ("UPDATE ZSYNCOBJECT SET ZACCOUNT2 = NULL WHERE Z_PK = 300", "has no account"),
+        (
+            "UPDATE ZSYNCOBJECT SET ZACCOUNT2 = 404 WHERE Z_PK = 300",
+            "references missing or invalid account 404",
+        ),
+        ("UPDATE ZSYNCOBJECT SET ZUSER = NULL WHERE Z_PK = 100", "has no owner"),
+        (
+            "UPDATE ZSYNCOBJECT SET ZUSER = 404 WHERE Z_PK = 100",
+            "references missing or invalid owner 404",
+        ),
+    ],
+)
+def test_reassign_rejects_unresolved_account_ownership(
+    tmp_path: Path, setup_sql: str, message: str
+) -> None:
+    db_path = tmp_path / "moneywiz.sqlite"
+    make_database(db_path)
+    with sqlite3.connect(db_path) as con:
+        con.execute(setup_sql)
+
+    result = run_reassign(db_path, "--from-payee-id", "999")
+
+    assert result.returncode == 2
+    assert message in result.stderr
+    assert "-- DRY-RUN --" not in result.stdout
+
+
+def test_reassign_rejects_selected_transaction_without_gid(tmp_path: Path) -> None:
+    db_path = tmp_path / "moneywiz.sqlite"
+    make_database(db_path)
+    with sqlite3.connect(db_path) as con:
+        con.execute("UPDATE ZSYNCOBJECT SET ZGID = '  ' WHERE Z_PK = 301")
+
+    result = run_reassign(db_path, "--from-payee-id", "999")
+
+    assert result.returncode == 2
+    assert "Transaction 301 has no GID" in result.stderr
+    assert "-- DRY-RUN --" not in result.stdout
+
+
+def test_reassign_rejects_account_reference_to_non_account_row(tmp_path: Path) -> None:
+    db_path = tmp_path / "moneywiz.sqlite"
+    make_database(db_path)
+    with sqlite3.connect(db_path) as con:
+        con.execute("INSERT INTO ZSYNCOBJECT (Z_PK, Z_ENT, ZUSER) VALUES (404, 29, 1)")
+        con.execute("UPDATE ZSYNCOBJECT SET ZACCOUNT2 = 404 WHERE Z_PK = 300")
+
+    result = run_reassign(db_path, "--from-payee-id", "999")
+
+    assert result.returncode == 2
+    assert "references missing or invalid account 404" in result.stderr
+    assert "-- DRY-RUN --" not in result.stdout
+
+
+def test_reassign_rejects_empty_description_without_fallback(tmp_path: Path) -> None:
+    db_path = tmp_path / "moneywiz.sqlite"
+    make_database(db_path)
+    with sqlite3.connect(db_path) as con:
+        con.execute("UPDATE ZSYNCOBJECT SET ZDESC2 = '' WHERE Z_PK = 301")
+
+    result = run_reassign(db_path, "--from-payee-id", "999")
+
+    assert result.returncode == 2
+    assert (
+        "Transaction 301 has an empty description and no fallback payee"
+        in result.stderr
+    )
+    assert "-- DRY-RUN --" not in result.stdout
+
+
 def test_reassign_invalid_parameters_are_clean_errors(tmp_path: Path) -> None:
     db_path = tmp_path / "moneywiz.sqlite"
     make_database(db_path)
@@ -258,6 +358,7 @@ def test_reassign_rejects_mixed_user_fallback_plan_atomically(tmp_path: Path) ->
     prepare_empty_description_fallback(db_path, payee_id=201, payee_user_id=1)
     withdraw_entity = 40 + TRANSACTION_TYPES.index("WithdrawTransaction")
     with sqlite3.connect(db_path) as con:
+        con.execute("INSERT INTO ZUSER (Z_PK) VALUES (2)")
         con.execute("INSERT INTO ZSYNCOBJECT (Z_PK, Z_ENT, ZUSER) VALUES (101, 10, 2)")
         con.execute(
             """

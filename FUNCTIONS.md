@@ -153,7 +153,9 @@ needed.
 merchant. The CSV is audit metadata only: `merge-duplicate-payees --apply`
 never reads or applies it. Names beginning with `=`, `+`, `-`, or `@` are
 prefixed with an apostrophe in the export so spreadsheet applications treat
-them as literal text.
+them as literal text. Detection also covers compatibility-equivalent sigils and
+sigils hidden behind leading Unicode whitespace or control characters; the
+original name is otherwise preserved character-for-character.
 
 | Decision | CSV fields to record | Next action |
 | --- | --- | --- |

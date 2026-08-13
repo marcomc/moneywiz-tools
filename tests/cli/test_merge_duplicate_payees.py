@@ -260,15 +260,26 @@ def test_existing_fuzzy_map_is_rejected_before_fuzzy_analysis(
     assert "already exists" in captured.err
 
 
-@pytest.mark.parametrize("prefix", ["=", "+", "-", "@"])
-def test_fuzzy_map_writes_formula_like_names_as_literals(
-    tmp_path: Path, prefix: str
+@pytest.mark.parametrize(
+    ("left_name", "right_name"),
+    [
+        ("=LEFT()", "+RIGHT()"),
+        ("-1", "@RIGHT"),
+        ("\t=LEFT()", "\r+RIGHT()"),
+        ("\x00-1", "\n@RIGHT"),
+        ("\u00a0\u200b\t=LEFT()", "\u202f\u2060\r+RIGHT()"),
+        ("\uff1dLEFT()", "\uff0bRIGHT()"),
+        ("\u3000\uff0d1", "\u00a0\uff20RIGHT"),
+    ],
+)
+def test_fuzzy_map_writes_hidden_formula_like_names_as_literals(
+    tmp_path: Path, left_name: str, right_name: str
 ) -> None:
     map_path = tmp_path / "payee-fuzzy-review.csv"
     candidate = merge_duplicate_payees.FuzzyCandidate(
         user_id=1,
-        left=merge_duplicate_payees.Payee(1, "left", f"{prefix}LEFT()", 1, 0, 0),
-        right=merge_duplicate_payees.Payee(2, "right", f"{prefix}RIGHT()", 1, 0, 0),
+        left=merge_duplicate_payees.Payee(1, "left", left_name, 1, 0, 0),
+        right=merge_duplicate_payees.Payee(2, "right", right_name, 1, 0, 0),
         similarity=0.9,
         reason="test",
     )
@@ -277,16 +288,26 @@ def test_fuzzy_map_writes_formula_like_names_as_literals(
 
     with map_path.open(newline="", encoding="utf-8") as map_file:
         row = next(csv.DictReader(map_file))
-    assert row["left_name"] == f"'{prefix}LEFT()"
-    assert row["right_name"] == f"'{prefix}RIGHT()"
+    assert row["left_name"] == f"'{left_name}"
+    assert row["right_name"] == f"'{right_name}"
 
 
-def test_fuzzy_map_preserves_ordinary_names(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("left_name", "right_name"),
+    [
+        ("Merchant A", "Merchant B"),
+        (" Merchant A", "\tMerchant B"),
+        ("'=LEFT()", "\u200b'\uff0bRIGHT()"),
+    ],
+)
+def test_fuzzy_map_preserves_non_formula_names(
+    tmp_path: Path, left_name: str, right_name: str
+) -> None:
     map_path = tmp_path / "payee-fuzzy-review.csv"
     candidate = merge_duplicate_payees.FuzzyCandidate(
         user_id=1,
-        left=merge_duplicate_payees.Payee(1, "left", "Merchant A", 1, 0, 0),
-        right=merge_duplicate_payees.Payee(2, "right", "Merchant B", 1, 0, 0),
+        left=merge_duplicate_payees.Payee(1, "left", left_name, 1, 0, 0),
+        right=merge_duplicate_payees.Payee(2, "right", right_name, 1, 0, 0),
         similarity=0.9,
         reason="test",
     )
@@ -295,5 +316,5 @@ def test_fuzzy_map_preserves_ordinary_names(tmp_path: Path) -> None:
 
     with map_path.open(newline="", encoding="utf-8") as map_file:
         row = next(csv.DictReader(map_file))
-    assert row["left_name"] == "Merchant A"
-    assert row["right_name"] == "Merchant B"
+    assert row["left_name"] == left_name
+    assert row["right_name"] == right_name
