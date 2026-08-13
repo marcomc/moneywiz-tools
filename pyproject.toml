@@ -1,6 +1,6 @@
 [project]
 name = "moneywiz-tools"
-version = "0.2.0"
+version = "0.2.1"
 description = "Core Data-backed command-line tools for MoneyWiz"
 requires-python = ">=3.11,<3.12"
 dependencies = [

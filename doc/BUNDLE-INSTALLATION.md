@@ -37,7 +37,10 @@ Run `make` to print the available targets and their short descriptions.
 ## Install commands
 
 ```sh
+make check-deps
 make install
+moneywiz --version
+moneywiz --help
 ```
 
 `make install` installs the app bundle and the `moneywiz` command. It also
@@ -74,6 +77,10 @@ make install
 The chosen location is persisted in the user configuration used by Make.
 Ensure `~/.local/bin` is on `PATH`.
 
+`make check-deps` is a prerequisite preflight check. It verifies `git`, `uv`,
+`swiftc`, the project files, the Git worktree, and whether the command
+directory is on `PATH`; it does not install missing tools.
+
 ## Runtime layout
 
 ```text
@@ -107,6 +114,16 @@ Re-run the relevant install target after changing the source:
 
 ```sh
 make install
+```
+
+Use `make reinstall` as an equivalent explicit alias when documenting an
+upgrade procedure. Both targets build and validate a new staged bundle before
+replacing the active one. Verify the promoted version and command path:
+
+```sh
+moneywiz --version
+command -v moneywiz
+readlink "$(command -v moneywiz)"
 ```
 
 `make install` and `make reinstall` use the same rollback-safe upgrade path;

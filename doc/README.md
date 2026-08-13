@@ -1,6 +1,8 @@
 # Documentation Index
 
 Use the documents below by task rather than reading the design history first.
+The README and command reference are the quickest path to a working CLI;
+design documents explain implementation constraints after the task is clear.
 
 ## Operator guides
 
@@ -38,3 +40,18 @@ numbers as a live-store contract and do not hand-edit generated sections.
 | Extension boundaries and roadmap | [Extensions](EXTENSIONS.md) |
 | Build-time repository relationship | [Repository Integration](REPO-INTEGRATION.md) |
 | Product/API/writer architecture decisions | [Wayfinder Map](wayfinder/MAP.md) |
+
+## Developer documentation workflow
+
+| Developer task | Start here | Success check |
+| --- | --- | --- |
+| Change a command or option | [Functions Reference](../FUNCTIONS.md), then [Technical Design](TDD.md) | `moneywiz --help` and command-specific help match the docs |
+| Change installation or bundle contents | [Bundle Installation](BUNDLE-INSTALLATION.md), then [Repository Integration](REPO-INTEGRATION.md) | `make check-deps`, bundle tests, and installed `moneywiz --version` pass |
+| Change live-write behavior | [Live Write Compatibility](LIVE-WRITE-COMPATIBILITY.md), then [Core Data Writer](CORE-DATA-WRITER.md) | Compatibility and writer tests pass; live evidence is recorded separately |
+| Prepare a release | [CHANGELOG](../CHANGELOG.md), [Technical Design](TDD.md), and [Functional Specification](FSD.md) | Version metadata, help output, docs, tests, and `git diff --check` agree |
+
+Documentation maintenance follows four checks: technical accuracy against the
+implementation, task completeness from setup through success verification,
+skimmable structure with one clear reader goal per section, and release
+alignment. Examples should be copied from executable help or exercised in the
+CLI regression suite; do not document retired entry points as alternatives.

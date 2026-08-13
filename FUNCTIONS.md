@@ -4,6 +4,18 @@
 Tools.app. It reads `db_path` from `~/.moneywizrc`; use an absolute path, one
 beginning with `~/`, or override it per command with `--db PATH`.
 
+Run `moneywiz --help` for the executable's current top-level syntax. This page
+is the task-oriented reference for the same interface; command-specific help
+is authoritative when an option or default changes.
+
+| Dispatcher | Where it runs | Intended audience |
+| --- | --- | --- |
+| `moneywiz` | Installed app bundle via `~/.local/bin/moneywiz` | End users and automation |
+| `./moneywiz.sh` | Source checkout | Developers and fixture maintenance |
+
+The installed command is self-contained. It does not depend on this checkout,
+system Python, `pyenv`, or `uv` at runtime.
+
 ## Global commands and options
 
 | Command or option | Example | Purpose |
@@ -41,6 +53,11 @@ Use `moneywiz transactions --list-fields` to discover selectable transaction
 fields. Use `--fields f1,f2` or `--all-fields` when a narrower or wider result
 is needed.
 
+All commands accept `--help` without opening the configured database. For a
+machine-readable result, pass `--format json` to commands that advertise the
+`table|json` format. `record`, `summary`, and the interactive shell retain
+their command-specific output behavior.
+
 ## Retired raw-SQL commands
 
 Earlier releases exposed `insert`, `update`, `delete`, `safe-delete`, `rename`,
@@ -48,7 +65,7 @@ Earlier releases exposed `insert`, `update`, `delete`, `safe-delete`, `rename`,
 source-tree dispatchers do not route those commands. Their old syntax is not a
 supported test or live-write interface.
 
-The source checkout still provides only the test-database lifecycle commands:
+The source checkout provides the test-database lifecycle commands:
 
 ~~~sh
 ./moneywiz.sh create-test-db
@@ -58,6 +75,9 @@ The source checkout still provides only the test-database lifecycle commands:
 These commands create and sanitize a disposable copy; they do not restore the
 retired raw-SQL routes. `create-test-db` uses `--db PATH`, then configured
 `db_path`, then the same current-before-legacy store discovery as `--setup`.
+Run them only against a disposable copy. They are not present in the installed
+bundle and do not modify the live store unless an operator explicitly chooses a
+live path as the copy source.
 
 ## Live payee operations
 
