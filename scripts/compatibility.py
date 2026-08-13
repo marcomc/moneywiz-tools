@@ -37,6 +37,8 @@ def _load_matrix() -> dict[str, Any]:
         payload = json.loads(MATRIX_PATH.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise CompatibilityError(f"cannot read compatibility matrix: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise CompatibilityError("compatibility matrix root is not a dictionary")
     if payload.get("format_version") != 1 or not isinstance(
         payload.get("profiles"), list
     ):
@@ -106,6 +108,8 @@ def _store_model_checksum(connection: sqlite3.Connection) -> str:
         raise CompatibilityError(
             f"cannot parse Core Data metadata plist: {exc}"
         ) from exc
+    if not isinstance(metadata, dict):
+        raise CompatibilityError("Core Data metadata plist is not a dictionary")
     checksum = metadata.get("NSStoreModelVersionChecksumKey")
     if not _is_model_checksum(checksum):
         raise CompatibilityError("Core Data metadata has no valid model checksum")

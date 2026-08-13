@@ -24,6 +24,7 @@ pyenv, uv, or a system Python.
 Build-time prerequisites:
 
 - macOS with `swiftc` available through Xcode Command Line Tools.
+- Git and a Git worktree for selecting the tracked bundle payload.
 - `uv`.
 - This checkout, including `pyproject.toml` and `uv.lock`.
 
@@ -85,6 +86,11 @@ moneywiz schema
 `moneywiz.sh` is the source-tree dispatcher used during development. The
 installed `moneywiz` command invokes the equivalent dispatcher from inside
 MoneyWiz Tools.app.
+
+Without explicit output paths, installed `moneywiz schema` exports to
+`${XDG_DATA_HOME:-$HOME/.local/share}/moneywiz-tools/schema`. The source-tree
+dispatcher keeps the development defaults under `doc/`. `--out-md` and
+`--out-json` override either default.
 
 ## Write data
 
@@ -161,4 +167,8 @@ blocked or unknown requested capabilities.
 Use `make` as the entry point for supported build and installation targets.
 The source tree contains the dispatch scripts, the compatibility register, and
 the Swift host. The locked API dependency graph is assembled into the
-relocatable app bundle.
+relocatable app bundle. Bundle publication selects Git-tracked scripts and
+documentation plus the required launcher/configuration files. Tests, local
+databases, SQLite sidecars, logs, caches, and other untracked files are not
+installed. The `create-test-db` and `sanitize-test-db` commands remain available
+only through the source-tree dispatcher.

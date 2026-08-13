@@ -28,6 +28,7 @@ flowchart TD
 
 - macOS.
 - `swiftc`, normally supplied by Xcode Command Line Tools.
+- Git and a Git worktree for selecting the tracked product payload.
 - `uv`.
 - This repository with `pyproject.toml` and `uv.lock`.
 
@@ -47,6 +48,13 @@ active bundle is moved aside, the installer restores that backup. If the
 process is forcibly terminated in that interval, the next build restores the
 backup before checking build dependencies. The bundled virtual environment
 uses a relative interpreter link so it remains valid after staging is promoted.
+
+The staged payload is selected from Git-tracked files under `scripts/` and
+`doc/`, plus the launcher and configuration example required at runtime. The
+builder copies the current worktree contents for those tracked paths, without
+reading file contents from the Git index. It never copies `tests/` or untracked
+and ignored artifacts such as local databases, SQLite sidecars, logs, or Python
+caches into the product bundle.
 
 The default app location is:
 
@@ -75,10 +83,18 @@ MoneyWiz Tools.app/
         managed/
         venv/
       scripts/
+      doc/
 ```
 
 The shell entrypoints resolve their target inside this bundle. An installed
 command therefore does not use the repository path that created it.
+`create-test-db` and `sanitize-test-db` are source-checkout-only development
+commands and fail clearly when requested through the installed dispatcher.
+
+Installed schema exports default to the user-writable directory
+`${XDG_DATA_HOME:-$HOME/.local/share}/moneywiz-tools/schema`. Explicit
+`--out-md` and `--out-json` paths remain authoritative. The source dispatcher
+continues to default to the checkout's `doc/` directory.
 
 ## Update and removal
 

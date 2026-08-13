@@ -29,6 +29,7 @@ BUNDLE_HOST="${SCRIPT_DIR}/../../MacOS/MoneyWizTools"
 BUNDLED_PY="${SCRIPT_DIR}/python/venv/bin/python"
 BUNDLE_INFO_PLIST="${SCRIPT_DIR}/../Info.plist"
 SOURCE_INFO_PLIST="${SCRIPT_DIR}/scripts/MoneyWizTools-Info.plist"
+IS_BUNDLED=0
 
 print_version() {
   local info_plist="${BUNDLE_INFO_PLIST}"
@@ -122,6 +123,7 @@ if [[ -z "${CONFIG_DB_PATH}" && -f "${LOCAL_CONFIG_FILE}" ]]; then
 fi
 
 if [[ -x "${BUNDLED_PY}" ]]; then
+  IS_BUNDLED=1
   PY="${BUNDLED_PY}"
   export MONEYWIZ_TOOLS_HOST="${BUNDLE_HOST}"
 elif [[ -e "${BUNDLE_HOST}" ]]; then
@@ -204,8 +206,8 @@ Introspection and misc:
   stats [--out DIR]
   record (--id ID | --gid GID)
   shell [--db PATH] [--demo-dump] [--log-level LEVEL]
-  create-test-db
-  sanitize-test-db
+  create-test-db                       Source checkout only
+  sanitize-test-db                     Source checkout only
 USAGE
 }
 
@@ -247,8 +249,19 @@ if [[ -z "${SUBCMD}" || "${SUBCMD}" == "-h" || "${SUBCMD}" == "--help" ]]; then
 fi
 shift || true
 
+if [[ "${IS_BUNDLED}" -eq 1 ]]; then
+  case "${SUBCMD}" in
+    create-test-db|sanitize-test-db)
+      echo "Error: ${SUBCMD} is a source-checkout-only development command." >&2
+      exit 2
+      ;;
+    *)
+      ;;
+  esac
+fi
+
 BASE_DB_ARG=(--db "${GLOBAL_DB:-${DB_PATH}}")
-if [[ "${SUBCMD}" != "shell" ]]; then
+if [[ "${SUBCMD}" != "shell" && "${SUBCMD}" != "create-test-db" && "${SUBCMD}" != "sanitize-test-db" ]]; then
   DB_TO_USE="${GLOBAL_DB:-${DB_PATH}}"
   if [[ ! -f "${DB_TO_USE}" ]]; then
     echo "Error: Database file not found: ${DB_TO_USE}" >&2
@@ -291,15 +304,28 @@ case "${SUBCMD}" in
     run_python_script "${SCRIPT_DIR}/scripts/sanitize_test_db.py" --db "${target_db}"
     ;;
   schema)
-    out_md="${SCRIPT_DIR}/doc/DB-SCHEMA.md"
-    out_json="${SCRIPT_DIR}/doc/schema.json"
+    if [[ "${IS_BUNDLED}" -eq 1 ]]; then
+      schema_output_dir="${XDG_DATA_HOME:-${HOME}/.local/share}/moneywiz-tools/schema"
+    else
+      schema_output_dir="${SCRIPT_DIR}/doc"
+    fi
+    out_md="${schema_output_dir}/DB-SCHEMA.md"
+    out_json="${schema_output_dir}/schema.json"
     while [[ $# -gt 0 ]]; do
       case "$1" in
         --out-md)
+          if [[ -z "${2-}" ]]; then
+            echo "Error: --out-md requires a path" >&2
+            exit 2
+          fi
           out_md="$2"
           shift 2
           ;;
         --out-json)
+          if [[ -z "${2-}" ]]; then
+            echo "Error: --out-json requires a path" >&2
+            exit 2
+          fi
           out_json="$2"
           shift 2
           ;;

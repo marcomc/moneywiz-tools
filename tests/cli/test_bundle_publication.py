@@ -1,4 +1,5 @@
 import os
+import shutil
 import subprocess
 import textwrap
 from pathlib import Path
@@ -15,8 +16,47 @@ def _write_executable(path: Path, contents: str) -> None:
     path.chmod(0o755)
 
 
+def _prepare_source_tree(destination: Path) -> Path:
+    source_root = destination / "source"
+    tracked = subprocess.run(
+        ["git", "ls-files", "-z"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        check=True,
+    ).stdout.split(b"\0")
+    for encoded_path in tracked:
+        if not encoded_path:
+            continue
+        relative_path = Path(os.fsdecode(encoded_path))
+        source = REPO_ROOT / relative_path
+        target = source_root / relative_path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+
+    subprocess.run(["git", "init", "--quiet"], cwd=source_root, check=True)
+    subprocess.run(["git", "add", "--all"], cwd=source_root, check=True)
+
+    (source_root / "tests/test_db.sqlite").write_bytes(b"private database")
+    (source_root / "tests/test_db.sqlite-wal").write_bytes(b"private wal")
+    (source_root / "tests/test_db.sqlite-shm").write_bytes(b"private shm")
+    (source_root / "scripts/private-build.log").write_text("private log")
+    (source_root / "scripts/untracked-runtime.py").write_text("PRIVATE = True\n")
+    (source_root / "scripts/__pycache__").mkdir()
+    (source_root / "scripts/__pycache__/users.cpython-311.pyc").write_bytes(
+        b"private cache"
+    )
+    (source_root / "doc/untracked-notes.md").write_text("private notes\n")
+
+    tracked_script = source_root / "scripts/users.py"
+    tracked_script.write_text(
+        tracked_script.read_text() + "\n# current tracked worktree payload\n"
+    )
+    return source_root
+
+
 @pytest.fixture
 def install_environment(tmp_path: Path) -> dict[str, Path | dict[str, str]]:
+    source_root = _prepare_source_tree(tmp_path)
     fake_bin = tmp_path / "fake-bin"
     fake_bin.mkdir()
     fake_tool = fake_bin / "fake-tool"
@@ -44,7 +84,13 @@ def install_environment(tmp_path: Path) -> dict[str, Path | dict[str, str]]:
                     print("uv 0.1.0")
                 elif args[:2] == ["python", "install"]:
                     install_dir = Path(args[args.index("--install-dir") + 1])
-                    executable(install_dir / "fake" / "bin" / "python3.11")
+                    executable(
+                        install_dir / "fake" / "bin" / "python3.11",
+                        "#!/usr/bin/env python3\\n"
+                        "import sys\\n"
+                        "output_format = sys.argv[sys.argv.index('--format') + 1]\\n"
+                        "print('# Fake schema' if output_format == 'md' else '[]')\\n",
+                    )
                 elif args and args[0] == "venv":
                     executable(Path(args[-1]) / "bin" / "python")
                 elif args and args[0] == "export":
@@ -105,6 +151,7 @@ def install_environment(tmp_path: Path) -> dict[str, Path | dict[str, str]]:
         "command": command,
         "env": env,
         "tmp_path": tmp_path,
+        "source_root": source_root,
     }
 
 
@@ -130,10 +177,12 @@ def _run_make(
     prefix = paths["prefix"]
     env = paths["env"]
     tmp_path = paths["tmp_path"]
+    source_root = paths["source_root"]
     assert isinstance(apps, Path)
     assert isinstance(prefix, Path)
     assert isinstance(env, dict)
     assert isinstance(tmp_path, Path)
+    assert isinstance(source_root, Path)
     run_env = env.copy()
     run_env.update(extra_env)
     return subprocess.run(
@@ -145,7 +194,7 @@ def _run_make(
             f"PREFIX={prefix}",
             f"USER_CONFIG_DIR={tmp_path / 'config'}",
         ],
-        cwd=REPO_ROOT,
+        cwd=source_root,
         env=run_env,
         capture_output=True,
         text=True,
@@ -167,6 +216,121 @@ def _assert_previous_install(paths: dict[str, Path | dict[str, str]]) -> None:
     assert command.is_symlink()
     assert command.readlink() == launcher
     assert list(apps.glob(f".{APP_NAME}.staging.*")) == []
+
+
+def _run_installed(
+    paths: dict[str, Path | dict[str, str]],
+    *arguments: str,
+    **extra_env: str,
+) -> subprocess.CompletedProcess[str]:
+    command = paths["command"]
+    env = paths["env"]
+    assert isinstance(command, Path)
+    assert isinstance(env, dict)
+    run_env = env.copy()
+    run_env.update(extra_env)
+    return subprocess.run(
+        [str(command), *arguments],
+        env=run_env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def test_installed_schema_uses_user_data_defaults_and_explicit_overrides(
+    install_environment: dict[str, Path | dict[str, str]],
+) -> None:
+    result = _run_make(install_environment, "install")
+    assert result.returncode == 0, result.stderr
+
+    tmp_path = install_environment["tmp_path"]
+    app_bundle = install_environment["app_bundle"]
+    assert isinstance(tmp_path, Path)
+    assert isinstance(app_bundle, Path)
+    database = tmp_path / "live.sqlite"
+    database.touch()
+    xdg_data_home = tmp_path / "xdg-data"
+
+    result = _run_installed(
+        install_environment,
+        "--db",
+        str(database),
+        "schema",
+        XDG_DATA_HOME=str(xdg_data_home),
+    )
+
+    assert result.returncode == 0, result.stderr
+    default_directory = xdg_data_home / "moneywiz-tools/schema"
+    assert (default_directory / "DB-SCHEMA.md").read_text() == "# Fake schema\n"
+    assert (default_directory / "schema.json").read_text() == "[]\n"
+    bundled_schema = app_bundle / "Contents/Resources/runtime/doc/DB-SCHEMA.md"
+    assert "Fake schema" not in bundled_schema.read_text()
+
+    explicit_markdown = tmp_path / "explicit/schema.md"
+    explicit_json = tmp_path / "explicit/schema.json"
+    result = _run_installed(
+        install_environment,
+        "--db",
+        str(database),
+        "schema",
+        "--out-md",
+        str(explicit_markdown),
+        "--out-json",
+        str(explicit_json),
+        XDG_DATA_HOME=str(tmp_path / "other-data"),
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert explicit_markdown.read_text() == "# Fake schema\n"
+    assert explicit_json.read_text() == "[]\n"
+    assert not (tmp_path / "other-data").exists()
+
+    result = _run_installed(
+        install_environment,
+        "--db",
+        str(database),
+        "schema",
+        XDG_DATA_HOME="",
+    )
+
+    assert result.returncode == 0, result.stderr
+    home_default = tmp_path / "home/.local/share/moneywiz-tools/schema"
+    assert (home_default / "DB-SCHEMA.md").read_text() == "# Fake schema\n"
+    assert (home_default / "schema.json").read_text() == "[]\n"
+
+
+@pytest.mark.parametrize("option", ["--out-md", "--out-json"])
+def test_installed_schema_rejects_missing_output_path(
+    install_environment: dict[str, Path | dict[str, str]], option: str
+) -> None:
+    result = _run_make(install_environment, "install")
+    assert result.returncode == 0, result.stderr
+    tmp_path = install_environment["tmp_path"]
+    assert isinstance(tmp_path, Path)
+    database = tmp_path / "live.sqlite"
+    database.touch()
+
+    result = _run_installed(
+        install_environment, "--db", str(database), "schema", option
+    )
+
+    assert result.returncode == 2
+    assert f"Error: {option} requires a path" in result.stderr
+    assert "unbound variable" not in result.stderr
+
+
+@pytest.mark.parametrize("command_name", ["create-test-db", "sanitize-test-db"])
+def test_installed_dispatcher_rejects_source_only_database_commands(
+    install_environment: dict[str, Path | dict[str, str]], command_name: str
+) -> None:
+    result = _run_make(install_environment, "install")
+    assert result.returncode == 0, result.stderr
+
+    result = _run_installed(install_environment, command_name)
+
+    assert result.returncode == 2
+    assert f"Error: {command_name} is a source-checkout-only" in result.stderr
 
 
 def test_reinstall_build_failure_preserves_previous_install(
@@ -274,6 +438,22 @@ def test_successful_reinstall_publishes_complete_bundle_and_command(
     assert command.is_symlink()
     assert command.readlink() == launcher
     assert list(apps.glob(f".{APP_NAME}.staging.*")) == []
+
+    runtime = app_bundle / "Contents/Resources/runtime"
+    assert (runtime / "scripts/users.py").is_file()
+    assert (
+        "current tracked worktree payload" in (runtime / "scripts/users.py").read_text()
+    )
+    assert (runtime / "doc/BUNDLE-INSTALLATION.md").is_file()
+    assert (runtime / ".moneywizrc.example").is_file()
+    assert not (runtime / "tests").exists()
+    assert not (runtime / "tests/test_db.sqlite").exists()
+    assert not (runtime / "tests/test_db.sqlite-wal").exists()
+    assert not (runtime / "tests/test_db.sqlite-shm").exists()
+    assert not (runtime / "scripts/private-build.log").exists()
+    assert not (runtime / "scripts/untracked-runtime.py").exists()
+    assert not (runtime / "scripts/__pycache__").exists()
+    assert not (runtime / "doc/untracked-notes.md").exists()
 
 
 def test_install_moneywiz_rejects_incomplete_bundle_before_relinking(

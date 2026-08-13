@@ -24,6 +24,7 @@ HOST_SOURCE := $(CURDIR)/scripts/moneywiz_tools_host.swift
 HOST_PLIST := $(CURDIR)/scripts/MoneyWizTools-Info.plist
 PROJECT_FILE := $(CURDIR)/pyproject.toml
 LOCK_FILE := $(CURDIR)/uv.lock
+BUNDLE_RUNTIME_ROOTS := moneywiz.sh .moneywizrc.example
 
 .DEFAULT_GOAL := help
 
@@ -33,6 +34,8 @@ help: ## Show available targets
 	@awk 'BEGIN { FS = ":.*##" } /^[a-zA-Z_-]+:.*##/ { printf "  %-24s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 
 check-deps: ## Verify bundle build dependencies
+	@command -v git >/dev/null 2>&1 \
+		|| { echo "x git not found; install Git before building MoneyWiz Tools"; exit 1; }
 	@command -v uv >/dev/null 2>&1 \
 		|| { echo "x uv not found; install uv before building MoneyWiz Tools"; exit 1; }
 	@command -v swiftc >/dev/null 2>&1 \
@@ -42,6 +45,8 @@ check-deps: ## Verify bundle build dependencies
 		echo "  Run: uv lock"; \
 		exit 1; \
 	fi
+	@git -C "$(CURDIR)" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+		|| { echo "x bundle source is not a Git worktree: $(CURDIR)"; exit 1; }
 	@mkdir -p "$(BINDIR)"
 	@echo "ok uv $$(uv --version | awk '{print $$2}')"
 	@echo "ok swiftc $$(swiftc --version | awk 'NR == 1 {print $$4}')"
@@ -60,15 +65,21 @@ configure-install-dir: ## Persist APP_BUNDLE_DIR in ~/.config/moneywiz-tools/ins
 _build-bundle:
 	@mkdir -p "$(APP_CONTENTS)/MacOS"
 	@mkdir -p "$(APP_RUNTIME)/python" "$(APP_RUNTIME)/bin"
-	@mkdir -p "$(APP_RUNTIME)/scripts"
-	@mkdir -p "$(APP_RUNTIME)/tests" "$(APP_RUNTIME)/doc"
+	@mkdir -p "$(APP_RUNTIME)/scripts" "$(APP_RUNTIME)/doc"
 	@cp -f "$(HOST_PLIST)" "$(APP_CONTENTS)/Info.plist"
 	@swiftc -parse-as-library "$(HOST_SOURCE)" -o "$(APP_HOST)"
-	@cp -f "$(CURDIR)/moneywiz.sh" "$(APP_RUNTIME)/moneywiz.sh"
-	@cp -f "$(CURDIR)/.moneywizrc.example" "$(APP_RUNTIME)/.moneywizrc.example"
-	@cp -Rf "$(CURDIR)/scripts/." "$(APP_RUNTIME)/scripts/"
-	@cp -Rf "$(CURDIR)/tests/." "$(APP_RUNTIME)/tests/"
-	@cp -Rf "$(CURDIR)/doc/." "$(APP_RUNTIME)/doc/"
+	@set -eu; \
+		for payload_path in $(BUNDLE_RUNTIME_ROOTS); do \
+			cp -f "$(CURDIR)/$$payload_path" "$(APP_RUNTIME)/$$payload_path"; \
+		done; \
+		manifest="$(APP_RUNTIME)/.tracked-payload"; \
+		git -C "$(CURDIR)" ls-files -z -- scripts doc > "$$manifest"; \
+		while IFS= read -r -d '' payload_path; do \
+			destination="$(APP_RUNTIME)/$$payload_path"; \
+			mkdir -p "$$(dirname "$$destination")"; \
+			cp -f "$(CURDIR)/$$payload_path" "$$destination"; \
+		done < "$$manifest"; \
+		rm -f "$$manifest"
 	@uv python install --install-dir "$(APP_PYTHON_MANAGED)" --no-bin "$(APP_PYTHON_VERSION)"
 	@base_python="$$(find "$(APP_PYTHON_MANAGED)" -type f -path '*/bin/python$(APP_PYTHON_VERSION)' -print -quit)"; \
 		if [ -z "$$base_python" ]; then \

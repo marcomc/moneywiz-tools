@@ -434,15 +434,74 @@ def _resolve_writer() -> Path:
     )
     if configured:
         writer = Path(configured).expanduser()
-    else:
-        runtime_root = Path(__file__).resolve().parents[1]
-        bundle_contents = runtime_root.parent.parent
-        writer = bundle_contents / "MacOS/MoneyWizTools"
-    if not writer.is_file() or not os.access(writer, os.X_OK):
+        if _is_executable_file(writer):
+            return writer
         raise ReassignmentError(
-            f"MoneyWiz Tools Core Data host is not installed at {writer}. Run: make install"
+            "MoneyWiz Tools Core Data host override is not an executable file: "
+            f"{writer}"
         )
-    return writer
+
+    script_path = Path(__file__).resolve()
+    runtime_root = script_path.parents[1]
+    if (
+        runtime_root.name == "runtime"
+        and runtime_root.parent.name == "Resources"
+        and runtime_root.parent.parent.name == "Contents"
+    ):
+        writer = runtime_root.parent.parent / "MacOS/MoneyWizTools"
+        if _is_executable_file(writer):
+            return writer
+        raise ReassignmentError(
+            "Bundled MoneyWiz Tools Core Data host is not executable. "
+            f"Searched host path: {writer}. Run: make install"
+        )
+
+    bundle_directory = _configured_bundle_directory()
+    writer = bundle_directory / "MoneyWiz Tools.app/Contents/MacOS/MoneyWizTools"
+    if _is_executable_file(writer):
+        return writer
+    raise ReassignmentError(
+        "MoneyWiz Tools Core Data host is not executable. "
+        f"Searched installed host path: {writer}. Run: make install"
+    )
+
+
+def _is_executable_file(path: Path) -> bool:
+    return path.is_file() and os.access(path, os.X_OK)
+
+
+def _configured_bundle_directory() -> Path:
+    install_config = Path.home() / ".config/moneywiz-tools/install.mk"
+    if not install_config.exists():
+        return Path.home() / "Applications"
+    try:
+        lines = install_config.read_text(encoding="utf-8").splitlines()
+    except OSError as exc:
+        raise ReassignmentError(
+            f"Cannot read MoneyWiz Tools install configuration at {install_config}: {exc}"
+        ) from exc
+
+    configured_values: list[str] = []
+    for line in lines:
+        content = line.strip()
+        if not content or content.startswith("#"):
+            continue
+        for operator in (":=", "?=", "="):
+            prefix = f"APP_BUNDLE_DIR {operator}"
+            if content.startswith(prefix):
+                configured_values.append(content[len(prefix) :].strip())
+                break
+    if len(configured_values) != 1 or not configured_values[0]:
+        raise ReassignmentError(
+            "MoneyWiz Tools install configuration must contain exactly one "
+            f"APP_BUNDLE_DIR assignment: {install_config}"
+        )
+    configured = Path(configured_values[0]).expanduser()
+    if not configured.is_absolute():
+        raise ReassignmentError(
+            f"APP_BUNDLE_DIR must be an absolute path in {install_config}"
+        )
+    return configured
 
 
 def _resolve_model() -> Path:

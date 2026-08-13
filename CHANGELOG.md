@@ -25,6 +25,11 @@
 - Added schema capability profiles and investment-column aliases so read-only
   commands support both suffixed fixture columns and the unsuffixed columns
   observed in the MoneyWiz 2026 live store.
+- Moved installed schema-export defaults to the user data directory while
+  preserving explicit output paths and source-tree development defaults.
+- Restricted bundle payload assembly to tracked runtime scripts and
+  documentation, excluding tests and ignored or untracked databases, SQLite
+  sidecars, logs, caches, and scratch files.
 - Made read-only transfer parsing tolerate the live profile's zero-valued
   `ZORIGINALAMOUNT` when the counterparty amount and exchange rate are present.
 - Made read-only API loading isolate malformed or model-incompatible records

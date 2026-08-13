@@ -1,4 +1,5 @@
 import plistlib
+import re
 import sqlite3
 import subprocess
 import sys
@@ -354,6 +355,159 @@ def test_moneywiz_process_check_rejects_inspection_error(
         match="Cannot verify whether MoneyWiz 2026 is running",
     ):
         reassign_payees_by_id._require_moneywiz_stopped()
+
+
+def make_executable(path: Path) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.touch(mode=0o755)
+    return path
+
+
+def isolate_writer_resolution(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, script_path: Path
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.delenv("MONEYWIZ_TOOLS_HOST", raising=False)
+    monkeypatch.delenv("MONEYWIZ_CORE_DATA_WRITER", raising=False)
+    monkeypatch.setattr(reassign_payees_by_id, "__file__", str(script_path))
+
+
+@pytest.mark.parametrize(
+    "override_variable", ["MONEYWIZ_TOOLS_HOST", "MONEYWIZ_CORE_DATA_WRITER"]
+)
+def test_resolve_writer_prefers_explicit_override_even_when_bundled(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    override_variable: str,
+) -> None:
+    script = (
+        tmp_path
+        / "MoneyWiz Tools.app/Contents/Resources/runtime/scripts/reassign_payees_by_id.py"
+    )
+    bundled = make_executable(
+        tmp_path / "MoneyWiz Tools.app/Contents/MacOS/MoneyWizTools"
+    )
+    override = make_executable(tmp_path / "operator-host")
+    isolate_writer_resolution(tmp_path, monkeypatch, script)
+    monkeypatch.setenv(override_variable, str(override))
+
+    assert bundled.is_file()
+    assert reassign_payees_by_id._resolve_writer() == override
+
+
+def test_resolve_writer_discovers_co_bundled_host(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    script = (
+        tmp_path
+        / "MoneyWiz Tools.app/Contents/Resources/runtime/scripts/reassign_payees_by_id.py"
+    )
+    bundled = make_executable(
+        tmp_path / "MoneyWiz Tools.app/Contents/MacOS/MoneyWizTools"
+    )
+    isolate_writer_resolution(tmp_path, monkeypatch, script)
+
+    assert reassign_payees_by_id._resolve_writer() == bundled
+
+
+def test_resolve_writer_discovers_configured_source_tree_install(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    script = tmp_path / "checkout/scripts/reassign_payees_by_id.py"
+    bundle_directory = tmp_path / "Custom Applications"
+    writer = make_executable(
+        bundle_directory / "MoneyWiz Tools.app/Contents/MacOS/MoneyWizTools"
+    )
+    isolate_writer_resolution(tmp_path, monkeypatch, script)
+    install_config = tmp_path / "home/.config/moneywiz-tools/install.mk"
+    install_config.parent.mkdir(parents=True)
+    install_config.write_text(
+        f"APP_BUNDLE_DIR := {bundle_directory}\n", encoding="utf-8"
+    )
+
+    assert reassign_payees_by_id._resolve_writer() == writer
+
+
+def test_resolve_writer_uses_default_source_tree_install(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    script = tmp_path / "checkout/scripts/reassign_payees_by_id.py"
+    writer = make_executable(
+        tmp_path / "home/Applications/MoneyWiz Tools.app/Contents/MacOS/MoneyWizTools"
+    )
+    isolate_writer_resolution(tmp_path, monkeypatch, script)
+
+    assert reassign_payees_by_id._resolve_writer() == writer
+
+
+@pytest.mark.parametrize("override_kind", ["missing", "directory", "non-executable"])
+def test_resolve_writer_rejects_invalid_explicit_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, override_kind: str
+) -> None:
+    script = (
+        tmp_path
+        / "MoneyWiz Tools.app/Contents/Resources/runtime/scripts/reassign_payees_by_id.py"
+    )
+    make_executable(tmp_path / "MoneyWiz Tools.app/Contents/MacOS/MoneyWizTools")
+    override = tmp_path / "operator-host"
+    if override_kind == "directory":
+        override.mkdir()
+    elif override_kind == "non-executable":
+        override.touch(mode=0o644)
+    isolate_writer_resolution(tmp_path, monkeypatch, script)
+    monkeypatch.setenv("MONEYWIZ_TOOLS_HOST", str(override))
+
+    with pytest.raises(
+        reassign_payees_by_id.ReassignmentError,
+        match="override is not an executable file",
+    ):
+        reassign_payees_by_id._resolve_writer()
+
+
+@pytest.mark.parametrize("topology", ["bundled", "source"])
+def test_resolve_writer_rejects_missing_or_non_executable_installed_host(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, topology: str
+) -> None:
+    if topology == "bundled":
+        script = (
+            tmp_path
+            / "MoneyWiz Tools.app/Contents/Resources/runtime/scripts/reassign_payees_by_id.py"
+        )
+        writer = tmp_path / "MoneyWiz Tools.app/Contents/MacOS/MoneyWizTools"
+    else:
+        script = tmp_path / "checkout/scripts/reassign_payees_by_id.py"
+        writer = (
+            tmp_path
+            / "home/Applications/MoneyWiz Tools.app/Contents/MacOS/MoneyWizTools"
+        )
+    writer.parent.mkdir(parents=True)
+    writer.touch(mode=0o644)
+    isolate_writer_resolution(tmp_path, monkeypatch, script)
+
+    with pytest.raises(
+        reassign_payees_by_id.ReassignmentError,
+        match=f"not executable.*{re.escape(str(writer))}",
+    ):
+        reassign_payees_by_id._resolve_writer()
+
+
+@pytest.mark.parametrize(
+    "config_content",
+    ["", "OTHER := /tmp\n", "APP_BUNDLE_DIR := relative\n"],
+)
+def test_resolve_writer_rejects_invalid_install_configuration(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    config_content: str,
+) -> None:
+    script = tmp_path / "checkout/scripts/reassign_payees_by_id.py"
+    isolate_writer_resolution(tmp_path, monkeypatch, script)
+    install_config = tmp_path / "home/.config/moneywiz-tools/install.mk"
+    install_config.parent.mkdir(parents=True)
+    install_config.write_text(config_content, encoding="utf-8")
+
+    with pytest.raises(reassign_payees_by_id.ReassignmentError):
+        reassign_payees_by_id._resolve_writer()
 
 
 @pytest.mark.parametrize("outcome", [0, 2, OSError("pgrep unavailable")])

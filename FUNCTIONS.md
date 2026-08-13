@@ -33,7 +33,7 @@ otherwise.
 | `record` | `moneywiz record --gid A1B2C3D4-...` | Inspect a record by global ID. |
 | `summary` | `moneywiz summary` | Print a database summary. |
 | `stats` | `moneywiz stats --out "$HOME/moneywiz-stats"` | Write statistics reports to a directory. |
-| `schema` | `moneywiz schema --out-md doc/DB-SCHEMA.md --out-json doc/schema.json` | Export schema documentation and JSON. |
+| `schema` | `moneywiz schema` | Export schema documentation and JSON under `${XDG_DATA_HOME:-$HOME/.local/share}/moneywiz-tools/schema`; use `--out-md` and `--out-json` for explicit destinations. |
 | `shell` | `moneywiz shell` | Start the configuration-aware interactive API shell. |
 | `compatibility` | `moneywiz compatibility --capability write.reassign-payees-by-id` | Show the detected profile and operation status. |
 
@@ -47,11 +47,12 @@ The following historical examples document former development helpers. They
 are no longer exposed by the product command and must not be used as a live
 write contract.
 
-Create the test copy first:
+These source-checkout-only commands are not installed in MoneyWiz Tools.app.
+Create the test copy first from the repository:
 
 ~~~sh
-moneywiz create-test-db
-moneywiz sanitize-test-db
+./moneywiz.sh create-test-db
+./moneywiz.sh sanitize-test-db
 ~~~
 
 Then target it explicitly:

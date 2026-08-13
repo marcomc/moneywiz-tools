@@ -94,7 +94,9 @@ def test_future_structural_superset_is_not_verified_as_model_48(tmp_path: Path) 
         compatibility.require_write_capability(db_path, "write.reassign-payees-by-id")
 
 
-@pytest.mark.parametrize("metadata_state", ["missing", "malformed", "duplicate"])
+@pytest.mark.parametrize(
+    "metadata_state", ["missing", "malformed", "array", "scalar", "duplicate"]
+)
 def test_invalid_store_metadata_fails_closed(
     tmp_path: Path, metadata_state: str
 ) -> None:
@@ -106,6 +108,12 @@ def test_invalid_store_metadata_fails_closed(
             connection.execute("UPDATE Z_METADATA SET Z_PLIST = ?", (metadata,))
         elif metadata_state == "malformed":
             connection.execute("UPDATE Z_METADATA SET Z_PLIST = ?", (b"not a plist",))
+        elif metadata_state in {"array", "scalar"}:
+            metadata = plistlib.dumps(
+                [] if metadata_state == "array" else "not-a-dictionary",
+                fmt=plistlib.FMT_BINARY,
+            )
+            connection.execute("UPDATE Z_METADATA SET Z_PLIST = ?", (metadata,))
         else:
             connection.execute(
                 "INSERT INTO Z_METADATA (Z_VERSION, Z_UUID, Z_PLIST) "
@@ -114,6 +122,75 @@ def test_invalid_store_metadata_fails_closed(
 
     with pytest.raises(compatibility.CompatibilityError):
         compatibility.assess_database(db_path)
+
+
+@pytest.mark.parametrize("matrix_root", [[], "not-a-dictionary", None])
+def test_non_dictionary_compatibility_matrix_fails_cleanly(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    matrix_root: object,
+) -> None:
+    matrix_path = tmp_path / "compatibility-matrix.json"
+    matrix_path.write_text(json.dumps(matrix_root), encoding="utf-8")
+    monkeypatch.setattr(compatibility, "MATRIX_PATH", matrix_path)
+
+    with pytest.raises(
+        compatibility.CompatibilityError,
+        match="matrix root is not a dictionary",
+    ):
+        compatibility._load_matrix()
+
+
+@pytest.mark.parametrize(
+    ("metadata", "expected_error"),
+    [
+        ([], "metadata plist is not a dictionary"),
+        ("not-a-dictionary", "metadata plist is not a dictionary"),
+        (
+            {"NSStoreModelVersionChecksumKey": []},
+            "metadata has no valid model checksum",
+        ),
+        (
+            {"NSStoreModelVersionChecksumKey": 48},
+            "metadata has no valid model checksum",
+        ),
+    ],
+)
+def test_invalid_metadata_shape_is_a_clean_cli_and_write_preflight_error(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    metadata: object,
+    expected_error: str,
+) -> None:
+    db_path = tmp_path / "invalid-metadata.sqlite"
+    make_live_structure(db_path)
+    with sqlite3.connect(db_path) as connection:
+        encoded = plistlib.dumps(metadata, fmt=plistlib.FMT_BINARY)
+        connection.execute("UPDATE Z_METADATA SET Z_PLIST = ?", (encoded,))
+
+    assert compatibility.main(["--db", str(db_path)]) == 2
+    captured = capsys.readouterr()
+    assert expected_error in captured.err
+    assert "Traceback" not in captured.err
+
+    monkeypatch.setattr(
+        reassign_payees_by_id, "_require_moneywiz_stopped", lambda: None
+    )
+    monkeypatch.setattr(
+        reassign_payees_by_id,
+        "_resolve_writer",
+        lambda: pytest.fail("writer resolved after invalid compatibility metadata"),
+    )
+    with pytest.raises(
+        reassign_payees_by_id.ReassignmentError,
+        match=expected_error,
+    ):
+        reassign_payees_by_id.apply_coredata_payload(
+            db_path,
+            {"schema_version": 1, "operations": []},
+            capability="write.reassign-payees-by-id",
+        )
 
 
 @pytest.mark.parametrize(
