@@ -1,127 +1,240 @@
 SHELL := /bin/bash
-APP_HOME ?= $(HOME)/.local/share/moneywiz-tools
-APP_VENV := $(APP_HOME)/venv
+
+USER_CONFIG_DIR := $(HOME)/.config/moneywiz-tools
+INSTALL_CONFIG := $(USER_CONFIG_DIR)/install.mk
+-include $(INSTALL_CONFIG)
+
+APP_BUNDLE_DIR ?= $(HOME)/Applications
+APP_BUNDLE_NAME ?= MoneyWiz Tools.app
+APP_BUNDLE := $(APP_BUNDLE_DIR)/$(APP_BUNDLE_NAME)
+APP_CONTENTS := $(APP_BUNDLE)/Contents
+APP_RUNTIME := $(APP_CONTENTS)/Resources/runtime
+APP_HOST := $(APP_CONTENTS)/MacOS/MoneyWizTools
+APP_PYTHON_VERSION ?= 3.11
+APP_PYTHON_MANAGED := $(APP_RUNTIME)/python/managed
+APP_VENV := $(APP_RUNTIME)/python/venv
 APP_PY := $(APP_VENV)/bin/python
-APP_PIP := $(APP_VENV)/bin/pip
-API_DIR := $(CURDIR)/moneywiz-api
-RUNTIME_DIR := $(APP_HOME)/runtime
-RUNTIME_SH := $(RUNTIME_DIR)/moneywiz.sh
 
 PREFIX ?= $(HOME)/.local
 BINDIR ?= $(PREFIX)/bin
-INSTALL_NAME ?= moneywiz-cli
-INSTALL_PATH ?= $(BINDIR)/$(INSTALL_NAME)
-SCRIPT_NAME ?= moneywiz
-SCRIPT_PATH ?= $(BINDIR)/$(SCRIPT_NAME)
-MARKDOWN_FILES := README.md CHANGELOG.md TODO.md AGENTS.md doc/*.md
+MONEYWIZ_PATH := $(BINDIR)/moneywiz
+LEGACY_MONEYWIZ_CLI_PATH := $(BINDIR)/moneywiz-cli
+
+HOST_SOURCE := $(CURDIR)/scripts/moneywiz_tools_host.swift
+HOST_PLIST := $(CURDIR)/scripts/MoneyWizTools-Info.plist
+PROJECT_FILE := $(CURDIR)/pyproject.toml
+LOCK_FILE := $(CURDIR)/uv.lock
+BUNDLE_RUNTIME_ROOTS := moneywiz.sh .moneywizrc.example
+BUNDLE_RUNTIME_SCRIPT_PAYLOAD := \
+	scripts/accounts.py \
+	scripts/categories.py \
+	scripts/compatibility.py \
+	scripts/compatibility_matrix.json \
+	scripts/holdings.py \
+	scripts/introspect_db.py \
+	scripts/merge_duplicate_payees.py \
+	scripts/payees.py \
+	scripts/reassign_payees_by_id.py \
+	scripts/record.py \
+	scripts/run_moneywiz_cli.py \
+	scripts/stats.py \
+	scripts/summary.py \
+	scripts/tags.py \
+	scripts/transactions.py \
+	scripts/users.py
 
 .DEFAULT_GOAL := help
 
-.PHONY: help check-deps check-runtime-deps sync app-venv install-runtime install install-moneywiz install-cli cli uninstall reinstall run clean
+.PHONY: help check-deps configure-install-dir build-bundle _build-bundle _validate-bundle sync app-venv install-runtime install install-moneywiz uninstall reinstall run clean
 
 help: ## Show available targets
-	@awk 'BEGIN { FS = ":.*##" } /^[a-zA-Z_-]+:.*##/ { printf "  %-16s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
+	@awk 'BEGIN { FS = ":.*##" } /^[a-zA-Z_-]+:.*##/ { printf "  %-24s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 
-check-deps: ## Verify required local tools
-	@echo "Checking runtime dependencies..."
-	@command -v python3 >/dev/null 2>&1 \
-		|| { echo "✗ python3 not found"; exit 1; }
-	@python3 -c "import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)" \
-		|| { echo "✗ Python 3.10+ required (found $$(python3 --version 2>&1))"; exit 1; }
-	@if [ ! -d "$(API_DIR)" ]; then \
-		echo "✗ moneywiz-api directory not found at $(API_DIR)"; \
-		echo "  Run: git clone https://github.com/marcomc/moneywiz-api.git moneywiz-api"; \
+check-deps: ## Verify bundle build dependencies
+	@command -v git >/dev/null 2>&1 \
+		|| { echo "x git not found; install Git before building MoneyWiz Tools"; exit 1; }
+	@command -v uv >/dev/null 2>&1 \
+		|| { echo "x uv not found; install uv before building MoneyWiz Tools"; exit 1; }
+	@command -v swiftc >/dev/null 2>&1 \
+		|| { echo "x swiftc not found; install Xcode Command Line Tools"; exit 1; }
+	@if [ ! -f "$(PROJECT_FILE)" ] || [ ! -f "$(LOCK_FILE)" ]; then \
+		echo "x pyproject.toml or uv.lock is missing"; \
+		echo "  Run: uv lock"; \
 		exit 1; \
 	fi
+	@git -C "$(CURDIR)" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+		|| { echo "x bundle source is not a Git worktree: $(CURDIR)"; exit 1; }
 	@mkdir -p "$(BINDIR)"
-	@echo "✓ python3 $$(python3 --version 2>&1 | awk '{print $$2}')"
+	@echo "ok uv $$(uv --version | awk '{print $$2}')"
+	@echo "ok swiftc $$(swiftc --version | awk 'NR == 1 {print $$4}')"
 	@if echo "$$PATH" | tr ':' '\n' | grep -Fxq "$(BINDIR)"; then \
-		echo "✓ $(BINDIR) is on PATH"; \
+		echo "ok $(BINDIR) is on PATH"; \
 	else \
-		echo "⚠ $(BINDIR) is not on PATH"; \
-		echo "  Add this to your shell profile:"; \
-		echo "  export PATH=\"$(BINDIR):\$$PATH\""; \
+		echo "warning: $(BINDIR) is not on PATH"; \
+		echo "  Add: export PATH=\"$(BINDIR):\$$PATH\""; \
 	fi
 
-check-runtime-deps: check-deps ## Backward-compatible alias
+configure-install-dir: ## Persist APP_BUNDLE_DIR in ~/.config/moneywiz-tools/install.mk
+	@mkdir -p "$(USER_CONFIG_DIR)"
+	@printf 'APP_BUNDLE_DIR := %s\n' "$(APP_BUNDLE_DIR)" > "$(INSTALL_CONFIG)"
+	@echo "Saved bundle location in $(INSTALL_CONFIG)"
 
-sync: ## Create/refresh the standalone runtime virtualenv
-	@$(MAKE) app-venv
+_build-bundle:
+	@mkdir -p "$(APP_CONTENTS)/MacOS"
+	@mkdir -p "$(APP_RUNTIME)/python" "$(APP_RUNTIME)/bin"
+	@mkdir -p "$(APP_RUNTIME)/scripts" "$(APP_RUNTIME)/doc"
+	@cp -f "$(HOST_PLIST)" "$(APP_CONTENTS)/Info.plist"
+	@swiftc -parse-as-library "$(HOST_SOURCE)" -o "$(APP_HOST)"
+	@set -eu; \
+		for payload_path in $(BUNDLE_RUNTIME_ROOTS) $(BUNDLE_RUNTIME_SCRIPT_PAYLOAD); do \
+			cp -f "$(CURDIR)/$$payload_path" "$(APP_RUNTIME)/$$payload_path"; \
+		done
+	@set -eu; \
+		manifest="$(APP_RUNTIME)/.tracked-docs"; \
+		git -C "$(CURDIR)" ls-files -z -- doc > "$$manifest"; \
+		while IFS= read -r -d '' payload_path; do \
+			destination="$(APP_RUNTIME)/$$payload_path"; \
+			mkdir -p "$$(dirname "$$destination")"; \
+			cp -f "$(CURDIR)/$$payload_path" "$$destination"; \
+		done < "$$manifest"; \
+		rm -f "$$manifest"
+	@uv python install --install-dir "$(APP_PYTHON_MANAGED)" --no-bin "$(APP_PYTHON_VERSION)"
+	@base_python="$$(find "$(APP_PYTHON_MANAGED)" -type f -path '*/bin/python$(APP_PYTHON_VERSION)' -print -quit)"; \
+		if [ -z "$$base_python" ]; then \
+			echo "x bundled Python 3 interpreter was not installed"; \
+			exit 1; \
+		fi; \
+		uv venv --clear --relocatable --seed --link-mode copy --python "$$base_python" "$(APP_VENV)"; \
+		managed_python="$${base_python#$(APP_RUNTIME)/python/}"; \
+		if [ "$$managed_python" = "$$base_python" ]; then \
+			echo "x bundled Python path is outside the staged runtime"; \
+			exit 1; \
+		fi; \
+		ln -sfn "../../$$managed_python" "$(APP_VENV)/bin/python"
+	@uv export --project "$(CURDIR)" --frozen --no-dev --format requirements-txt --output-file "$(APP_RUNTIME)/requirements.txt"
+	@uv pip install --python "$(APP_PY)" --quiet --requirement "$(APP_RUNTIME)/requirements.txt"
+	@chmod +x "$(APP_RUNTIME)/moneywiz.sh"
 
-app-venv: ## Create/refresh the standalone runtime virtualenv
-	@mkdir -p "$(APP_HOME)"
-	@if [ ! -x "$(APP_PY)" ]; then \
-		echo "Creating standalone virtualenv at $(APP_VENV)..."; \
-		python3 -m venv "$(APP_VENV)"; \
-	fi
-	"$(APP_PIP)" install --upgrade pip --quiet
+_validate-bundle:
+	@test -f "$(APP_CONTENTS)/Info.plist" \
+		|| { echo "x bundle is missing Contents/Info.plist"; exit 1; }
+	@test -x "$(APP_HOST)" \
+		|| { echo "x bundle is missing the executable Core Data host"; exit 1; }
+	@test -x "$(APP_RUNTIME)/moneywiz.sh" \
+		|| { echo "x bundle is missing the executable moneywiz launcher"; exit 1; }
+	@test -x "$(APP_PY)" \
+		|| { echo "x bundle is missing the bundled Python interpreter"; exit 1; }
+	@set -eu; \
+		expected_manifest="$$(mktemp)"; \
+		actual_manifest="$$(mktemp)"; \
+		trap 'rm -f "$$expected_manifest" "$$actual_manifest"' EXIT HUP INT TERM; \
+		for payload_path in $(BUNDLE_RUNTIME_SCRIPT_PAYLOAD); do \
+			printf '%s\n' "$$payload_path"; \
+		done | LC_ALL=C sort > "$$expected_manifest"; \
+		find "$(APP_RUNTIME)/scripts" -type f -print | while IFS= read -r payload_path; do \
+			printf '%s\n' "$${payload_path#$(APP_RUNTIME)/}"; \
+		done | LC_ALL=C sort > "$$actual_manifest"; \
+		if ! cmp -s "$$expected_manifest" "$$actual_manifest"; then \
+			echo "x bundle runtime script payload does not match the product manifest"; \
+			diff -u "$$expected_manifest" "$$actual_manifest" || true; \
+			exit 1; \
+		fi
 
-install: check-deps ## Install moneywiz wrapper into a standalone self-contained runtime
-	@$(MAKE) install-runtime
-	@$(MAKE) install-moneywiz
+build-bundle: ## Build a self-contained MoneyWiz Tools.app bundle
+	@set -eu; \
+		mkdir -p "$(APP_BUNDLE_DIR)"; \
+		backup_bundle="$(APP_BUNDLE_DIR)/.$(APP_BUNDLE_NAME).previous"; \
+		if [ -e "$$backup_bundle" ] || [ -L "$$backup_bundle" ]; then \
+			if [ -e "$(APP_BUNDLE)" ] || [ -L "$(APP_BUNDLE)" ]; then \
+				if ! $(MAKE) --no-print-directory _validate-bundle; then \
+					echo "x both active and recovery bundles exist; leaving both for manual inspection" >&2; \
+					exit 1; \
+				fi; \
+				rm -rf "$$backup_bundle"; \
+			else \
+				mv "$$backup_bundle" "$(APP_BUNDLE)"; \
+				echo "ok restored interrupted bundle promotion"; \
+			fi; \
+		fi; \
+		$(MAKE) --no-print-directory check-deps; \
+		staging_bundle="$$(mktemp -d "$(APP_BUNDLE_DIR)/.$(APP_BUNDLE_NAME).staging.XXXXXX")"; \
+		previous_moved=0; \
+		cleanup() { \
+			status="$$?"; \
+			trap - EXIT HUP INT TERM; \
+			if [ "$$previous_moved" -eq 1 ] && { [ -e "$$backup_bundle" ] || [ -L "$$backup_bundle" ]; }; then \
+				if [ ! -e "$(APP_BUNDLE)" ] && [ ! -L "$(APP_BUNDLE)" ]; then \
+					mv "$$backup_bundle" "$(APP_BUNDLE)" \
+						|| { echo "x failed to restore the previous bundle from $$backup_bundle" >&2; status=1; }; \
+				elif [ ! -e "$$staging_bundle" ] && [ ! -L "$$staging_bundle" ]; then \
+					rm -rf "$$backup_bundle"; \
+				else \
+					echo "x bundle recovery requires manual inspection: $$backup_bundle" >&2; \
+					status=1; \
+				fi; \
+			fi; \
+			if [ -e "$$staging_bundle" ] || [ -L "$$staging_bundle" ]; then \
+				rm -rf "$$staging_bundle"; \
+			fi; \
+			exit "$$status"; \
+		}; \
+		trap cleanup EXIT; \
+		trap 'exit 1' HUP INT TERM; \
+		$(MAKE) --no-print-directory _build-bundle APP_BUNDLE="$$staging_bundle"; \
+		$(MAKE) --no-print-directory _validate-bundle APP_BUNDLE="$$staging_bundle"; \
+		if [ -e "$(APP_BUNDLE)" ] || [ -L "$(APP_BUNDLE)" ]; then \
+			mv "$(APP_BUNDLE)" "$$backup_bundle"; \
+			previous_moved=1; \
+		fi; \
+		if ! mv "$$staging_bundle" "$(APP_BUNDLE)"; then \
+			echo "x failed to publish the staged bundle" >&2; \
+			exit 1; \
+		fi; \
+		if [ "$$previous_moved" -eq 1 ]; then \
+			rm -rf "$$backup_bundle"; \
+			previous_moved=0; \
+		fi; \
+		trap - EXIT HUP INT TERM
+	@echo "Built self-contained bundle at $(APP_BUNDLE)"
+
+sync: build-bundle ## Build or refresh the application bundle
+
+app-venv: build-bundle ## Backward-compatible alias for building the bundled Python runtime
+
+install-runtime: build-bundle ## Backward-compatible alias for building the application bundle
+
+install: build-bundle ## Install moneywiz as a symlink into ~/.local/bin
+	@$(MAKE) --no-print-directory install-moneywiz
+	@rm -f "$(LEGACY_MONEYWIZ_CLI_PATH)"
 	@echo ""
-	@echo "✓ moneywiz wrapper installed successfully"
-	@echo "  Run: $(SCRIPT_NAME) --help"
+	@echo "ok moneywiz installed successfully"
+	@echo "  Run: moneywiz --help"
 
-install-cli: check-deps sync ## Install moneywiz-cli into a standalone user venv
-	"$(APP_PIP)" install --no-build-isolation --quiet "$(API_DIR)"
-	@$(MAKE) install-link
-	@echo ""
-	@echo "✓ moneywiz-cli installed successfully"
-	@echo "  Run: $(INSTALL_NAME) --help"
+install-moneywiz: ## Link the moneywiz command to the bundle runtime
+	@$(MAKE) --no-print-directory _validate-bundle
+	@set -eu; \
+		mkdir -p "$(BINDIR)"; \
+		if [ -d "$(MONEYWIZ_PATH)" ] && [ ! -L "$(MONEYWIZ_PATH)" ]; then \
+			echo "x cannot replace directory at $(MONEYWIZ_PATH)" >&2; \
+			exit 1; \
+		fi; \
+		temporary_link="$$(mktemp "$(BINDIR)/.moneywiz.link.XXXXXX")"; \
+		trap 'rm -f "$$temporary_link"' EXIT HUP INT TERM; \
+		rm -f "$$temporary_link"; \
+		ln -s "$(APP_RUNTIME)/moneywiz.sh" "$$temporary_link"; \
+		mv -f "$$temporary_link" "$(MONEYWIZ_PATH)"; \
+		trap - EXIT HUP INT TERM
+	@echo "ok linked moneywiz -> $(MONEYWIZ_PATH)"
 
-cli: install-cli ## Alias target for installing the moneywiz-cli console entrypoint
+uninstall: ## Remove the application bundle and command symlinks
+	@rm -f "$(MONEYWIZ_PATH)" "$(LEGACY_MONEYWIZ_CLI_PATH)"
+	@rm -rf "$(APP_BUNDLE)"
+	@echo "ok removed $(APP_BUNDLE) and command symlinks"
 
-install-runtime: ## Copy project runtime payload into a self-contained install directory
-	@mkdir -p "$(RUNTIME_DIR)"
-	@mkdir -p "$(RUNTIME_DIR)/moneywiz-api/src"
-	@mkdir -p "$(RUNTIME_DIR)/scripts"
-	@mkdir -p "$(RUNTIME_DIR)/tests"
-	@mkdir -p "$(RUNTIME_DIR)/doc"
-	@cp -f "$(CURDIR)/moneywiz.sh" "$(RUNTIME_DIR)/moneywiz.sh"
-	@cp -f "$(CURDIR)/requirements.txt" "$(RUNTIME_DIR)/requirements.txt"
-	@cp -f "$(CURDIR)/.moneywizrc.example" "$(RUNTIME_DIR)/.moneywizrc.example"
-	@cp -Rf "$(CURDIR)/moneywiz-api/src/." "$(RUNTIME_DIR)/moneywiz-api/src/"
-	@cp -f "$(CURDIR)/moneywiz-api/pyproject.toml" "$(RUNTIME_DIR)/moneywiz-api/pyproject.toml"
-	@cp -f "$(CURDIR)/moneywiz-api/README.md" "$(RUNTIME_DIR)/moneywiz-api/README.md"
-	@cp -Rf "$(CURDIR)/scripts/." "$(RUNTIME_DIR)/scripts/"
-	@cp -Rf "$(CURDIR)/tests/." "$(RUNTIME_DIR)/tests/"
-	@cp -Rf "$(CURDIR)/doc/." "$(RUNTIME_DIR)/doc/"
-	@echo "✓ Copied self-contained runtime payload to $(RUNTIME_DIR)"
+reinstall: ## Rebuild and reinstall the application bundle
+	@$(MAKE) --no-print-directory install
 
-install-link: ## Symlink the CLI entrypoint into ~/.local/bin
-	@mkdir -p "$(BINDIR)"
-	@if [ -x "$(APP_VENV)/bin/$(INSTALL_NAME)" ]; then \
-		ln -sf "$(APP_VENV)/bin/$(INSTALL_NAME)" "$(INSTALL_PATH)"; \
-		echo "✓ Linked $(INSTALL_NAME) -> $(INSTALL_PATH)"; \
-	else \
-		echo "✗ $(APP_VENV)/bin/$(INSTALL_NAME) not found"; \
-		exit 1; \
-	fi
+run: install ## Show moneywiz help from the installed bundle
+	@"$(MONEYWIZ_PATH)" --help
 
-install-moneywiz: ## Install moneywiz wrapper binary into ~/.local/bin
-	@mkdir -p "$(BINDIR)"
-	@{ \
-		echo '#!/usr/bin/env sh'; \
-		echo 'exec "$(RUNTIME_SH)" "$$@"'; \
-	} > "$(SCRIPT_PATH)"
-	@chmod +x "$(SCRIPT_PATH)"
-	@echo "✓ Linked moneywiz wrapper -> $(SCRIPT_PATH)"
-
-uninstall: ## Remove the standalone moneywiz-cli install
-	@rm -f "$(INSTALL_PATH)"
-	@rm -f "$(SCRIPT_PATH)"
-	@rm -rf "$(APP_HOME)"
-	@echo "✓ Removed $(INSTALL_PATH)"
-	@echo "✓ Removed standalone runtime at $(APP_HOME)"
-
-reinstall: ## Reinstall moneywiz-cli
-	@$(MAKE) uninstall
-	@$(MAKE) install
-
-run: install ## Show moneywiz-cli help
-	"$(INSTALL_PATH)" --help
-
-clean: ## Remove only the generated standalone runtime environment
-	rm -rf "$(APP_HOME)"
-	@echo "✓ Removed $(APP_HOME)"
+clean: uninstall ## Alias for removing the installed bundle

@@ -1,0 +1,56 @@
+{
+  "format_version": 1,
+  "profiles": [
+    {
+      "id": "moneywiz-2026-model-48",
+      "fingerprint": {
+        "exact_model_checksum": "+6BY8eaTke2jfAd5Bzt5D49JRMZld5o8ZoUW+4G2ElQ=",
+        "required_tables": ["ZSYNCOBJECT", "Z_PRIMARYKEY", "ZUSER"],
+        "required_columns": [
+          "ZGID",
+          "ZDESC2",
+          "ZPAYEE2",
+          "ZNAME5",
+          "ZUSER7",
+          "ZNUMBEROFSHARES",
+          "ZPRICEPERSHARE",
+          "ZPRICEPERSHARE1"
+        ],
+        "required_entity_names": [
+          "Payee",
+          "DepositTransaction",
+          "WithdrawTransaction",
+          "RefundTransaction",
+          "TransferDepositTransaction",
+          "TransferWithdrawTransaction"
+        ]
+      },
+      "evidence": {
+        "moneywiz_application": "MoneyWiz 2026.32.1 (build 431)",
+        "last_observed_application": "MoneyWiz 2026.32.1 (build 433)",
+        "managed_object_model": "MoneyWizDataModel 48",
+        "observed_at": "2026-08-13"
+      },
+      "capabilities": {
+        "read.core": "supported",
+        "write.reassign-payees-by-id": "verified",
+        "write.merge-duplicate-payees": "blocked"
+      }
+    },
+    {
+      "id": "suffixed-investment-columns-fixture",
+      "fingerprint": {
+        "exact_model_checksum": "KxT0qIvWI+7n1S58SHjQOJ8x50TIqI0l+sXzUGx8y18=",
+        "required_tables": ["ZSYNCOBJECT", "Z_PRIMARYKEY", "ZUSER"],
+        "required_columns": ["ZNUMBEROFSHARES1", "ZPRICEPERSHARE1"],
+        "required_entity_names": ["Payee"]
+      },
+      "evidence": {
+        "source": "sanitized regression fixture"
+      },
+      "capabilities": {
+        "read.core": "supported"
+      }
+    }
+  ]
+}

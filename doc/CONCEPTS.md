@@ -5,7 +5,8 @@ This document captures important conventions in the MoneyWiz database that help 
 ## Timestamps (Apple epoch)
 
 - The DB stores many timestamps as floats relative to 2001‑01‑01 00:00:00 UTC (Apple epoch).
-- Conversion in the API: see `moneywiz-api/src/moneywiz_api/utils.py:1`.
+- Conversion is provided by the installed `moneywiz_api` module; see the
+  [`get_datetime` and `get_date` helpers](https://github.com/marcomc/moneywiz-api/blob/6ea3cdec8b1543356e00f6b529450b5aa1b39264/src/moneywiz_api/utils.py#L6-L15).
   - `get_datetime(raw)`: returns Python `datetime` from DB float.
   - `get_date(dt)`: converts Python `datetime` to DB float.
 
@@ -33,7 +34,14 @@ This document captures important conventions in the MoneyWiz database that help 
 
 ## Optimistic versioning
 
-- `Z_OPT` acts as a version field; set to `1` on insert and increment on update to mirror Core Data behavior if you want to emulate conflicts explicitly.
+- `Z_OPT` is a Core Data version field. Native app updates increment it.
+- Core Data owns `Z_OPT` initialization and updates for objects inserted or
+  changed by the bundled writer; the writer does not assign it directly.
+- Destination-payee creation through that writer is verified for the current
+  compatibility profile by the recorded reopen, persistent-history, and iCloud
+  sync evidence.
+- Updating `Z_OPT` alone is insufficient for a live iCloud store. See
+  `LIVE-WRITE-COMPATIBILITY.md` for the associated history and CloudKit state.
 
 ## GIDs (Global IDs)
 
@@ -51,8 +59,25 @@ This document captures important conventions in the MoneyWiz database that help 
 
 ## Recommended write practices
 
-- Use transactions when touching multiple tables.
-- For complex creates (e.g., transfers): create both sides first, then link by setting the cross‑referenced transaction ids.
-- For category splits: validate that sums match the transaction amount.
-- For tags: avoid duplicate links; consider upserts or deduping before insert.
-- Always dry‑run and review SQL before applying to a real database.
+- Do not use raw SQL as a product write path.
+- Use a named `moneywiz` operation only after
+  `moneywiz compatibility --capability NAME` reports `verified`.
+- Treat a SQLite transaction as atomicity only, not as a replacement for a
+  Core Data persistent-history transaction.
+- Version every live-write rule by MoneyWiz app build, Core Data model
+  fingerprint, and the profile-capability register.
+
+## Live payees and consolidation
+
+- The current live MoneyWiz 2026 mapping stores `Payee` as
+  `ZSYNCOBJECT.Z_ENT=29`, with its name in `ZNAME5` and user in `ZUSER7`.
+  These are model-version-specific subtype columns; do not reuse the test DB
+  mapping or query the generic `ZNAME` column for a live payee.
+- A transaction's payee relationship is stored in `ZPAYEE2`, while
+  `ZSTRINGHISTORYITEM.ZPAYEE` retains additional payee references. A payee
+  merge must account for both, through Core Data, before deleting a duplicate.
+- Payee matching is user-scoped and uses NFKC normalization, collapsed
+  whitespace, and case folding. Fuzzy similarity is a review aid only; it is
+  not evidence that two merchants are interchangeable.
+- The detailed compatibility profile and merge constraints are in
+  [`LIVE-PAYEE-STRUCTURE.md`](LIVE-PAYEE-STRUCTURE.md).

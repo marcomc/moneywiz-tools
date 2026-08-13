@@ -1,6 +1,63 @@
 # Changelog
 
-## [Unreleased]
+## [0.2.0] - 2026-08-09
+
+### Added
+
+- A relocatable MoneyWiz Tools.app installation path with bundled Python runtime, scripts, API source, and Core Data host.
+- A documented, evidence-backed Core Data writer for live payee reassignment and destination-payee creation.
+- Version-scoped live payee structure and relationship documentation, including transaction and string-history references.
+- Exact-normalized duplicate-payee planning with deterministic canonical
+  selection.
+- An editable, approval-only CSV map for similar-name payee candidates.
+
+### Changed
+
+- Reorganized operator and maintainer documentation around the installed bundle, command roles, and live-write boundaries.
+- Added source-backed installation and live-write workflow diagrams.
+- Consolidated the supported interface on the configuration-aware `moneywiz`
+  dispatcher; `moneywiz-cli` remains an explicit-path API shell, while generic
+  raw-SQL mutation commands are retired from the product surface.
+- Replaced the nested runtime API checkout with the pinned Git dependency and
+  locked build graph; no nested checkout is required for the installed bundle.
+- Added a versioned profile-by-capability register: live payee reassignment is
+  enabled only for verified profiles, while duplicate-payee merge remains
+  planning-only pending separate acceptance evidence.
+- Recorded the proposed merge survivor contract and the evidence still needed
+  before a native merge implementation can be enabled.
+- Aligned operator and design documentation with the current boundaries,
+  including `~/` configuration-path expansion.
+
+### Fixed
+
+- Removed stale guidance that described the project as read-only or presented generic raw SQLite writes as live-store compatible.
+- Documented configuration path handling, including launcher expansion of a
+  leading `~/` value.
+- Replaced obsolete test-wrapper references with the actual validation strategy.
+- Made setup and test-database seeding discover the current MoneyWiz 2026
+  store before falling back to the legacy store path, while preserving
+  explicit and configured database choices.
+- Made empty and already-satisfied apply plans validate their write capability
+  without invoking process, model, writer, or native-host preflight.
+- Made normalized new-payee groups deterministic and resolved both
+  extensionless and `.mom` model-manifest leaves without duplicate suffixes.
+- Limited quadratic similar-name comparisons to explicit `--fuzzy-map` exports
+  and distinguished skipped analysis from an empty result.
+- Escaped direct, compatibility-normalized, and whitespace/control-prefixed
+  formula-like payee names in both fuzzy-review CSV name columns.
+- Added schema capability profiles and investment-column aliases for fixture
+  and MoneyWiz 2026 live-store layouts.
+- Moved installed schema-export defaults to the user data directory while
+  preserving explicit paths and source-tree defaults.
+- Restricted bundle payload assembly to one exact runtime manifest and tracked
+  documentation, excluding development/build inputs, tests, and local data.
+- Added dependency-free installed version reporting from application metadata.
+- Made read-only transfer parsing tolerate live-profile zero-valued
+  `ZORIGINALAMOUNT` when counterparty amount and exchange rate are present.
+- Made read-only API loading isolate malformed or model-incompatible records
+  instead of aborting unrelated listing commands with a traceback.
+- Made optional category, refund, and tag relationship tables safe to omit in a
+  supported store profile.
 
 ## [0.1.0] - 2026-02-23
 

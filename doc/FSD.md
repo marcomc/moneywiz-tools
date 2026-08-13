@@ -1,50 +1,46 @@
-# Functional Specification Document (FSD)
+# Functional Specification
 
-## Overview
+## Product purpose
 
-The CLI (`moneywiz.sh`) exposes read and write capabilities on a MoneyWiz SQLite DB via the API.
+MoneyWiz Tools provides local command-line access to a MoneyWiz SQLite store.
+It separates routine inspection from explicitly verified live write
+operations.
 
-### Functional Areas
+## User-facing entrypoints
 
-- Read functions
+| Entrypoint | Intended use |
+| --- | --- |
+| `moneywiz` | Main installed dispatcher. |
+| `moneywiz.sh` | Development-tree dispatcher. |
 
-- users: list users.
-- accounts: list accounts; filter by user.
-- categories: list categories for a user; optional full name chain.
-- payees/tags: list; filter by user.
-- transactions: list for an account; optional category/tag enrichment; limit/time window.
-- holdings: list by investment account.
-- record: view single record by `Z_PK` or `ZGID`.
-- stats/summary: output snapshots and counts.
-- schema/inspect: full schema dump (via scripts/introspect_db.py).
+## Functional scope
 
-- Write (Phase 1) — previews and apply
+### Read operations
 
-- Top-level write commands (dry-run default, `--apply` to execute):
-  - insert/update/delete/safe-delete/rename SyncObjects.
-  - assign-categories (splits) and assign-tags.
-  - link-refund.
+The main dispatcher lists and inspects users, accounts, categories, payees,
+tags, transactions, holdings, records, summaries, statistics, and schema.
 
-- Write (Phase 2+) — typed helpers
+### Live payee operations
 
-- create-transaction: deposit/withdraw/refund/transfer/reconcile/inv-buy/inv-sell/inv-exchange.
-- update-transaction: patch fields; maintain relationships.
-- create/update account; create/update payee/category/tag; linkages.
+`reassign-payees-by-id --apply` is the current verified live writer for a
+matching profile. It plans the change, refuses ambiguous normalized targets,
+and uses the bundled Core Data host to reuse or create a destination payee.
 
-## CLI Contract
+`merge-duplicate-payees` plans exact-normalized groups. Its live application
+capability remains blocked until it has independent acceptance evidence.
+Similar-name pairs are exported for manual review and are not applied.
 
-- Global `--db PATH` flag (before the subcommand) overrides everything. Otherwise the CLI resolves the database path in this order: `${HOME}/.moneywizrc` → repo-local `.moneywizrc` → built-in default `tests/test_db.sqlite`. `./moneywiz.sh --setup` bootstraps the expected `moneywiz-api/` checkout and scaffolds `~/.moneywizrc` with a commented MoneyWiz path if none is found.
-- Subcommands: users, accounts, categories, payees, tags, transactions, holdings, record, stats, summary, insert, update, delete, safe-delete, rename, assign-categories, assign-tags, link-refund.
-- Safety: dry-run for write flows; `--apply` required to modify DB.
+### Explicit exclusions
 
-## Data Contracts (inputs/outputs)
+- No generic raw-SQL product writer.
+- No similar-name duplicate merge yet.
+- No GUI yet.
+- No claim that test-store entity numbers describe every live model.
 
-- Read outputs: human-readable tables or `--format json` for machine usage.
-- Write inputs: flags for simple fields; JSON payloads for complex structures (splits, tags).
-- Write commands print ordered SQL statements with parameter lists.
+## Acceptance criteria
 
-## Errors & Edge Cases
-
-- Missing fields (older DBs): tolerate on reads (derive/skip strict checks).
-- FX rounding: use tolerances; skip brittle equality checks.
-- Referential integrity: block writes or require `--apply` only when validations pass.
+- `make install` creates or refreshes the app bundle and installs `moneywiz`.
+- Installed commands run without a development repository path.
+- Reassignment preview requires no live write.
+- A verified live reassignment completes through Core Data only after the app
+  has released the store and is followed by a successful app sync.

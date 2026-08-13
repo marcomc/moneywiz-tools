@@ -1,0 +1,134 @@
+# Live Write Compatibility
+
+## Current status
+
+MoneyWiz Tools intentionally supports direct work with the live database, but
+compatibility is defined per write path.
+
+| Operation | Current status | Required path |
+| --- | --- | --- |
+| Inspect the live store | Supported | Read-only SQLite access. |
+| Generic SQL mutation | Not a product capability | Do not infer iCloud compatibility from SQL success. |
+| Reassign a payee to an existing destination | Verified | Bundled Core Data writer. |
+| Reassign a payee and create its destination | Verified | Bundled Core Data writer. |
+| Merge exact-normalized duplicate payees | Blocked | Requires independent Core Data acceptance evidence. |
+| Merge similar-name payees | Not implemented | Requires an approved map and a separate reviewed contract. |
+
+No backup requirement is imposed by the command. The operator remains
+responsible for deciding their own recovery posture before modifying
+financial data.
+
+## Operating rule
+
+Use the reassignment planner first:
+
+~~~sh
+moneywiz reassign-payees-by-id --from-payee-id 1234 --show-plan
+~~~
+
+Review the result. If the plan is correct:
+
+1. Let MoneyWiz complete any active sync.
+2. Quit MoneyWiz so it releases the persistent store.
+3. Run the same command with `--apply`.
+4. Reopen MoneyWiz.
+5. Confirm iCloud Sync reports **Up to Date**.
+
+Keep MoneyWiz closed for the full write. Python checks the process name and the
+native host checks both known MoneyWiz bundle identifiers. Either check fails
+closed when inspection is unavailable or abnormal. This is a defensive
+preflight, not an atomic process or store lock.
+
+Every selected row must become either a writer operation or an explicit
+already-target no-op. The planner rejects the complete selection if any row has
+a missing or dangling account or owner, a missing GID, or an empty description
+without a fallback payee. Its summary reconciles selected rows as
+`processed = updated + noops`.
+The account lookup is restricted to the verified `Account` entity family, so a
+different `ZSYNCOBJECT` row cannot satisfy the ownership check accidentally.
+
+The tool refuses ambiguous normalized payee names. Resolve or consolidate those
+duplicates through the MoneyWiz GUI while
+`write.merge-duplicate-payees` remains blocked. Export similar pairs with
+`--fuzzy-map PATH`; they remain pending until an explicitly approved workflow
+exists.
+
+## Compatibility profile
+
+The verified writer was observed with MoneyWiz 2026.32.1, builds 431 and 433, using
+managed-object model `MoneyWizDataModel 48`. The runtime register calls this
+`moneywiz-2026-model-48`. The current live store places payees and
+transaction subclasses in Core Data storage with shared `ZSYNCOBJECT`
+identity and version fields.
+
+The exact `NSStoreModelVersionChecksumKey` for this verified model is
+`+6BY8eaTke2jfAd5Bzt5D49JRMZld5o8ZoUW+4G2ElQ=`. Structural table, column,
+and entity requirements remain useful diagnostics, but they do not authorize
+a write without that exact checksum.
+
+The relevant payee relationships are documented in
+[Live Payee Structure](LIVE-PAYEE-STRUCTURE.md). The writer itself is
+documented in [Core Data Writer](CORE-DATA-WRITER.md).
+
+## Evidence for the current path
+
+The current host was tested against the live profile by:
+
+- Reassigning to an existing payee.
+- Reassigning while creating a new destination payee.
+- Reopening MoneyWiz after each operation.
+- Confirming the app consumed persistent history and iCloud export advanced.
+- Confirming the app reported a successful sync.
+
+This proves reassignment for the observed profile. It does not prove that an
+arbitrary column-level SQL update, other app versions, or a duplicate merge has
+the same compatibility. Exact duplicate consolidation needs its own acceptance
+evidence despite using the same host.
+
+## Historical finding
+
+The earlier raw reassignment updated only visible relationship data. It did
+not reproduce the object lifecycle expected by Core Data, persistent history,
+and CloudKit. MoneyWiz later crashed when creating a transaction, which is
+why the live reassignment implementation now saves through Core Data.
+
+Treat this as an implementation lesson, not as a prohibition on all direct
+database work: read access and verified writer paths remain useful. The
+boundary is between a reconstructed live object contract and an untracked raw
+mutation.
+
+## Revalidation triggers
+
+Re-run a minimal existing-payee and new-payee reassignment test when any of
+these change:
+
+- MoneyWiz application version or managed-object model.
+- Database location, account, or sync provider.
+- Core Data host bundle identity or transaction author.
+- The fields or relationships touched by the writer.
+
+Keep the scope minimal, wait for sync completion, and restore any test
+transactions created solely for the test.
+
+## Runtime enforcement
+
+Run `moneywiz compatibility` to inspect the detected profile and
+`moneywiz compatibility --capability NAME` before applying a write. Python
+parses the store's Core Data metadata, selects a profile by both its
+structure and exact model checksum, and passes the verified capability,
+profile ID, checksum, and writer-contract version to the Swift host. Before
+opening the persistent store, the host independently requires the exact
+supported profile, checksum, `write.reassign-payees-by-id` capability, schema
+version 1, ten-entity transaction allowlist, and reassignment-only payload
+shape. It rejects blank or duplicate transaction GIDs, partial or mixed target
+fields, and inconsistent new-payee keys. It then compares the expected checksum
+with both the store metadata and the selected MoneyWiz managed-object model.
+The selected model path comes from one safe manifest leaf: an extensionless
+current-version name receives `.mom` once, while a manifest value already
+ending in `.mom` is used unchanged.
+
+After the store opens, a read-only Core Data preflight resolves the complete
+plan using exact-entity fetches with subentities excluded. It verifies account
+users, existing-payee ownership, and shared new-payee ownership before any
+payee insert or relationship change. Unknown, blocked, merge, mixed, schema 2,
+entity-mismatched, or ownership-invalid plans fail closed without mutation.

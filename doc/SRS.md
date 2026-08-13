@@ -1,54 +1,48 @@
-# Software Requirements Specification (SRS)
+# Software Requirements Specification
 
-## 1. Purpose
+## Runtime requirements
 
-Provide a read- and write-capable toolkit to inspect and manage MoneyWiz SQLite databases from the command line, powered by a Python API (the “API”) and a unifying shell script (`moneywiz.sh`). The toolkit should mirror the most important MoneyWiz features for accounts, transactions, categories, payees, tags, and investment holdings — safely and predictably.
+- macOS.
+- A MoneyWiz SQLite database selected through an absolute `db_path` or
+  global `--db` override.
+- `~/.local/bin` available on `PATH` for installed commands.
+- MoneyWiz Tools.app installed in the configured app location.
 
-## 2. Scope
+The build additionally requires `uv`, `swiftc`, and network access to resolve
+the pinned `moneywiz-api` Git dependency when it is not already cached. No
+nested or local API checkout is required. Those tools are not runtime
+dependencies after the bundle is installed.
 
-- Read: list and query users, accounts, categories, payees, tags, holdings, and transactions; inspect single records; generate schema docs and summaries.
-- Write: create and update core entities and relationships (category splits, tags, refund links). Start with a dry-run layer and controlled opt-in applies.
-- Documentation: developer docs for schema, concepts, SyncObject, field mappings; user docs for all CLI commands/options.
+## Data requirements
 
-## 3. Stakeholders
+- The dispatcher treats the configured path as a SQLite store.
+- `db_path` may be absolute or begin with `~/`; the launcher expands a leading
+  `~/` before use.
+- Test fixtures and live stores can have different Core Data models.
+- Live entity mappings are evidence scoped to the observed MoneyWiz model.
 
-- End users managing their MoneyWiz data locally.
-- Developers extending the API and CLI.
+## Safety requirements
 
-## 4. Definitions
+- Read operations must not mutate the store.
+- The only verified live write is payee reassignment through the bundled Core
+  Data host; other mutation paths are not product capabilities.
+- Exact duplicate planning must remain read-only while the native merge
+  implementation and capability are unavailable.
+- `--apply` must not be run while MoneyWiz holds the persistent store open.
+- Ambiguous normalized payee matches must fail closed.
+- Similar-name pairs must remain pending until an explicit approval workflow
+  consumes them.
+- A live write must be followed by app reopen and sync confirmation.
 
-- API: `moneywiz-api` Python package in this repo.
-- SyncObject: row in `ZSYNCOBJECT`, typed via `Z_ENT` → `Z_PRIMARYKEY.Z_NAME`.
-- Dry-run: simulate planned SQL changes without applying.
+## Portability requirements
 
-## 5. Functional Requirements
+- The installed app must contain its Python runtime, Python packages, API
+  code, scripts, and Core Data host.
+- Installed command symlinks must resolve inside the app bundle, not into the
+  development repository.
 
-- FR1: List/read commands for users, accounts, categories, payees, tags, holdings, transactions, and records.
-- FR2: Introspection: full schema dump (md/json), ER diagram, summary counts.
-- FR3: Transaction relationships: category splits, tags, refund → withdraw links (read).
-- FR4: Write scaffolding: insert/update/delete SyncObjects, assign categories/tags, link refund (dry-run + apply).
-- FR5: CLI: `moneywiz.sh` provides a coherent interface with safe defaults, global `--db`, and per-command options.
-- FR6: Documentation: README.md (user), doc/ (developer) updated with any new feature.
+## Compatibility requirement
 
-## 6. Non-Functional Requirements
-
-- Safety: Default to dry-run; encourage using a DB copy for writes.
-- Reliability: Use transactions for multi-table writes; tolerate data quirks on reads.
-- Portability: macOS default path; custom DB via `--db`.
-- Performance: Operate on local SQLite; acceptable for interactive usage.
-
-## 7. Constraints
-
-- No proprietary MoneyWiz internals; rely on on-disk SQLite schema.
-- Network-restricted environments should still allow reading local DBs.
-
-## 8. Assumptions
-
-- DB structure matches MoneyWiz schema as discovered via `Z_PRIMARYKEY`/`ZSYNCOBJECT`.
-- Users possess local DB file.
-
-## 9. Acceptance Criteria
-
-- CLI successfully lists and inspects all supported entities from a known test DB.
-- SQL preview shows correct statements for representative create/update/link operations.
-- Docs are consistent, actionable, and regenerated from actual DB when needed.
+Each live writer is version-scoped. A MoneyWiz model or app upgrade requires
+a targeted revalidation before a previously verified operation is considered
+compatible.

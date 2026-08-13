@@ -1,23 +1,40 @@
-# MoneyWiz Database — Developer Docs
+# Documentation Index
 
-This folder documents the MoneyWiz SQLite schema (as observed from the app’s local database) and provides guidance for extending the `moneywiz-api` library and the `moneywiz.sh` CLI to support richer read/write workflows.
+Use the documents below by task rather than reading the design history first.
 
-Contents
+## Operator guides
 
-- `DB-SCHEMA.md`: Human-readable schema and key tables (with regeneration instructions).
-- `ER-DIAGRAM.md`: Entity relationships for the primary tables used by moneywiz-api.
-- `EXTENSIONS.md`: Roadmap for implementing read/write operations across entities with data constraints, pitfalls, and CLI design.
-- `SYNCOBJECT.md`: Deep-dive into ZSYNCOBJECT (Core Data SyncObject) and entity typing.
-- `CONCEPTS.md`: Core concepts (timestamps, signs, FX fields, relationships) useful for extending the API.
-- `REPO-INTEGRATION.md`: How to integrate `moneywiz-api` (submodule/subtree/package) — documented options, not applied by default.
+| Task | Document |
+| --- | --- |
+| Install, relocate, update, or remove the app bundle | [Bundle Installation](BUNDLE-INSTALLATION.md) |
+| Configure the store and run everyday commands | [Project README](../README.md) |
+| Run and revalidate a live payee reassignment | [Live Write Compatibility](LIVE-WRITE-COMPATIBILITY.md) |
+| Find commands and their intended scope | [Functions Reference](../FUNCTIONS.md) |
 
-Quick regenerate (from repo root)
+## Live writer and schema evidence
 
-- Markdown schema for any DB file:
-  - `PYTHONPATH=moneywiz-api/src .venv/bin/python scripts/introspect_db.py --db tests/test_db.sqlite --format md > doc/DB-SCHEMA.md`
-- JSON schema dump (machine-readable):
-  - `PYTHONPATH=moneywiz-api/src .venv/bin/python scripts/introspect_db.py --db tests/test_db.sqlite --format json > doc/schema.json`
+| Topic | Document |
+| --- | --- |
+| Core Data host, identity, and live-write protocol | [Core Data Writer](CORE-DATA-WRITER.md) |
+| Exact duplicate consolidation and fuzzy-map review | [Payee Consolidation](PAYEE-CONSOLIDATION.md) |
+| Verified MoneyWiz 2026 payee and transaction mapping | [Live Payee Structure](LIVE-PAYEE-STRUCTURE.md) |
+| Logical object relationships | [Entity Relationship Diagram](ER-DIAGRAM.md) |
+| Core Data sync-object lifecycle | [Sync Object Model](SYNCOBJECT.md) |
+| Broader field mappings and test-store recipes | [Field Mappings](FIELD-MAPPINGS.md) |
+| Generated test-store schema snapshot | [Database Schema](DB-SCHEMA.md) |
+| Profile x capability compatibility policy | [Schema Compatibility](SCHEMA-COMPATIBILITY.md) |
 
-Note on provenance
+`DB-SCHEMA.md` is generated from a test-store snapshot. Do not use its entity
+numbers as a live-store contract and do not hand-edit generated sections.
 
-- MoneyWiz stores most business entities in a single Core Data table `ZSYNCOBJECT`, keyed by entity id (`Z_ENT`) with the human-readable name in `Z_PRIMARYKEY` (`Z_NAME`). Auxiliary tables model many-to-many relationships (e.g., categories, tags) and specialized links (refund mappings).
+## Design and maintenance
+
+| Topic | Document |
+| --- | --- |
+| Domain concepts and terminology | [Concepts](CONCEPTS.md) |
+| Functional scope | [Functional Specification](FSD.md) |
+| Runtime and non-functional requirements | [Software Requirements Specification](SRS.md) |
+| Technical design and validation strategy | [Technical Design Document](TDD.md) |
+| Extension boundaries and roadmap | [Extensions](EXTENSIONS.md) |
+| Build-time repository relationship | [Repository Integration](REPO-INTEGRATION.md) |
+| Product/API/writer architecture decisions | [Wayfinder Map](wayfinder/MAP.md) |

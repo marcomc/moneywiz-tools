@@ -1,68 +1,33 @@
-# Repository Integration Options for `moneywiz-api`
+# Repository Integration
 
-This project consumes `moneywiz-api` by cloning MarcoMC's fork into a sibling `moneywiz-api/` directory (run `./moneywiz.sh --setup` to bootstrap it). The directory remains ignored in this repo so contributors can point it at their own fork or upstream. If you need alternative wiring (submodule, subtree, package install), the options below document trade-offs.
+## Build-time relationship
 
-## Option A: Git Submodule (source-linked, pinned by commit)
+This repository builds MoneyWiz Tools.app from three product components and a
+locked dependency graph:
 
-- Pros: Keeps `moneywiz-api` as a separate repo, with its own history; your project pins the exact commit.
-- Cons: Requires submodule workflows (init/update) and two-step commits (submodule + parent pointer).
+| Component | Role during build |
+| --- | --- |
+| Dispatcher scripts | Implement `moneywiz` commands and plans. |
+| `pyproject.toml` and `uv.lock` | Pin the read-model API and its dependencies. |
+| Swift host source | Performs the verified live Core Data save. |
 
-Commands (documentation only — not executed here):
+A complete checkout must include the committed lockfile. The Make build
+installs the pinned dependency graph rather than copying a nested API checkout.
 
-```bash
-# Add as a submodule at the `moneywiz-api/` path
-git submodule add <API_repo_url> moneywiz-api
+## Runtime relationship
 
-# Clone with submodules (on a new machine)
-git clone --recurse-submodules <this_repo_url>
-# Or initialize submodules after clone
-git submodule update --init --recursive
+After installation, the app bundle contains the runtime components it needs.
+The `moneywiz` symlink resolves into that bundle, so normal use does not
+depend on a Development-directory checkout or a pyenv environment.
 
-# Update to a newer commit/branch in the submodule
-cd moneywiz-api
-git fetch origin
-git checkout <branch-or-commit>
-cd ..
-# Record the new submodule pointer in the parent repo
-git add moneywiz-api
-git commit -m "Bump moneywiz-api submodule"
-```
+## Development boundaries
 
-Tips:
-
-- After `git submodule update`, the submodule may be in a detached HEAD; `git checkout <branch>` before editing.
-- Always commit the submodule pointer change in the parent repo after updating inside the submodule.
-
-## Option B: Git Subtree (vendor code into this repo)
-
-- Pros: One repository for everything; simpler for consumers (no submodules).
-- Cons: Heavier parent history; manual subtree updates.
-
-Commands (example):
-
-```bash
-git subtree add --prefix moneywiz-api <API_repo_url> main --squash
-# Later updates
-git subtree pull --prefix moneywiz-api <API_repo_url> main --squash
-```
-
-## Option C: Install from a Package (preferred for runtime)
-
-If `moneywiz-api` is published (e.g., to PyPI), depend on a released version:
-
-```bash
-# requirements.txt
-moneywiz-api==<version>
-
-# or with uv
-uv pip install moneywiz-api==<version>
-```
-
-- Pros: Clean dependency management; no repository coupling.
-- Cons: Editing the API requires working in its own repo.
-
-## Recommendation
-
-- Default workflow: run `./moneywiz.sh --setup` to clone `https://github.com/marcomc/moneywiz-api.git` into `moneywiz-api/` and (optionally) add `upstream` → `https://github.com/ileodo/moneywiz-api`. Pull latest changes inside that folder as needed.
-- Use Option C (package install) for CI or when you only need the published API.
-- Use Option A (submodule) when you must pin both repos together and share that pointer with teammates.
+- Keep source-level changes in this repository and rebuild the bundle through
+  Make.
+- Keep generic, upstreamable read-model changes in the separate
+  `marcomc/moneywiz-api` fork. It is a pinned source dependency, not an
+  end-user product or bundled nested checkout.
+- Do not add a second standalone writer app. The outer MoneyWiz Tools.app is
+  the canonical host for the Swift writer and a future GUI.
+- Keep live writer contracts narrow and evidence-backed; generic raw SQL is
+  not a product write path.

@@ -1,4 +1,4 @@
-# Exclude the external API (tracked in its own repo)
+# Optional local API checkout; runtime uses the pinned Git dependency.
 moneywiz-api/
 
 # Python + venv
