@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.2.1] - 2026-08-13
+
+### Changed
+
+- Reconciled the CLI and installation documentation with the current
+  `moneywiz` dispatcher, Make targets, and source-only development commands.
+- Clarified the install, upgrade, rollback, verification, and removal
+  procedures for the self-contained MoneyWiz Tools.app bundle.
+- Expanded the command reference with the authoritative command groups,
+  option boundaries, output defaults, and safety states.
+- Aligned developer documentation navigation with task-oriented reading paths
+  and explicit documentation validation expectations.
+- Updated the project, lockfile, and app-bundle metadata to version `0.2.1`.
+
 ## [0.2.0] - 2026-08-09
 
 ### Added
@@ -16,8 +30,8 @@
 - Reorganized operator and maintainer documentation around the installed bundle, command roles, and live-write boundaries.
 - Added source-backed installation and live-write workflow diagrams.
 - Consolidated the supported interface on the configuration-aware `moneywiz`
-  dispatcher; `moneywiz-cli` remains an explicit-path API shell, while generic
-  raw-SQL mutation commands are retired from the product surface.
+  dispatcher; `moneywiz-cli` is not a supported product entry point, while
+  generic raw-SQL mutation commands are retired from the product surface.
 - Replaced the nested runtime API checkout with the pinned Git dependency and
   locked build graph; no nested checkout is required for the installed bundle.
 - Added a versioned profile-by-capability register: live payee reassignment is

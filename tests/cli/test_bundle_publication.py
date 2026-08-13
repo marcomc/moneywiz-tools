@@ -641,11 +641,20 @@ def test_installed_version_flags_need_no_database_python_or_source_plist(
         assert result.stderr == ""
 
 
-def test_bundle_plist_version_matches_project_metadata() -> None:
+def test_release_versions_match_project_metadata() -> None:
     with (REPO_ROOT / "scripts/MoneyWizTools-Info.plist").open("rb") as plist_file:
         bundle_metadata = plistlib.load(plist_file)
+    with (REPO_ROOT / "uv.lock").open("rb") as lock_file:
+        lockfile = tomllib.load(lock_file)
+    locked_project = next(
+        package
+        for package in lockfile["package"]
+        if package["name"] == "moneywiz-tools"
+    )
 
     assert bundle_metadata["CFBundleShortVersionString"] == _project_version(REPO_ROOT)
+    assert locked_project["version"] == _project_version(REPO_ROOT)
+    assert str(bundle_metadata["CFBundleVersion"]).isdigit()
 
 
 @pytest.mark.parametrize("mutation", ["missing", "additional"])

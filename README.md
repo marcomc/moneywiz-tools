@@ -28,11 +28,21 @@ Build-time prerequisites:
 - `uv`.
 - This checkout, including `pyproject.toml` and `uv.lock`.
 
-Run `make` first to see the complete target list, then install the product:
+Install from the checkout you intend to package. The builder uses current
+worktree contents, so review uncommitted changes before installing. The build
+requires `git`, `uv`, and `swiftc`; users do not need Python, `pyenv`, or `uv`
+after installation.
+
+For the default installation prefix, make `moneywiz` available in the current
+shell before verifying the installation:
 
 ~~~sh
+export PATH="$HOME/.local/bin:$PATH"
 make
+make check-deps
 make install
+moneywiz --version
+moneywiz --help
 ~~~
 
 `make install` builds or refreshes the app bundle and installs `moneywiz`.
@@ -47,7 +57,21 @@ make configure-install-dir APP_BUNDLE_DIR="$HOME/LocalApps"
 make install
 ~~~
 
-Ensure `~/.local/bin` is on `PATH`.
+Add `~/.local/bin` to your shell startup configuration to make that PATH change
+permanent.
+
+To update an existing installation, pull or check out the desired revision and
+run `make install` again. The build stages and validates a replacement bundle
+before promotion and restores the previous bundle if promotion fails.
+
+To remove the installed app and command links, run:
+
+~~~sh
+make uninstall
+~~~
+
+`make clean` is an alias for this removal operation; it does not clean build
+artifacts from the source tree.
 
 ## Configure the database
 
@@ -76,8 +100,17 @@ moneywiz --db /absolute/path/to/MoneyWiz_iCloud.sqlite payees
 
 ## Read data
 
-Use `moneywiz --help` for the authoritative command list. Common read-only
-operations include:
+Use `moneywiz --help` for the authoritative command list. The installed
+interface has four command groups:
+
+| Group | Commands | Access |
+| --- | --- | --- |
+| Reads | `users`, `accounts`, `categories`, `payees`, `tags`, `transactions`, `holdings` | Read-only database access |
+| Writes and plans | `reassign-payees-by-id`, `merge-duplicate-payees` | Dry-run by default; live apply is capability-gated |
+| Introspection | `compatibility`, `schema`, `summary`, `stats`, `record` | Read-only inspection and reports |
+| Interactive | `shell` | Read-only API shell |
+
+Common read-only operations include:
 
 ~~~sh
 moneywiz users
@@ -156,6 +189,11 @@ blocked or unknown requested capabilities.
 
 `moneywiz shell` starts the configuration-aware interactive read path.
 `moneywiz-cli` is not a supported product entry point.
+
+The source checkout also exposes `create-test-db` and `sanitize-test-db` for
+disposable development fixtures. They are intentionally not included in the
+installed product. See [Functions Reference](FUNCTIONS.md) for the complete
+command table and exact examples.
 
 ## Documentation
 

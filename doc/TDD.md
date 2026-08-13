@@ -54,6 +54,12 @@ dependency graph and execute the MoneyWiz Tools CLI regression suite. The
 dependency is fetched from the pinned `moneywiz-api` Git revision; no nested or
 local API checkout is required.
 
+For documentation-only or release-preparation changes, validate the reader
+path as well as the implementation: run `make check-deps`, inspect top-level
+and command-specific help, verify `moneywiz --version`, run the CLI tests, and
+check changed Markdown with the repository Markdown configuration. Release
+notes should describe user-visible capability and behavior, not commit order.
+
 For each new live writer, validation must include:
 
 1. A minimal native-app comparison for the target operation.
