@@ -1,8 +1,8 @@
 # MoneyWiz Command Reference
 
 `moneywiz` is the configuration-aware dispatcher installed with MoneyWiz
-Tools.app. It reads `db_path` from `~/.moneywizrc`; use an absolute path, or
-override it per command with `--db PATH`.
+Tools.app. It reads `db_path` from `~/.moneywizrc`; use an absolute path, one
+beginning with `~/`, or override it per command with `--db PATH`.
 
 ## Global commands and options
 
@@ -43,37 +43,28 @@ is needed.
 
 ## Retired raw-SQL commands
 
-The following historical examples document former development helpers. They
-are no longer exposed by the product command and must not be used as a live
-write contract.
+Earlier releases exposed `insert`, `update`, `delete`, `safe-delete`, `rename`,
+`assign-categories`, `assign-tags`, and `link-refund`. The current product and
+source-tree dispatchers do not route those commands. Their old syntax is not a
+supported test or live-write interface.
 
-These source-checkout-only commands are not installed in MoneyWiz Tools.app.
-Create the test copy first from the repository:
+The source checkout still provides only the test-database lifecycle commands:
 
 ~~~sh
 ./moneywiz.sh create-test-db
 ./moneywiz.sh sanitize-test-db
 ~~~
 
-Then target it explicitly:
-
-| Command | Example |
-| --- | --- |
-| `insert` | `moneywiz --db tests/test_db.sqlite insert --type Payee --fields '{"ZNAME5":"Example merchant"}' --apply` |
-| `update` | `moneywiz --db tests/test_db.sqlite update --id 1234 --fields '{"ZNAME5":"Renamed merchant"}' --apply` |
-| `delete` | `moneywiz --db tests/test_db.sqlite delete --id 1234 --apply` |
-| `safe-delete` | `moneywiz --db tests/test_db.sqlite safe-delete --id 1234 --apply` |
-| `rename` | `moneywiz --db tests/test_db.sqlite rename --id 1234 --name "Renamed merchant" --apply` |
-| `assign-categories` | `moneywiz --db tests/test_db.sqlite assign-categories --tx 1234 --splits '[[42,18.19]]' --apply` |
-| `assign-tags` | `moneywiz --db tests/test_db.sqlite assign-tags --tx 1234 --tags '[7,11]' --apply` |
-| `link-refund` | `moneywiz --db tests/test_db.sqlite link-refund --refund 2001 --withdraw 1999 --apply` |
+These commands create and sanitize a disposable copy; they do not restore the
+retired raw-SQL routes.
 
 ## Live payee operations
 
-The following commands use the bundled Core Data host when `--apply` is
-present and the detected profile marks that operation `verified`. Let
-MoneyWiz finish syncing, quit the app, inspect the plan, then run the apply
-command. Reopen MoneyWiz and confirm sync health afterwards.
+Live reassignment uses the bundled Core Data host when `--apply` is present and
+the detected profile marks that operation `verified`. Let MoneyWiz finish
+syncing, quit the app, inspect the plan, then run the apply command. Reopen
+MoneyWiz and confirm sync health afterwards. Duplicate-merge planning is
+read-only; its apply capability is blocked.
 
 ### Reassign payees by transaction description
 
@@ -111,10 +102,11 @@ operation in that user-scoped group.
 
 ### Merge exact duplicate payees
 
-`merge-duplicate-payees` consolidates only duplicate names that are equal for
-the same user after Unicode NFKC normalization, whitespace collapse, and case
-folding. Similar names are review data only; the fuzzy CSV is never read to
-perform a merge.
+`merge-duplicate-payees` plans duplicate names that are equal for the same user
+after Unicode NFKC normalization, whitespace collapse, and case folding.
+Similar names are review data only; the fuzzy CSV is never read to perform a
+merge. Native merge application is not implemented, so `--apply` is rejected
+by the blocked capability gate.
 
 1. Create and inspect an exact-merge plan:
 
@@ -147,7 +139,7 @@ perform a merge.
    **Preferences > Payees > Edit**. Reopen the transaction form and confirm
    iCloud Sync is `Up to Date`.
 
-Use `--quiet` on either live operation when only machine-readable output is
+Use `--quiet` on either payee command when only machine-readable output is
 needed.
 
 ## Resolving fuzzy-review pending rows
@@ -214,7 +206,7 @@ CSV.
 | --- | --- |
 | Any configured store, read-only | `users`, `accounts`, `categories`, `payees`, `tags`, `transactions`, `holdings`, `record`, `summary`, `stats`, `schema`, `shell`, `compatibility` |
 | Live iCloud store through Core Data | `reassign-payees-by-id --apply` when its profile capability is verified |
-| Planned but blocked | `merge-duplicate-payees --apply` until independent acceptance evidence is recorded |
+| Planning only; apply blocked | `merge-duplicate-payees`; `--apply` remains unavailable until a native implementation has independent acceptance evidence |
 
 For the persistent-history and CloudKit contract, see
 [Core Data Writer](doc/CORE-DATA-WRITER.md),

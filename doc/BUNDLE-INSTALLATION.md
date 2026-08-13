@@ -49,12 +49,14 @@ process is forcibly terminated in that interval, the next build restores the
 backup before checking build dependencies. The bundled virtual environment
 uses a relative interpreter link so it remains valid after staging is promoted.
 
-The staged payload is selected from Git-tracked files under `scripts/` and
-`doc/`, plus the launcher and configuration example required at runtime. The
-builder copies the current worktree contents for those tracked paths, without
-reading file contents from the Git index. It never copies `tests/` or untracked
-and ignored artifacts such as local databases, SQLite sidecars, logs, or Python
-caches into the product bundle.
+The staged payload is selected from Git-tracked product files under `scripts/`
+and `doc/`, plus the launcher and configuration example required at runtime.
+The tracked development-only programs `scripts/run_tests.sh`,
+`scripts/shell_examples_test.py`, and `scripts/sanitize_test_db.py` are excluded
+from the product manifest. The builder copies the current worktree contents for
+the selected tracked paths, without reading file contents from the Git index.
+It never copies `tests/` or untracked and ignored artifacts such as local
+databases, SQLite sidecars, logs, or Python caches into the product bundle.
 
 The default app location is:
 

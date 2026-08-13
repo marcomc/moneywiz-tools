@@ -11,6 +11,9 @@
 - Added a versioned `profile x capability` register: live payee reassignment
   is enabled only for verified database profiles, while duplicate-payee merge
   application is explicitly blocked pending separate acceptance evidence.
+- Aligned operator and design documentation with the current boundaries:
+  duplicate merge is planning-only, `~/` config paths are expanded, and the
+  pinned `moneywiz-api` Git dependency needs no nested checkout.
 
 ### Fixed
 
@@ -44,7 +47,8 @@
 - A relocatable MoneyWiz Tools.app installation path with bundled Python runtime, scripts, API source, and Core Data host.
 - A documented, evidence-backed Core Data writer for live payee reassignment and destination-payee creation.
 - Version-scoped live payee structure and relationship documentation, including transaction and string-history references.
-- Exact-normalized duplicate-payee planning and Core Data consolidation, with deterministic canonical selection.
+- Exact-normalized duplicate-payee planning with deterministic canonical
+  selection.
 - An editable, approval-only CSV map for similar-name payee candidates.
 
 ### Changed
@@ -52,12 +56,14 @@
 - Reorganized operator and maintainer documentation around the installed bundle, command roles, and live-write boundaries.
 - Added source-backed installation and live-write workflow diagrams.
 - Distinguished the configuration-aware `moneywiz` dispatcher from the explicit-path `moneywiz-cli` API shell.
-- Recorded the native merge survivor contract and model-driven inbound payee relationships.
+- Recorded the proposed merge survivor contract and the evidence still needed
+  before a native merge implementation can be enabled.
 
 ### Fixed
 
 - Removed stale guidance that described the project as read-only or presented generic raw SQLite writes as live-store compatible.
-- Corrected configuration guidance to require an absolute database path and avoid an unexpanded `~` value.
+- Documented configuration path handling, including launcher expansion of a
+  leading `~/` value.
 - Replaced obsolete test-wrapper references with the actual validation strategy.
 
 ## [0.1.0] - 2026-02-23

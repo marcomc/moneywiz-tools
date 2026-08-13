@@ -112,7 +112,8 @@ moneywiz merge-duplicate-payees --show-plan \
 ~~~
 
 The corresponding live merge capability is currently blocked pending separate
-Core Data acceptance evidence. Use MoneyWiz 2026's
+Core Data acceptance evidence. The native host does not implement relationship
+migration or source-payee deletion. Use MoneyWiz 2026's
 `Preferences > Payees > Edit` merge action for approved pairs. The fuzzy CSV
 is review-only; see [Functions Reference](FUNCTIONS.md) for the decision flow.
 
@@ -166,9 +167,11 @@ blocked or unknown requested capabilities.
 
 Use `make` as the entry point for supported build and installation targets.
 The source tree contains the dispatch scripts, the compatibility register, and
-the Swift host. The locked API dependency graph is assembled into the
-relocatable app bundle. Bundle publication selects Git-tracked scripts and
-documentation plus the required launcher/configuration files. Tests, local
-databases, SQLite sidecars, logs, caches, and other untracked files are not
-installed. The `create-test-db` and `sanitize-test-db` commands remain available
-only through the source-tree dispatcher.
+the Swift host. The locked API dependency graph uses the pinned `moneywiz-api`
+Git revision in `pyproject.toml`; no nested or local API checkout is required.
+It is assembled into the relocatable app bundle. Bundle publication selects
+Git-tracked product scripts and documentation plus the required
+launcher/configuration files. Tracked development-only test and sanitization
+helpers, tests, local databases, SQLite sidecars, logs, caches, and other
+untracked files are not installed. The `create-test-db` and `sanitize-test-db`
+commands remain available only through the source-tree dispatcher.

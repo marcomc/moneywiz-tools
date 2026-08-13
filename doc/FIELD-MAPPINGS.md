@@ -13,12 +13,14 @@ This reference maps domain model fields used by the API to raw SQLite columns (p
 - [Tags](#tags-zsyncobject-tag)
 - [Investment Holding](#investment-holding-zsyncobject-investmentholding)
 - [Transactions](#transactions--common-zsyncobject-transaction-base)
-  - [Deposit](#deposittransaction-create-recipe)
-  - [Withdraw](#withdrawtransaction-create-recipe)
-  - [Refund](#refundtransaction-create-recipe)
-  - [Transfer](#transfer-paired)
-  - [Reconcile](#reconciletransaction-create-recipe)
-  - [Investment Buy/Sell](#investmentbuytransaction--investmentselltransaction)
+  - [Deposit](#deposittransaction-field-set)
+  - [Withdraw](#withdrawtransaction-field-set)
+  - [Refund](#refundtransaction-field-set)
+  - [Transfer deposit](#transferdeposittransaction)
+  - [Transfer withdraw](#transferwithdrawtransaction)
+  - [Reconcile](#reconciletransaction-field-set)
+  - [Investment buy](#investmentbuytransaction)
+  - [Investment sell](#investmentselltransaction)
   - [Investment Exchange](#investmentexchangetransaction)
 - [Relationship Tables](#relationship-tables-non-zsyncobject)
 - [Useful Queries](#useful-queries)
@@ -95,7 +97,7 @@ Subtypes (same columns, distinguished by type name):
   Core Data history and CloudKit changes described in
   `LIVE-WRITE-COMPATIBILITY.md`.
 
-### DepositTransaction (create recipe)
+### DepositTransaction field set
 
 - account ← `ZACCOUNT2`
 - amount ← `ZAMOUNT1` (pos income, neg expense in DB; API uses sign as-is)
@@ -104,7 +106,7 @@ Subtypes (same columns, distinguished by type name):
 - original_amount ← `ZORIGINALAMOUNT`
 - original_exchange_rate (optional) ← `ZORIGINALEXCHANGERATE`
 
-### WithdrawTransaction (create recipe)
+### WithdrawTransaction field set
 
 - account ← `ZACCOUNT2`
 - amount ← `ZAMOUNT1` (neg expense, pos income)
@@ -113,7 +115,7 @@ Subtypes (same columns, distinguished by type name):
 - original_amount ← `ZORIGINALAMOUNT`
 - original_exchange_rate (optional) ← `ZORIGINALEXCHANGERATE`
 
-### RefundTransaction (create recipe)
+### RefundTransaction field set
 
 - account ← `ZACCOUNT2`
 - amount ← `ZAMOUNT1` (typically positive)
@@ -124,7 +126,7 @@ Subtypes (same columns, distinguished by type name):
 
 Related link: `ZWITHDRAWREFUNDTRANSACTIONLINK (ZREFUNDTRANSACTION -> ZWITHDRAWTRANSACTION)`
 
-### ReconcileTransaction
+### ReconcileTransaction field set
 
 - account ← `ZACCOUNT2`
 - reconcile_amount (optional) ← `ZRECONCILEAMOUNT`
@@ -260,119 +262,10 @@ This is a first draft synthesized from the test DB and the current API models. A
 |49|User|
 |50|WithdrawRefundTransactionLink|
 
-## Historical raw-SQL recipes (not product functionality)
+## Retired raw-SQL routes
 
-The examples below are retained only as historical mapping evidence. MoneyWiz
-Tools no longer exposes raw-SQL create or update commands. A live mutation must
-have an explicit, verified `profile x capability` entry and use the Core Data
-writer.
-
-The following recipes illustrate the minimal field sets to create objects via the SQL preview tool. All commands are dry-run unless `--apply` is provided; test on a DB copy.
-
-### DepositTransaction
-
-JSON fields template:
-
-```json
-{
-  "ZACCOUNT2": <account_id>,
-  "ZAMOUNT1": <amount_pos_or_neg>,
-  "ZDATE1": <apple_epoch_seconds>,
-  "ZDESC2": "<description>",
-  "ZPAYEE2": <payee_id_or_null>,
-  "ZORIGINALAMOUNT": <orig_amount>,
-  "ZORIGINALCURRENCY": "<CUR>",
-  "ZORIGINALEXCHANGERATE": <rate_or_null>
-}
-```
-
-Example (preview):
-
-```bash
-./moneywiz.sh --db tests/test_db.sqlite insert \
-  --type DepositTransaction \
-  --fields '{"ZACCOUNT2":5309, "ZAMOUNT1": 12.34, "ZDATE1": 700000000, "ZDESC2":"Salary", "ZPAYEE2": null, "ZORIGINALAMOUNT": 12.34, "ZORIGINALCURRENCY":"GBP", "ZORIGINALEXCHANGERATE": 1.0}'
-```
-
-### WithdrawTransaction
-
-Template: same as Deposit, amounts usually negative; include FX if needed.
-
-Example:
-
-```bash
-./moneywiz.sh --db tests/test_db.sqlite insert \
-  --type WithdrawTransaction \
-  --fields '{"ZACCOUNT2":5309, "ZAMOUNT1": -3.50, "ZDATE1": 700000000, "ZDESC2":"Coffee", "ZPAYEE2": 1002, "ZORIGINALAMOUNT": -3.50, "ZORIGINALCURRENCY":"GBP", "ZORIGINALEXCHANGERATE": 1.0}'
-```
-
-### RefundTransaction
-
-Template: positive amount refund; link to original withdraw separately (see `link-refund`).
-
-Example create + link:
-
-```bash
-./moneywiz.sh --db tests/test_db.sqlite insert \
-  --type RefundTransaction \
-  --fields '{"ZACCOUNT2":7151, "ZAMOUNT1": 0.01, "ZDATE1": 700000100, "ZDESC2":"Refund of X", "ZORIGINALAMOUNT": 0.01, "ZORIGINALCURRENCY":"GBP", "ZORIGINALEXCHANGERATE": 1.0}'
-
-# Suppose refund got Z_PK=9001; link to withdraw 7753
-./moneywiz.sh --db tests/test_db.sqlite link-refund --refund 9001 --withdraw 7753
-```
-
-### Transfer (paired)
-
-Create both sides and cross-link with ZRECIPIENTTRANSACTION/ZSENDERTRANSACTION afterward (or use a higher-level helper when available).
-
-TransferWithdraw side (origin account):
-
-```bash
-./moneywiz.sh --db tests/test_db.sqlite insert \
-  --type TransferWithdrawTransaction \
-  --fields '{"ZACCOUNT2":4712, "ZAMOUNT1": -200.0, "ZDATE1": 700000000, "ZDESC2":"Cash top-up", "ZORIGINALAMOUNT": -200.0, "ZORIGINALCURRENCY":"USD", "ZORIGINALEXCHANGERATE": 1.0, "ZORIGINALRECIPIENTAMOUNT": 200.0, "ZRECIPIENTACCOUNT1": 7824}'
-```
-
-TransferDeposit side (destination account):
-
-```bash
-./moneywiz.sh --db tests/test_db.sqlite insert \
-  --type TransferDepositTransaction \
-  --fields '{"ZACCOUNT2":7824, "ZAMOUNT1": 200.0, "ZDATE1": 700000000, "ZDESC2":"Cash top-up", "ZORIGINALAMOUNT": 200.0, "ZORIGINALCURRENCY":"USD", "ZORIGINALEXCHANGERATE": 1.0, "ZORIGINALSENDERAMOUNT": -200.0, "ZSENDERACCOUNT": 4712}'
-```
-
-After both inserts, update each side to set `ZRECIPIENTTRANSACTION` / `ZSENDERTRANSACTION` with the new counterpart Z_PK (use `update`).
-
-### ReconcileTransaction (create recipe)
-
-```bash
-./moneywiz.sh --db tests/test_db.sqlite insert \
-  --type ReconcileTransaction \
-  --fields '{"ZACCOUNT2":7523, "ZDATE1": 700010000, "ZDESC2":"New balance", "ZRECONCILEAMOUNT": 1146.45}'
-```
-
-### InvestmentBuyTransaction / InvestmentSellTransaction
-
-Buy (amount usually negative, includes fee):
-
-```bash
-./moneywiz.sh --db tests/test_db.sqlite insert \
-  --type InvestmentBuyTransaction \
-  --fields '{"ZACCOUNT2":7824, "ZAMOUNT1": -204.43, "ZDATE1": 700000000, "ZDESC2":"AAPL", "ZFEE2": 0.00, "ZINVESTMENTHOLDING": 9647, "ZNUMBEROFSHARES1": 1.0, "ZPRICEPERSHARE1": 204.43}'
-```
-
-Sell:
-
-```bash
-./moneywiz.sh --db tests/test_db.sqlite insert \
-  --type InvestmentSellTransaction \
-  --fields '{"ZACCOUNT2":7824, "ZAMOUNT1": 7.95, "ZDATE1": 700100000, "ZDESC2":"SNAP", "ZFEE2": 0.00, "ZINVESTMENTHOLDING": 10182, "ZNUMBEROFSHARES1": 0.5, "ZPRICEPERSHARE1": 15.90}'
-```
-
-Exchange (shares move between holdings):
-
-```bash
-./moneywiz.sh --db tests/test_db.sqlite insert \
-  --type InvestmentExchangeTransaction \
-  --fields '{"ZACCOUNT2":7824, "ZFROMINVESTMENTHOLDING": 1, "ZFROMSYMBOL":"FOO", "ZTOINVESTMENTHOLDING": 2, "ZTOSYMBOL":"BAR", "ZFROMNUMBEROFSHARES": -10.0, "ZTONUMBEROFSHARES": 10.0, "ZORIGINALFEE": 0.0, "ZORIGINALFEECURRENCY":"BAR"}'
-```
+Earlier releases exposed raw-SQL create and update helpers. Those routes no
+longer exist in either dispatcher. The field sets above remain mapping evidence
+for inspection and fixture design, not runnable mutation recipes. A live
+mutation requires an explicit verified capability and a dedicated Core Data
+implementation.

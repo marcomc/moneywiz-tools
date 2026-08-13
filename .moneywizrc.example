@@ -1,7 +1,8 @@
 # MoneyWiz Tools configuration
 #
 # Copy this file to ~/.moneywizrc and set the database path used by moneywiz.
-# The path must be absolute. Do not use ~ because the launcher does not expand
-# it. A global --db argument overrides this value for one command.
+# The path may be absolute or begin with ~/. The launcher expands a leading ~/
+# before opening the database. A global --db argument overrides this value for
+# one command.
 
 db_path=/Users/your-user/absolute/path/to/MoneyWiz_iCloud.sqlite

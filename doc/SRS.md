@@ -8,14 +8,16 @@
 - `~/.local/bin` available on `PATH` for installed commands.
 - MoneyWiz Tools.app installed in the configured app location.
 
-The build additionally requires `uv`, `swiftc`, and the local
-`moneywiz-api/` source directory. Those are not runtime dependencies after
-the bundle is installed.
+The build additionally requires `uv`, `swiftc`, and network access to resolve
+the pinned `moneywiz-api` Git dependency when it is not already cached. No
+nested or local API checkout is required. Those tools are not runtime
+dependencies after the bundle is installed.
 
 ## Data requirements
 
 - The dispatcher treats the configured path as a SQLite store.
-- `db_path` must be absolute; `~` is not expanded by the launcher.
+- `db_path` may be absolute or begin with `~/`; the launcher expands a leading
+  `~/` before use.
 - Test fixtures and live stores can have different Core Data models.
 - Live entity mappings are evidence scoped to the observed MoneyWiz model.
 
@@ -24,7 +26,8 @@ the bundle is installed.
 - Read operations must not mutate the store.
 - Generic write helpers are documented for test copies or disposable stores.
 - Live payee reassignment must use the bundled Core Data host.
-- Live exact duplicate consolidation must use the bundled Core Data host.
+- Exact duplicate planning must remain read-only while the native merge
+  implementation and capability are unavailable.
 - `--apply` must not be run while MoneyWiz holds the persistent store open.
 - Ambiguous normalized payee matches must fail closed.
 - Similar-name pairs must remain pending until an explicit approval workflow

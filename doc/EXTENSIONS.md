@@ -6,10 +6,10 @@
 | --- | --- |
 | Read users, accounts, categories, payees, tags, transactions, holdings, and schema | Available through `moneywiz`. |
 | Build a self-contained app and command symlinks | Available through Make targets. |
-| Generic write helpers | Available for test copies and disposable stores. |
+| Generic write helpers | Retired from the product CLI. |
 | Live payee reassignment to an existing payee | Verified through Core Data. |
 | Live payee reassignment that creates a destination payee | Verified through Core Data. |
-| Live exact-normalized duplicate-payee merge | Implemented through Core Data; first live batch requires revalidation. |
+| Live exact-normalized duplicate-payee merge | Planning only; native apply remains blocked. |
 | Similar-name payee merge | Approval-map generation only. |
 | Graphical user interface | Planned. |
 
@@ -29,8 +29,9 @@
 
 ### Similar-name approval workflow
 
-Exact-normalized groups now have a deterministic Core Data merge path. The
-remaining extension is an explicit parser for an approved fuzzy CSV:
+Exact-normalized groups now have a deterministic plan, but no native mutation
+path. A future implementation also needs an explicit parser for an approved
+fuzzy CSV:
 
 1. Read only rows marked approved.
 2. Validate the selected canonical payee is still valid and belongs to the

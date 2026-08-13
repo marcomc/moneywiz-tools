@@ -26,9 +26,10 @@ erDiagram
 | Payee history | `ZSTRINGHISTORYITEM` | `ZPAYEE`, `ZSTRING` |
 | Identity allocation | `ZSYNCOBJECT` and Core Data lifecycle | Do not allocate with `Z_PRIMARYKEY.Z_MAX` |
 
-The exact duplicate merger enumerates every active Core Data relationship whose
-destination is `Payee`. `ZPAYEE2` and `ZSTRINGHISTORYITEM.ZPAYEE` are the
-visible confirmed examples; updating only `ZPAYEE2` is incomplete.
+A future exact duplicate merger must enumerate every active Core Data
+relationship whose destination is `Payee`. `ZPAYEE2` and
+`ZSTRINGHISTORYITEM.ZPAYEE` are the visible confirmed examples; updating only
+`ZPAYEE2` would be incomplete. Native merge apply is currently blocked.
 
 ## Version boundary
 

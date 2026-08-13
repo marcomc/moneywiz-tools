@@ -1,6 +1,8 @@
 import os
+import shlex
 import shutil
 import subprocess
+import sys
 import textwrap
 from pathlib import Path
 
@@ -8,6 +10,29 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 APP_NAME = "MoneyWiz Tools.app"
+DEVELOPMENT_ONLY_PROGRAMS = (
+    "scripts/run_tests.sh",
+    "scripts/sanitize_test_db.py",
+    "scripts/shell_examples_test.py",
+)
+REQUIRED_DISPATCHER_PROGRAMS = (
+    "scripts/accounts.py",
+    "scripts/categories.py",
+    "scripts/compatibility.py",
+    "scripts/compatibility_matrix.json",
+    "scripts/holdings.py",
+    "scripts/introspect_db.py",
+    "scripts/merge_duplicate_payees.py",
+    "scripts/payees.py",
+    "scripts/reassign_payees_by_id.py",
+    "scripts/record.py",
+    "scripts/run_moneywiz_cli.py",
+    "scripts/stats.py",
+    "scripts/summary.py",
+    "scripts/tags.py",
+    "scripts/transactions.py",
+    "scripts/users.py",
+)
 
 
 def _write_executable(path: Path, contents: str) -> None:
@@ -446,6 +471,10 @@ def test_successful_reinstall_publishes_complete_bundle_and_command(
     )
     assert (runtime / "doc/BUNDLE-INSTALLATION.md").is_file()
     assert (runtime / ".moneywizrc.example").is_file()
+    for relative_path in REQUIRED_DISPATCHER_PROGRAMS:
+        assert (runtime / relative_path).is_file()
+    for relative_path in DEVELOPMENT_ONLY_PROGRAMS:
+        assert not (runtime / relative_path).exists()
     assert not (runtime / "tests").exists()
     assert not (runtime / "tests/test_db.sqlite").exists()
     assert not (runtime / "tests/test_db.sqlite-wal").exists()
@@ -454,6 +483,24 @@ def test_successful_reinstall_publishes_complete_bundle_and_command(
     assert not (runtime / "scripts/untracked-runtime.py").exists()
     assert not (runtime / "scripts/__pycache__").exists()
     assert not (runtime / "doc/untracked-notes.md").exists()
+
+    python_link = runtime / "python/venv/bin/python"
+    _write_executable(
+        python_link.resolve(),
+        f'#!/bin/sh\nexec {shlex.quote(sys.executable)} "$@"\n',
+    )
+    database = install_environment["tmp_path"] / "dispatcher.sqlite"
+    assert isinstance(database, Path)
+    database.touch()
+    dispatcher_result = _run_installed(
+        install_environment,
+        "--db",
+        str(database),
+        "compatibility",
+        "--help",
+    )
+    assert dispatcher_result.returncode == 0, dispatcher_result.stderr
+    assert "usage:" in dispatcher_result.stdout
 
 
 def test_install_moneywiz_rejects_incomplete_bundle_before_relinking(

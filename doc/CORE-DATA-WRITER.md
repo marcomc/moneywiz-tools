@@ -7,15 +7,16 @@ operations that have a verified capability. It exists because changing relations
 columns with raw SQLite does not create the Core Data persistent-history and
 CloudKit metadata that MoneyWiz expects.
 
-The current writer is verified for:
+The current writer implements and is verified for:
 
 - Reassigning transactions to an existing payee.
 - Creating a destination payee when reassignment requires one.
 - Saving through the installed MoneyWiz Tools.app host.
 
-It implements exact-normalized duplicate consolidation using the same host,
-but that operation remains blocked until its own acceptance evidence is
-recorded. Verification is operation-specific.
+The Python CLI can plan exact-normalized duplicate consolidation, but the
+native host does not implement relationship migration or source-payee deletion.
+The corresponding capability remains blocked. Verification is
+operation-specific.
 
 It is not a general live SQL writer and it never applies similar-name pairs
 from the approval map.
@@ -121,9 +122,10 @@ When multiple descriptions share one user-scoped normalized creation key, the
 lowest selected transaction ID supplies one deterministic display name for the
 entire group.
 
-`merge-duplicate-payees` has a separate exact-normalized Core Data plan. Its
-application remains disabled until it has operation-specific acceptance
-evidence. Similar-name pairs stay pending in an approval CSV.
+`merge-duplicate-payees` has a separate exact-normalized Python plan. Its
+application remains unavailable: the capability gate rejects `--apply`, and
+the native host has no merge mutation route. Similar-name pairs stay pending
+in an approval CSV.
 
 See [Live Payee Structure](LIVE-PAYEE-STRUCTURE.md) for the recorded live
 mappings and [Live Write Compatibility](LIVE-WRITE-COMPATIBILITY.md) for the

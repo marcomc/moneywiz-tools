@@ -34,24 +34,25 @@ Make owns the supported build and installation workflow:
 | --- | --- | --- |
 | Reads | SQLite/API access | Live or copied store. |
 | Payee reassignment | Bundled Swift Core Data host | Verified live path. |
-| Exact duplicate consolidation | Bundled Swift Core Data host | Planned, capability blocked. |
+| Exact duplicate planning | Python planner | Available; native apply is not implemented. |
 
 The live writer relies on Core Data to manage object identity, optimistic
 versions, persistent history, and the sync-visible save lifecycle. A Python
 preflight must identify a known profile and a verified named capability before
 the host is launched.
 
-For exact duplicate groups, the host discovers each modeled relationship whose
-destination is `Payee`, migrates to-one and to-many references to the chosen
-survivor, verifies no supported inbound reference remains, then deletes the
-source object in the same save.
+For exact duplicate groups, the Python command selects deterministic canonical
+payees and reports the proposed merges. The Swift host does not migrate inbound
+relationships or delete source payees, and the capability gate rejects apply
+attempts.
 
 ## Validation strategy
 
 Documentation and command behavior must agree with `make` and
 `moneywiz --help`. Run `scripts/run_tests.sh` to synchronize the frozen locked
 dependency graph and execute the MoneyWiz Tools CLI regression suite. The
-wrapper does not depend on or test a nested `moneywiz-api` checkout.
+dependency is fetched from the pinned `moneywiz-api` Git revision; no nested or
+local API checkout is required.
 
 For each new live writer, validation must include:
 
