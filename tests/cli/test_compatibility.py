@@ -194,6 +194,109 @@ def test_invalid_metadata_shape_is_a_clean_cli_and_write_preflight_error(
 
 
 @pytest.mark.parametrize(
+    ("failure_stage", "expected_error"),
+    [
+        ("open", "cannot open database read-only"),
+        ("query", "cannot inspect database schema"),
+        ("close", "cannot close database after schema inspection"),
+    ],
+)
+def test_sqlite_lifecycle_failures_are_clean_cli_errors(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    failure_stage: str,
+    expected_error: str,
+) -> None:
+    db_path = tmp_path / "store.sqlite"
+    db_path.touch()
+
+    class FailingConnection:
+        def close(self) -> None:
+            if failure_stage == "close":
+                raise sqlite3.OperationalError("injected close failure")
+
+    if failure_stage == "open":
+        monkeypatch.setattr(
+            compatibility,
+            "_open_read_only",
+            lambda _db_path: (_ for _ in ()).throw(
+                sqlite3.OperationalError("injected open failure")
+            ),
+        )
+    else:
+        monkeypatch.setattr(
+            compatibility, "_open_read_only", lambda _db_path: FailingConnection()
+        )
+        if failure_stage == "query":
+            monkeypatch.setattr(
+                compatibility,
+                "_schema_facts",
+                lambda _connection: (_ for _ in ()).throw(
+                    sqlite3.OperationalError("injected query failure")
+                ),
+            )
+        else:
+            monkeypatch.setattr(
+                compatibility,
+                "_schema_facts",
+                lambda _connection: (set(), set(), set(), FIXTURE_CHECKSUM),
+            )
+
+    assert compatibility.main(["--db", str(db_path)]) == 2
+    captured = capsys.readouterr()
+    assert expected_error in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_unexpected_schema_failure_still_closes_connection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    db_path = tmp_path / "store.sqlite"
+    db_path.touch()
+    closed = False
+
+    class CloseSpy:
+        def close(self) -> None:
+            nonlocal closed
+            closed = True
+
+    monkeypatch.setattr(compatibility, "_open_read_only", lambda _db_path: CloseSpy())
+    monkeypatch.setattr(
+        compatibility,
+        "_schema_facts",
+        lambda _connection: (_ for _ in ()).throw(RuntimeError("unexpected failure")),
+    )
+
+    with pytest.raises(RuntimeError, match="unexpected failure"):
+        compatibility.assess_database(db_path)
+    assert closed
+
+
+def test_primary_schema_failure_wins_when_close_also_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    db_path = tmp_path / "store.sqlite"
+    db_path.touch()
+
+    class FailingClose:
+        def close(self) -> None:
+            raise sqlite3.OperationalError("injected close failure")
+
+    monkeypatch.setattr(
+        compatibility, "_open_read_only", lambda _db_path: FailingClose()
+    )
+    monkeypatch.setattr(
+        compatibility,
+        "_schema_facts",
+        lambda _connection: (_ for _ in ()).throw(RuntimeError("primary failure")),
+    )
+
+    with pytest.raises(RuntimeError, match="primary failure"):
+        compatibility.assess_database(db_path)
+
+
+@pytest.mark.parametrize(
     ("capability", "expected_status", "expected_state"),
     [
         (None, 0, None),

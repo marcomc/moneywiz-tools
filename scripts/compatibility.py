@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Detect MoneyWiz schema profiles and gate live writer capabilities."""
 
 from __future__ import annotations
@@ -167,15 +166,36 @@ def assess_database(db_path: Path) -> CompatibilityAssessment:
     if not db_path.expanduser().is_file():
         raise CompatibilityError(f"database file not found: {db_path}")
     matrix = _load_matrix()
-    connection = _open_read_only(db_path)
     try:
-        tables, columns, entities, model_checksum = _schema_facts(connection)
-    except CompatibilityError:
-        raise
+        connection = _open_read_only(db_path)
     except sqlite3.Error as exc:
-        raise CompatibilityError(f"cannot inspect database schema: {exc}") from exc
+        raise CompatibilityError(f"cannot open database read-only: {exc}") from exc
+
+    inspection_error: CompatibilityError | None = None
+    schema_facts: tuple[set[str], set[str], set[str], str] | None = None
+    try:
+        try:
+            schema_facts = _schema_facts(connection)
+        except CompatibilityError as exc:
+            inspection_error = exc
+        except sqlite3.Error as exc:
+            inspection_error = CompatibilityError(
+                f"cannot inspect database schema: {exc}"
+            )
     finally:
-        connection.close()
+        primary_error = inspection_error or sys.exception()
+        try:
+            connection.close()
+        except sqlite3.Error as exc:
+            if primary_error is None:
+                raise CompatibilityError(
+                    f"cannot close database after schema inspection: {exc}"
+                ) from exc
+    if inspection_error is not None:
+        raise inspection_error
+    if schema_facts is None:
+        raise CompatibilityError("database schema inspection produced no result")
+    tables, columns, entities, model_checksum = schema_facts
 
     missing_by_profile: dict[str, tuple[str, ...]] = {}
     matched_profiles: list[dict[str, Any]] = []

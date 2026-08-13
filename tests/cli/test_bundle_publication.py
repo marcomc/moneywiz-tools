@@ -358,6 +358,67 @@ def test_installed_dispatcher_rejects_source_only_database_commands(
     assert f"Error: {command_name} is a source-checkout-only" in result.stderr
 
 
+def test_installed_dispatcher_help_does_not_require_default_database(
+    install_environment: dict[str, Path | dict[str, str]],
+) -> None:
+    result = _run_make(install_environment, "install")
+    assert result.returncode == 0, result.stderr
+    app_bundle = install_environment["app_bundle"]
+    tmp_path = install_environment["tmp_path"]
+    assert isinstance(app_bundle, Path)
+    assert isinstance(tmp_path, Path)
+    python_link = app_bundle / "Contents/Resources/runtime/python/venv/bin/python"
+    python_log = tmp_path / "python.log"
+    _write_executable(
+        python_link.resolve(),
+        '#!/bin/sh\nprintf \'%s\\n\' "$@" > "${FAKE_PYTHON_LOG}"\n'
+        "echo 'usage: delegated command'\n",
+    )
+    delegated_commands = (
+        "users",
+        "accounts",
+        "categories",
+        "payees",
+        "tags",
+        "transactions",
+        "holdings",
+        "reassign-payees-by-id",
+        "merge-duplicate-payees",
+        "compatibility",
+        "summary",
+        "stats",
+        "record",
+        "shell",
+    )
+
+    for command_name in delegated_commands:
+        for help_option in ("--help", "-h"):
+            result = _run_installed(
+                install_environment,
+                command_name,
+                help_option,
+                FAKE_PYTHON_LOG=str(python_log),
+            )
+            assert result.returncode == 0, (
+                command_name,
+                help_option,
+                result.stderr,
+            )
+            assert "Database file not found" not in result.stderr
+            if command_name == "shell" and help_option == "-h":
+                assert python_log.read_text().splitlines()[-1] == "--help"
+
+    for help_option in ("--help", "-h"):
+        result = _run_installed(install_environment, "schema", help_option)
+        assert result.returncode == 0, result.stderr
+        assert "Usage:" in result.stdout
+        assert "Database file not found" not in result.stderr
+
+    result = _run_installed(install_environment, "users")
+    assert result.returncode == 1
+    assert "Database file not found" in result.stderr
+
+
 def test_reinstall_build_failure_preserves_previous_install(
     install_environment: dict[str, Path | dict[str, str]],
 ) -> None:

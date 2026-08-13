@@ -76,7 +76,7 @@ operations include:
 ~~~sh
 moneywiz users
 moneywiz accounts
-moneywiz categories
+moneywiz categories --user 1
 moneywiz payees
 moneywiz transactions
 moneywiz summary

@@ -249,6 +249,14 @@ if [[ -z "${SUBCMD}" || "${SUBCMD}" == "-h" || "${SUBCMD}" == "--help" ]]; then
 fi
 shift || true
 
+HELP_REQUESTED=0
+for argument in "$@"; do
+  if [[ "${argument}" == "--help" || "${argument}" == "-h" ]]; then
+    HELP_REQUESTED=1
+    break
+  fi
+done
+
 if [[ "${IS_BUNDLED}" -eq 1 ]]; then
   case "${SUBCMD}" in
     create-test-db|sanitize-test-db)
@@ -261,7 +269,7 @@ if [[ "${IS_BUNDLED}" -eq 1 ]]; then
 fi
 
 BASE_DB_ARG=(--db "${GLOBAL_DB:-${DB_PATH}}")
-if [[ "${SUBCMD}" != "shell" && "${SUBCMD}" != "create-test-db" && "${SUBCMD}" != "sanitize-test-db" ]]; then
+if [[ "${HELP_REQUESTED}" -eq 0 && "${SUBCMD}" != "shell" && "${SUBCMD}" != "create-test-db" && "${SUBCMD}" != "sanitize-test-db" ]]; then
   DB_TO_USE="${GLOBAL_DB:-${DB_PATH}}"
   if [[ ! -f "${DB_TO_USE}" ]]; then
     echo "Error: Database file not found: ${DB_TO_USE}" >&2
@@ -272,7 +280,15 @@ fi
 
 case "${SUBCMD}" in
   shell)
-    run_python_script "${SCRIPT_DIR}/scripts/run_moneywiz_cli.py" "${GLOBAL_DB:-${DB_PATH}}" "$@"
+    shell_arguments=("$@")
+    if [[ "${HELP_REQUESTED}" -eq 1 ]]; then
+      for index in "${!shell_arguments[@]}"; do
+        if [[ "${shell_arguments[${index}]}" == "-h" ]]; then
+          shell_arguments[index]="--help"
+        fi
+      done
+    fi
+    run_python_script "${SCRIPT_DIR}/scripts/run_moneywiz_cli.py" "${GLOBAL_DB:-${DB_PATH}}" "${shell_arguments[@]}"
     ;;
   users|accounts|categories|payees|tags|transactions|holdings|record|stats|summary)
     run_python_script "${SCRIPT_DIR}/scripts/${SUBCMD}.py" "${BASE_DB_ARG[@]}" "$@"
@@ -285,6 +301,10 @@ case "${SUBCMD}" in
     run_python_script "${SCRIPT_DIR}/scripts/compatibility.py" "${BASE_DB_ARG[@]}" "$@"
     ;;
   create-test-db)
+    if [[ "${HELP_REQUESTED}" -eq 1 ]]; then
+      echo "Usage: moneywiz create-test-db"
+      exit 0
+    fi
     source_db="${GLOBAL_DB:-${CONFIG_DB_PATH:-${DEFAULT_REAL_DB_PATH}}}"
     if [[ ! -f "${source_db}" ]]; then
       echo "Error: source database not found: ${source_db}" >&2
@@ -296,6 +316,10 @@ case "${SUBCMD}" in
     echo "Created test DB at ${destination} (copied from ${source_db})"
     ;;
   sanitize-test-db)
+    if [[ "${HELP_REQUESTED}" -eq 1 ]]; then
+      run_python_script "${SCRIPT_DIR}/scripts/sanitize_test_db.py" --help
+      exit 0
+    fi
     target_db="${SCRIPT_DIR}/tests/test_db.sqlite"
     if [[ ! -f "${target_db}" ]]; then
       echo "Error: ${target_db} does not exist. Seed it first with create-test-db." >&2
