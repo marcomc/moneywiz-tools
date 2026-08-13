@@ -222,6 +222,50 @@ def test_concepts_links_to_pinned_installed_dependency_source() -> None:
     assert "tickets/pinned-dependency-bundle-mechanism.md" not in frontier
 
 
+def test_architecture_docs_bound_open_work_to_future_writer_evolution() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    srs = (repo_root / "doc/SRS.md").read_text()
+    concepts = (repo_root / "doc/CONCEPTS.md").read_text()
+    wayfinder_map = (repo_root / "doc/wayfinder/MAP.md").read_text()
+    upstream_ticket = (
+        repo_root / "doc/wayfinder/tickets/upstream-v1.0.8-intake.md"
+    ).read_text()
+    writer_ticket = (
+        repo_root / "doc/wayfinder/tickets/python-coredata-writer-contract.md"
+    ).read_text()
+    python_writer = (repo_root / "scripts/reassign_payees_by_id.py").read_text()
+    swift_host = (repo_root / "scripts/moneywiz_tools_host.swift").read_text()
+
+    assert "Generic write helpers" not in srs
+    assert "only verified live write is payee reassignment" in srs
+    assert "Core Data owns `Z_OPT` initialization and updates" in concepts
+    assert "creation sequence still needs a pre/post capture" not in concepts
+
+    assert "Do not perform the migration while charting the map" not in wayfinder_map
+    assert "No subagent orchestration is available" not in wayfinder_map
+    assert "exact migration sequence" not in wayfinder_map
+    assert "contract version 1" in wayfinder_map
+
+    for ticket in (upstream_ticket, writer_ticket):
+        assert "**Status:** Open" in ticket
+    assert "does not gate either implemented decision" in upstream_ticket
+    assert "Future read-API pin updates" in upstream_ticket
+    assert "## Implemented baseline" in writer_ticket
+    assert "`contract_version` 1" in writer_ticket
+    assert "Future writer operations and the GUI boundary" in writer_ticket
+
+    assert 'writer_payload["contract_version"] = 1' in python_writer
+    assert 'case contractVersion = "contract_version"' in swift_host
+    assert "guard plan.contractVersion == 1" in swift_host
+    for result_field in (
+        'case createdPayees = "created_payees"',
+        'case reassignedTransactions = "reassigned_transactions"',
+        'case mergedPayees = "merged_payees"',
+        'case migratedRelationships = "migrated_relationships"',
+    ):
+        assert result_field in swift_host
+
+
 def test_source_dispatcher_preserves_test_database_workflow(tmp_path: Path) -> None:
     repo_root = Path(__file__).resolve().parents[2]
     source_root = tmp_path / "source"

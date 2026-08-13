@@ -24,8 +24,8 @@ dependencies after the bundle is installed.
 ## Safety requirements
 
 - Read operations must not mutate the store.
-- Generic write helpers are documented for test copies or disposable stores.
-- Live payee reassignment must use the bundled Core Data host.
+- The only verified live write is payee reassignment through the bundled Core
+  Data host; other mutation paths are not product capabilities.
 - Exact duplicate planning must remain read-only while the native merge
   implementation and capability are unavailable.
 - `--apply` must not be run while MoneyWiz holds the persistent store open.

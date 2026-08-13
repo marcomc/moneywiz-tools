@@ -4,10 +4,17 @@
 
 **Status:** Open
 
-**Blocks:** Choose the fork baseline and raw-write migration sequence
+**Blocks:** Future read-API pin updates
+
+## Current boundary
+
+The product already consumes an immutable compatibility-fork revision and the
+live reassignment path already uses the bundled Core Data host. This ticket
+does not gate either implemented decision.
 
 ## Question
 
-What changed between the fork's current upstream base and
-`ileodo/moneywiz-api` `v1.0.8`, which changes can be adopted without altering
-the read API contract, and which fork changes are independently upstreamable?
+For a future dependency intake, what changed between the compatibility fork's
+base and `ileodo/moneywiz-api` `v1.0.8`, which changes can be adopted without
+altering the read API contract, and which fork changes are independently
+upstreamable?

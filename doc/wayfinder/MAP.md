@@ -11,12 +11,9 @@ supported path for live MoneyWiz database writes.
 
 - This local Markdown directory is the issue tracker for this map.
 - Use the vocabulary in [CONTEXT.md](../../CONTEXT.md).
-- Each ticket resolves one decision or investigation. Do not perform the
-  migration while charting the map.
+- Each ticket resolves one decision or investigation.
 - The product CLI is `moneywiz`; MCP support and a public PyPI distribution
   are out of scope.
-- No subagent orchestration is available in this runtime. Research tickets are
-  therefore resolved explicitly in later sessions.
 
 ## Decisions so far
 
@@ -26,6 +23,7 @@ supported path for live MoneyWiz database writes.
 - [Read patches must be upstreamable](#read-patches-must-be-upstreamable) — fork changes cannot depend on MoneyWiz Tools behavior.
 - [The product consumes a pinned Git dependency](#the-product-consumes-a-pinned-git-dependency) — no local checkout is required, consumed, or bundled.
 - [The product CLI is `moneywiz`](#the-product-cli-is-moneywiz) — `moneywiz-cli` is not part of the supported user interface.
+- [The reassignment writer uses contract version 1](#the-reassignment-writer-uses-contract-version-1) — Python submits bounded intent and the native host validates and saves it.
 - [Upstream updates are explicit and verified](#upstream-updates-are-explicit-and-verified) — each intake is reviewed before the product pin changes.
 - [Define the schema-profile support policy](tickets/schema-profile-support-policy.md) — recognized profiles are readable; live persistence requires a verified write capability.
 - [Define evidence for a verified write profile](tickets/verified-write-profile-evidence.md) — capability evidence combines automated profile tests with a controlled MoneyWiz acceptance run.
@@ -35,13 +33,13 @@ supported path for live MoneyWiz database writes.
 
 | Ticket | Type | Status | Blocks |
 | --- | --- | --- | --- |
-| [Compare upstream `v1.0.8` with the compatibility fork](tickets/upstream-v1.0.8-intake.md) | Research | Open | Fork baseline and migration |
-| [Define the Python-to-Core-Data writer contract](tickets/python-coredata-writer-contract.md) | Grilling | Open | Writer migration and future GUI boundary |
+| [Compare upstream `v1.0.8` with the compatibility fork](tickets/upstream-v1.0.8-intake.md) | Research | Open | Future read-API pin updates |
+| [Define the Python-to-Core-Data writer contract](tickets/python-coredata-writer-contract.md) | Grilling | Open | Future writer operations and GUI boundary |
 
 ## Not yet specified
 
-- The exact migration sequence for extracting the existing raw-SQL write code
-  once the upstream baseline and writer contract are known.
+- Contract evolution beyond the implemented reassignment-only version 1
+  exchange.
 - The future GUI interaction model; this map only reserves its product and
   writer boundaries.
 
@@ -85,6 +83,15 @@ not require, consume, or bundle it.
 
 The supported command-line interface is `moneywiz`. Direct Python module
 invocation and `moneywiz-cli` are not the user-facing integration contract.
+
+## The reassignment writer uses contract version 1
+
+Python verifies the capability and prepares a version 1 JSON request containing
+the exact profile ID, model checksum, capability, schema version, and
+reassignment operations. The bundled host independently validates those fields,
+preflights the complete plan, saves through Core Data, and returns JSON counts
+for created payees, reassigned transactions, merged payees, and migrated
+relationships. Version 1 rejects empty, merge, mixed, and unsupported payloads.
 
 ## Upstream updates are explicit and verified
 

@@ -35,9 +35,11 @@ This document captures important conventions in the MoneyWiz database that help 
 ## Optimistic versioning
 
 - `Z_OPT` is a Core Data version field. Native app updates increment it.
-- Do not assume an initial value for a new live object from the generic SQL
-  helper. The observed live payees have values greater than one; the native
-  creation sequence still needs a pre/post capture.
+- Core Data owns `Z_OPT` initialization and updates for objects inserted or
+  changed by the bundled writer; the writer does not assign it directly.
+- Destination-payee creation through that writer is verified for the current
+  compatibility profile by the recorded reopen, persistent-history, and iCloud
+  sync evidence.
 - Updating `Z_OPT` alone is insufficient for a live iCloud store. See
   `LIVE-WRITE-COMPATIBILITY.md` for the associated history and CloudKit state.
 
