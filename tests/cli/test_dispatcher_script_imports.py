@@ -186,6 +186,27 @@ def test_readme_categories_example_is_executable() -> None:
     assert "the following arguments are required: --user" not in result.stderr
 
 
+def test_concepts_links_to_pinned_installed_dependency_source() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    with (repo_root / "pyproject.toml").open("rb") as project_file:
+        dependencies = tomllib.load(project_file)["project"]["dependencies"]
+    moneywiz_api_dependency = next(
+        dependency
+        for dependency in dependencies
+        if dependency.startswith("moneywiz-api @ ")
+    )
+    revision = moneywiz_api_dependency.rsplit("@", maxsplit=1)[1]
+    pinned_source_url = (
+        "https://github.com/marcomc/moneywiz-api/blob/"
+        f"{revision}/src/moneywiz_api/utils.py#L6-L15"
+    )
+    concepts = (repo_root / "doc/CONCEPTS.md").read_text()
+
+    assert "installed `moneywiz_api` module" in concepts
+    assert pinned_source_url in concepts
+    assert "moneywiz-api/src" not in concepts
+
+
 def test_source_dispatcher_preserves_test_database_workflow(tmp_path: Path) -> None:
     repo_root = Path(__file__).resolve().parents[2]
     source_root = tmp_path / "source"

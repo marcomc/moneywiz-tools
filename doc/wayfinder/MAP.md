@@ -24,7 +24,7 @@ supported path for live MoneyWiz database writes.
 - [The Core Data writer owns live persistence](#the-core-data-writer-owns-live-persistence) — Python can plan and validate a write but cannot persist it through raw SQL.
 - [The read API is a separate compatibility fork](#the-read-api-is-a-separate-compatibility-fork) — `marcomc/moneywiz-api` remains a technical repository, not a second product.
 - [Read patches must be upstreamable](#read-patches-must-be-upstreamable) — fork changes cannot depend on MoneyWiz Tools behavior.
-- [The product consumes a pinned Git dependency](#the-product-consumes-a-pinned-git-dependency) — no ignored nested checkout and no PyPI publication.
+- [The product consumes a pinned Git dependency](#the-product-consumes-a-pinned-git-dependency) — no local checkout is required, consumed, or bundled.
 - [The product CLI is `moneywiz`](#the-product-cli-is-moneywiz) — `moneywiz-cli` is not part of the supported user interface.
 - [Upstream updates are explicit and verified](#upstream-updates-are-explicit-and-verified) — each intake is reviewed before the product pin changes.
 - [Define the schema-profile support policy](tickets/schema-profile-support-policy.md) — recognized profiles are readable; live persistence requires a verified write capability.
@@ -77,8 +77,10 @@ that depends on MoneyWiz Tools belongs in the product repository instead.
 
 ## The product consumes a pinned Git dependency
 
-MoneyWiz Tools will acquire the read API from an immutable Git reference
-recorded in a lockfile. The installed app bundle remains self-contained.
+MoneyWiz Tools acquires the read API from an immutable Git reference recorded
+in the lockfile. The installed app bundle remains self-contained. An optional
+ignored local checkout may exist for separate development, but the product does
+not require, consume, or bundle it.
 
 ## The product CLI is `moneywiz`
 
