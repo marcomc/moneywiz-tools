@@ -1,54 +1,5 @@
 # Changelog
 
-## [Unreleased]
-
-### Changed
-
-- Consolidated the end-user interface on the `moneywiz` command and retired
-  product support for `moneywiz-cli` and generic raw-SQL mutation commands.
-- Replaced the nested runtime API checkout with a pinned Git dependency and
-  locked build graph.
-- Added a versioned `profile x capability` register: live payee reassignment
-  is enabled only for verified database profiles, while duplicate-payee merge
-  application is explicitly blocked pending separate acceptance evidence.
-- Aligned operator and design documentation with the current boundaries:
-  duplicate merge is planning-only, `~/` config paths are expanded, and the
-  pinned `moneywiz-api` Git dependency needs no nested checkout.
-
-### Fixed
-
-- Made setup and test-database seeding discover the current MoneyWiz 2026
-  store before falling back to the legacy store path, while preserving
-  explicit and configured database choices.
-- Made empty and already-satisfied apply plans validate their write capability
-  without invoking the MoneyWiz process check, model resolver, writer resolver,
-  or native host.
-- Made normalized new-payee groups use one deterministic display name and made
-  the model resolver handle both extensionless and `.mom` manifest leaves
-  without duplicating the extension.
-- Limited quadratic similar-name comparisons to explicit `--fuzzy-map`
-  exports, while distinguishing a skipped analysis from an empty result.
-- Escaped direct, compatibility-normalized, and whitespace- or control-prefixed
-  formula-like payee names in both fuzzy-review CSV name columns so spreadsheet
-  applications treat them as literal data.
-- Added schema capability profiles and investment-column aliases so read-only
-  commands support both suffixed fixture columns and the unsuffixed columns
-  observed in the MoneyWiz 2026 live store.
-- Moved installed schema-export defaults to the user data directory while
-  preserving explicit output paths and source-tree development defaults.
-- Restricted bundle payload assembly to one exact runtime-program manifest and
-  separately selected tracked documentation, excluding development and build
-  inputs, tests, and ignored or untracked databases, SQLite sidecars, logs,
-  caches, and scratch files.
-- Fixed dependency-free installed version reporting from the application
-  bundle metadata.
-- Made read-only transfer parsing tolerate the live profile's zero-valued
-  `ZORIGINALAMOUNT` when the counterparty amount and exchange rate are present.
-- Made read-only API loading isolate malformed or model-incompatible records
-  instead of aborting unrelated listing commands with a traceback.
-- Made optional category, refund, and tag relationship tables safe to omit in a
-  supported store profile.
-
 ## [0.2.0] - 2026-08-09
 
 ### Added
@@ -64,9 +15,18 @@
 
 - Reorganized operator and maintainer documentation around the installed bundle, command roles, and live-write boundaries.
 - Added source-backed installation and live-write workflow diagrams.
-- Distinguished the configuration-aware `moneywiz` dispatcher from the explicit-path `moneywiz-cli` API shell.
+- Consolidated the supported interface on the configuration-aware `moneywiz`
+  dispatcher; `moneywiz-cli` remains an explicit-path API shell, while generic
+  raw-SQL mutation commands are retired from the product surface.
+- Replaced the nested runtime API checkout with the pinned Git dependency and
+  locked build graph; no nested checkout is required for the installed bundle.
+- Added a versioned profile-by-capability register: live payee reassignment is
+  enabled only for verified profiles, while duplicate-payee merge remains
+  planning-only pending separate acceptance evidence.
 - Recorded the proposed merge survivor contract and the evidence still needed
   before a native merge implementation can be enabled.
+- Aligned operator and design documentation with the current boundaries,
+  including `~/` configuration-path expansion.
 
 ### Fixed
 
@@ -74,6 +34,30 @@
 - Documented configuration path handling, including launcher expansion of a
   leading `~/` value.
 - Replaced obsolete test-wrapper references with the actual validation strategy.
+- Made setup and test-database seeding discover the current MoneyWiz 2026
+  store before falling back to the legacy store path, while preserving
+  explicit and configured database choices.
+- Made empty and already-satisfied apply plans validate their write capability
+  without invoking process, model, writer, or native-host preflight.
+- Made normalized new-payee groups deterministic and resolved both
+  extensionless and `.mom` model-manifest leaves without duplicate suffixes.
+- Limited quadratic similar-name comparisons to explicit `--fuzzy-map` exports
+  and distinguished skipped analysis from an empty result.
+- Escaped direct, compatibility-normalized, and whitespace/control-prefixed
+  formula-like payee names in both fuzzy-review CSV name columns.
+- Added schema capability profiles and investment-column aliases for fixture
+  and MoneyWiz 2026 live-store layouts.
+- Moved installed schema-export defaults to the user data directory while
+  preserving explicit paths and source-tree defaults.
+- Restricted bundle payload assembly to one exact runtime manifest and tracked
+  documentation, excluding development/build inputs, tests, and local data.
+- Added dependency-free installed version reporting from application metadata.
+- Made read-only transfer parsing tolerate live-profile zero-valued
+  `ZORIGINALAMOUNT` when counterparty amount and exchange rate are present.
+- Made read-only API loading isolate malformed or model-incompatible records
+  instead of aborting unrelated listing commands with a traceback.
+- Made optional category, refund, and tag relationship tables safe to omit in a
+  supported store profile.
 
 ## [0.1.0] - 2026-02-23
 
