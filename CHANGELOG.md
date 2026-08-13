@@ -14,6 +14,9 @@
 
 ### Fixed
 
+- Made normalized new-payee groups use one deterministic display name and made
+  the model resolver handle both extensionless and `.mom` manifest leaves
+  without duplicating the extension.
 - Limited quadratic similar-name comparisons to explicit `--fuzzy-map`
   exports, while distinguishing a skipped analysis from an empty result.
 - Escaped direct, compatibility-normalized, and whitespace- or control-prefixed

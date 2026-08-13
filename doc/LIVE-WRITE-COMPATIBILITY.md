@@ -123,6 +123,9 @@ version 1, ten-entity transaction allowlist, and reassignment-only payload
 shape. It rejects blank or duplicate transaction GIDs, partial or mixed target
 fields, and inconsistent new-payee keys. It then compares the expected checksum
 with both the store metadata and the selected MoneyWiz managed-object model.
+The selected model path comes from one safe manifest leaf: an extensionless
+current-version name receives `.mom` once, while a manifest value already
+ending in `.mom` is used unchanged.
 
 After the store opens, a read-only Core Data preflight resolves the complete
 plan using exact-entity fetches with subentities excluded. It verifies account

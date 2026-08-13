@@ -70,7 +70,9 @@ The canonical match key used by `reassign-payees-by-id` is:
 
 This is required because the live store can contain non-breaking spaces
 (`U+00A0`) and all-uppercase variants of otherwise identical names. Matching
-must occur within the same payee user.
+must occur within the same payee user. For a new normalized key, the selected
+transaction with the lowest persistent ID supplies the display name; every
+operation for that user-scoped key uses the same value.
 
 Exact duplicate keys are safe to classify as duplicate candidates, but not to
 select silently: the chosen surviving ID determines the name retained by the

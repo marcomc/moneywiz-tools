@@ -104,7 +104,9 @@ moneywiz reassign-payees-by-id --from-empty-payee \
 
 The command reuses a uniquely matching payee or creates one from the
 transaction description. It stops instead of choosing among ambiguous
-normalized names.
+normalized names. When several selected descriptions normalize to the same
+new-payee key, the lowest transaction ID supplies one display name for every
+operation in that user-scoped group.
 
 ### Merge exact duplicate payees
 

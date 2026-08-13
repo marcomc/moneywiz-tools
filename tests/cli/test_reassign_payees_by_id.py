@@ -1,6 +1,8 @@
+import plistlib
 import sqlite3
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -94,6 +96,223 @@ def run_reassign(db_path: Path, *arguments: str) -> subprocess.CompletedProcess[
         text=True,
         check=False,
     )
+
+
+@pytest.fixture
+def fake_moneywiz_app(tmp_path: Path) -> Callable[[], tuple[Path, Path, Path]]:
+    def create() -> tuple[Path, Path, Path]:
+        app = tmp_path / "MoneyWiz 2026.app"
+        contents = app / "Contents"
+        model_directory = contents / "Resources/MoneyWizDataModel.momd"
+        model_directory.mkdir(parents=True)
+        with (contents / "Info.plist").open("wb") as info_file:
+            plistlib.dump(
+                {
+                    "CFBundleIdentifier": (
+                        reassign_payees_by_id.EXPECTED_BUNDLE_IDENTIFIER
+                    )
+                },
+                info_file,
+            )
+        with (model_directory / "VersionInfo.plist").open("wb") as version_file:
+            plistlib.dump(
+                {"NSManagedObjectModel_CurrentVersionName": "MoneyWizDataModel 48"},
+                version_file,
+            )
+        model = model_directory / "MoneyWizDataModel 48.mom"
+        model.touch()
+        return app, model_directory, model
+
+    return create
+
+
+def test_resolve_model_accepts_current_extensionless_manifest_leaf(
+    fake_moneywiz_app: Callable[[], tuple[Path, Path, Path]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app, _model_directory, model = fake_moneywiz_app()
+    monkeypatch.delenv("MONEYWIZ_MODEL_PATH", raising=False)
+    monkeypatch.setenv("MONEYWIZ_APP", str(app))
+
+    assert reassign_payees_by_id._resolve_model() == model
+
+
+def test_resolve_model_accepts_exact_mom_manifest_leaf_without_appending_twice(
+    fake_moneywiz_app: Callable[[], tuple[Path, Path, Path]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app, model_directory, model = fake_moneywiz_app()
+    with (model_directory / "VersionInfo.plist").open("wb") as version_file:
+        plistlib.dump(
+            {"NSManagedObjectModel_CurrentVersionName": model.name}, version_file
+        )
+    monkeypatch.delenv("MONEYWIZ_MODEL_PATH", raising=False)
+    monkeypatch.setenv("MONEYWIZ_APP", str(app))
+
+    assert reassign_payees_by_id._resolve_model() == model
+
+
+@pytest.mark.parametrize(
+    "version_name",
+    [
+        "/tmp/MoneyWizDataModel 48",
+        "../MoneyWizDataModel 48",
+        "Models/MoneyWizDataModel 48",
+        "MoneyWizDataModel 48.momd",
+        "MoneyWizDataModel 48.sqlite",
+        " MoneyWizDataModel 48",
+        "MoneyWizDataModel 48\n",
+    ],
+)
+def test_resolve_model_rejects_invalid_manifest_leaf(
+    fake_moneywiz_app: Callable[[], tuple[Path, Path, Path]],
+    monkeypatch: pytest.MonkeyPatch,
+    version_name: str,
+) -> None:
+    app, model_directory, _model = fake_moneywiz_app()
+    with (model_directory / "VersionInfo.plist").open("wb") as version_file:
+        plistlib.dump(
+            {"NSManagedObjectModel_CurrentVersionName": version_name}, version_file
+        )
+    monkeypatch.delenv("MONEYWIZ_MODEL_PATH", raising=False)
+    monkeypatch.setenv("MONEYWIZ_APP", str(app))
+
+    with pytest.raises(reassign_payees_by_id.ReassignmentError):
+        reassign_payees_by_id._resolve_model()
+
+
+@pytest.mark.parametrize("model_kind", ["missing", "directory"])
+def test_resolve_model_rejects_missing_or_non_file_model(
+    fake_moneywiz_app: Callable[[], tuple[Path, Path, Path]],
+    monkeypatch: pytest.MonkeyPatch,
+    model_kind: str,
+) -> None:
+    app, _model_directory, model = fake_moneywiz_app()
+    model.unlink()
+    if model_kind == "directory":
+        model.mkdir()
+    monkeypatch.delenv("MONEYWIZ_MODEL_PATH", raising=False)
+    monkeypatch.setenv("MONEYWIZ_APP", str(app))
+
+    with pytest.raises(
+        reassign_payees_by_id.ReassignmentError,
+        match="MoneyWiz model file does not exist",
+    ):
+        reassign_payees_by_id._resolve_model()
+
+
+@pytest.mark.parametrize("plist_name", ["Info.plist", "VersionInfo.plist"])
+def test_resolve_model_rejects_malformed_plist(
+    fake_moneywiz_app: Callable[[], tuple[Path, Path, Path]],
+    monkeypatch: pytest.MonkeyPatch,
+    plist_name: str,
+) -> None:
+    app, model_directory, _model = fake_moneywiz_app()
+    plist_path = (
+        app / "Contents/Info.plist"
+        if plist_name == "Info.plist"
+        else model_directory / plist_name
+    )
+    plist_path.write_bytes(b"not a plist")
+    monkeypatch.delenv("MONEYWIZ_MODEL_PATH", raising=False)
+    monkeypatch.setenv("MONEYWIZ_APP", str(app))
+
+    with pytest.raises(reassign_payees_by_id.ReassignmentError, match="Cannot read"):
+        reassign_payees_by_id._resolve_model()
+
+
+@pytest.mark.parametrize("plist_name", ["Info.plist", "VersionInfo.plist"])
+def test_resolve_model_rejects_non_dictionary_plist(
+    fake_moneywiz_app: Callable[[], tuple[Path, Path, Path]],
+    monkeypatch: pytest.MonkeyPatch,
+    plist_name: str,
+) -> None:
+    app, model_directory, _model = fake_moneywiz_app()
+    plist_path = (
+        app / "Contents/Info.plist"
+        if plist_name == "Info.plist"
+        else model_directory / plist_name
+    )
+    with plist_path.open("wb") as plist_file:
+        plistlib.dump(["not", "a", "dictionary"], plist_file)
+    monkeypatch.delenv("MONEYWIZ_MODEL_PATH", raising=False)
+    monkeypatch.setenv("MONEYWIZ_APP", str(app))
+
+    with pytest.raises(
+        reassign_payees_by_id.ReassignmentError, match="not a dictionary"
+    ):
+        reassign_payees_by_id._resolve_model()
+
+
+@pytest.mark.parametrize(
+    "version_info",
+    [
+        {},
+        {"NSManagedObjectModel_CurrentVersionName": ""},
+        {"NSManagedObjectModel_CurrentVersionName": 48},
+        {"NSManagedObjectModel_CurrentVersionName": "  "},
+    ],
+)
+def test_resolve_model_rejects_malformed_current_version(
+    fake_moneywiz_app: Callable[[], tuple[Path, Path, Path]],
+    monkeypatch: pytest.MonkeyPatch,
+    version_info: dict[str, object],
+) -> None:
+    app, model_directory, _model = fake_moneywiz_app()
+    with (model_directory / "VersionInfo.plist").open("wb") as version_file:
+        plistlib.dump(version_info, version_file)
+    monkeypatch.delenv("MONEYWIZ_MODEL_PATH", raising=False)
+    monkeypatch.setenv("MONEYWIZ_APP", str(app))
+
+    with pytest.raises(
+        reassign_payees_by_id.ReassignmentError,
+        match="invalid current version",
+    ):
+        reassign_payees_by_id._resolve_model()
+
+
+def test_resolve_model_rejects_wrong_bundle_identifier(
+    fake_moneywiz_app: Callable[[], tuple[Path, Path, Path]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app, _model_directory, _model = fake_moneywiz_app()
+    with (app / "Contents/Info.plist").open("wb") as info_file:
+        plistlib.dump({"CFBundleIdentifier": "example.invalid"}, info_file)
+    monkeypatch.delenv("MONEYWIZ_MODEL_PATH", raising=False)
+    monkeypatch.setenv("MONEYWIZ_APP", str(app))
+
+    with pytest.raises(
+        reassign_payees_by_id.ReassignmentError,
+        match="Unexpected MoneyWiz bundle identifier",
+    ):
+        reassign_payees_by_id._resolve_model()
+
+
+def test_resolve_model_explicit_override_bypasses_bundle_discovery(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    model = tmp_path / "operator-selected-model"
+    model.touch()
+    monkeypatch.setenv("MONEYWIZ_MODEL_PATH", str(model))
+    monkeypatch.setenv("MONEYWIZ_APP", str(tmp_path / "missing.app"))
+
+    assert reassign_payees_by_id._resolve_model() == model
+
+
+@pytest.mark.parametrize("override_kind", ["missing", "directory"])
+def test_resolve_model_rejects_invalid_explicit_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, override_kind: str
+) -> None:
+    model = tmp_path / "operator-selected-model"
+    if override_kind == "directory":
+        model.mkdir()
+    monkeypatch.setenv("MONEYWIZ_MODEL_PATH", str(model))
+
+    with pytest.raises(
+        reassign_payees_by_id.ReassignmentError,
+        match="MONEYWIZ_MODEL_PATH does not exist",
+    ):
+        reassign_payees_by_id._resolve_model()
 
 
 def test_moneywiz_process_check_accepts_only_stopped_status(
@@ -192,6 +411,106 @@ def test_reassign_plan_reuses_one_new_payee_for_matching_descriptions(
     assert result.returncode == 0, result.stderr
     assert result.stdout.count("new payee 'New Merchant'") == 2
     assert "created=1, updated=3" in result.stdout
+
+
+@pytest.mark.parametrize("insertion_order", [(301, 302), (302, 301)])
+@pytest.mark.parametrize(
+    ("first_description", "second_description"),
+    [
+        ("New Merchant", "New   Merchant"),
+        ("Ｎｅｗ Merchant", "New Merchant"),
+        ("NEW MERCHANT", "new merchant"),
+    ],
+)
+def test_reassign_plan_uses_one_deterministic_name_per_new_payee_key(
+    tmp_path: Path,
+    insertion_order: tuple[int, int],
+    first_description: str,
+    second_description: str,
+) -> None:
+    db_path = tmp_path / "moneywiz.sqlite"
+    make_database(db_path)
+    withdraw_entity = 40 + TRANSACTION_TYPES.index("WithdrawTransaction")
+    descriptions = {301: first_description, 302: second_description}
+    gids = {301: "transaction-new-one", 302: "transaction-new-two"}
+    with sqlite3.connect(db_path) as con:
+        con.execute("DELETE FROM ZSYNCOBJECT WHERE Z_PK IN (301, 302)")
+        for transaction_id in insertion_order:
+            con.execute(
+                """
+                INSERT INTO ZSYNCOBJECT
+                (Z_PK, Z_ENT, ZGID, ZACCOUNT2, ZDESC2, ZPAYEE2)
+                VALUES (?, ?, ?, 100, ?, 999)
+                """,
+                (
+                    transaction_id,
+                    withdraw_entity,
+                    gids[transaction_id],
+                    descriptions[transaction_id],
+                ),
+            )
+
+    plan = reassign_payees_by_id.build_plan(
+        db_path,
+        from_payee_id=999,
+        from_empty_payee=False,
+        empty_desc_target_payee_id=None,
+    )
+    new_payee_operations = [
+        operation for operation in plan.operations if operation.new_payee_key
+    ]
+
+    assert [operation.transaction_id for operation in new_payee_operations] == [
+        301,
+        302,
+    ]
+    assert {operation.new_payee_key for operation in new_payee_operations} == {
+        "1:new merchant"
+    }
+    assert {operation.new_payee_name for operation in new_payee_operations} == {
+        first_description
+    }
+    assert {
+        operation.writer_payload()["new_payee_name"]
+        for operation in new_payee_operations
+    } == {first_description}
+
+
+def test_reassign_plan_isolates_canonical_new_payee_names_by_user(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "moneywiz.sqlite"
+    make_database(db_path)
+    withdraw_entity = 40 + TRANSACTION_TYPES.index("WithdrawTransaction")
+    with sqlite3.connect(db_path) as con:
+        con.execute("INSERT INTO ZUSER (Z_PK) VALUES (2)")
+        con.execute("INSERT INTO ZSYNCOBJECT (Z_PK, Z_ENT, ZUSER) VALUES (101, 10, 2)")
+        con.executemany(
+            """
+            INSERT INTO ZSYNCOBJECT
+            (Z_PK, Z_ENT, ZGID, ZACCOUNT2, ZDESC2, ZPAYEE2)
+            VALUES (?, ?, ?, 101, ?, 999)
+            """,
+            [
+                (303, withdraw_entity, "transaction-user-two-one", "NEW MERCHANT"),
+                (304, withdraw_entity, "transaction-user-two-two", "New   Merchant"),
+            ],
+        )
+
+    plan = reassign_payees_by_id.build_plan(
+        db_path,
+        from_payee_id=999,
+        from_empty_payee=False,
+        empty_desc_target_payee_id=None,
+    )
+    names_by_user: dict[int, set[str | None]] = {}
+    for operation in plan.operations:
+        if operation.new_payee_key:
+            names_by_user.setdefault(operation.user_id, set()).add(
+                operation.new_payee_name
+            )
+
+    assert names_by_user == {1: {"New Merchant"}, 2: {"NEW MERCHANT"}}
 
 
 def test_reassign_plan_reports_explicit_already_target_noop(tmp_path: Path) -> None:

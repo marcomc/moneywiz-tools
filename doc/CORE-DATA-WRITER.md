@@ -82,6 +82,11 @@ persistent store, the host requires the exact profile ID, checksum,
 reassignment-only operation list. Schema 2, merge, mixed, blocked, and unknown
 capability payloads fail closed.
 
+The default model resolver reads the current-version leaf from the installed
+`MoneyWizDataModel.momd` manifest. It accepts the observed extensionless form
+by appending `.mom` once, or uses an existing `.mom` suffix literally; unsafe
+paths, unsupported suffixes, and missing model files fail closed.
+
 The planner classifies every selected transaction as either one writer
 operation or an explicit no-op. A missing or dangling account or owner, a
 missing transaction GID, or an empty description without a configured fallback
@@ -112,6 +117,9 @@ relationships, and save.
 The reassignment planner normalizes names before selecting a destination. It
 fails when more than one matching candidate remains, preventing accidental
 selection of a duplicate. Existing and new destination creation are supported.
+When multiple descriptions share one user-scoped normalized creation key, the
+lowest selected transaction ID supplies one deterministic display name for the
+entire group.
 
 `merge-duplicate-payees` has a separate exact-normalized Core Data plan. Its
 application remains disabled until it has operation-specific acceptance

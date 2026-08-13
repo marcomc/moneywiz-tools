@@ -261,7 +261,8 @@ def build_plan(
                 "FROM ZSYNCOBJECT AS t "
                 "LEFT JOIN ZSYNCOBJECT AS p "
                 "ON p.Z_PK = t.ZPAYEE2 AND p.Z_ENT = ? "
-                f"WHERE t.Z_ENT IN ({transaction_placeholders}) AND ({filter_sql})"
+                f"WHERE t.Z_ENT IN ({transaction_placeholders}) AND ({filter_sql}) "
+                "ORDER BY t.Z_PK"
             ),
             params,
         ).fetchall()
@@ -307,6 +308,9 @@ def build_plan(
 
         operations: list[Reassignment] = []
         noops: list[ReassignmentNoOp] = []
+        # Rows are ordered by local id, so the earliest selected description
+        # supplies the stable display name for each user-scoped normalized key.
+        new_payee_name_by_key: dict[str, str] = {}
         for row in transaction_rows:
             transaction_id = int(row["Z_PK"])
             account_id = row.get("ZACCOUNT2")
@@ -354,7 +358,9 @@ def build_plan(
                     )
                 else:
                     new_payee_key = _new_payee_key(user_id, normalized_description)
-                    new_payee_name = description
+                    new_payee_name = new_payee_name_by_key.setdefault(
+                        new_payee_key, description
+                    )
             elif fallback_payee is not None:
                 if fallback_payee.user_id != user_id:
                     raise ReassignmentError(
@@ -456,6 +462,10 @@ def _resolve_model() -> Path:
         raise ReassignmentError(
             f"Cannot read MoneyWiz app metadata at {info_path}: {exc}"
         ) from exc
+    if not isinstance(app_info, dict):
+        raise ReassignmentError(
+            f"MoneyWiz app metadata is not a dictionary: {info_path}"
+        )
     if app_info.get("CFBundleIdentifier") != EXPECTED_BUNDLE_IDENTIFIER:
         raise ReassignmentError(
             f"Unexpected MoneyWiz bundle identifier at {app}: {app_info.get('CFBundleIdentifier')!r}"
@@ -470,12 +480,47 @@ def _resolve_model() -> Path:
         raise ReassignmentError(
             f"Cannot read MoneyWiz model manifest at {version_info_path}: {exc}"
         ) from exc
-    version_name = version_info.get("NSManagedObjectModel_CurrentVersionName")
-    if not isinstance(version_name, str) or not version_name:
+    if not isinstance(version_info, dict):
         raise ReassignmentError(
-            f"MoneyWiz model manifest has no current version: {version_info_path}"
+            f"MoneyWiz model manifest is not a dictionary: {version_info_path}"
         )
-    model = model_directory / f"{version_name}.mom"
+    version_name = version_info.get("NSManagedObjectModel_CurrentVersionName")
+    if (
+        not isinstance(version_name, str)
+        or not version_name
+        or version_name != version_name.strip()
+    ):
+        raise ReassignmentError(
+            f"MoneyWiz model manifest has an invalid current version: {version_info_path}"
+        )
+    version_leaf = Path(version_name)
+    if (
+        version_leaf.is_absolute()
+        or len(version_leaf.parts) != 1
+        or version_leaf.name != version_name
+        or version_name in {".", ".."}
+        or any(unicodedata.category(char).startswith("C") for char in version_name)
+    ):
+        raise ReassignmentError(
+            "MoneyWiz model manifest current version must be a single file name: "
+            f"{version_name!r}"
+        )
+    if version_name.endswith(".mom"):
+        model_stem = version_name[: -len(".mom")]
+        if not model_stem or model_stem in {".", ".."}:
+            raise ReassignmentError(
+                "MoneyWiz model manifest has an invalid current version: "
+                f"{version_info_path}"
+            )
+        model_leaf = version_name
+    elif version_leaf.suffix:
+        raise ReassignmentError(
+            "MoneyWiz model manifest current version has an unsupported suffix: "
+            f"{version_name!r}"
+        )
+    else:
+        model_leaf = f"{version_name}.mom"
+    model = model_directory / model_leaf
     if not model.is_file():
         raise ReassignmentError(f"MoneyWiz model file does not exist: {model}")
     return model
