@@ -321,6 +321,7 @@ Path(os.environ["FAKE_PYTHON_LOG"]).write_text("\\n".join(sys.argv))
     assert created.returncode == 0, created.stderr
     assert (source_root / "tests/test_db.sqlite").read_bytes() == b"source database"
     assert sanitized.returncode == 0, sanitized.stderr
+    assert source_database.read_bytes() == b"source database"
     assert "scripts/sanitize_test_db.py" in python_log.read_text()
 
 

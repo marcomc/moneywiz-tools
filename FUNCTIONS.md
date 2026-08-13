@@ -73,11 +73,12 @@ The source checkout provides the test-database lifecycle commands:
 ~~~
 
 These commands create and sanitize a disposable copy; they do not restore the
-retired raw-SQL routes. `create-test-db` uses `--db PATH`, then configured
+retired raw-SQL routes. `create-test-db` reads from `--db PATH`, then configured
 `db_path`, then the same current-before-legacy store discovery as `--setup`.
-Run them only against a disposable copy. They are not present in the installed
-bundle and do not modify the live store unless an operator explicitly chooses a
-live path as the copy source.
+It copies that source into `tests/test_db.sqlite` without modifying the source,
+including when the source is a live store. The generated fixture must be
+disposable; `sanitize-test-db` operates only on that fixture. These commands
+are not present in the installed bundle.
 
 ## Live payee operations
 
