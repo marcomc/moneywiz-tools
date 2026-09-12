@@ -38,6 +38,8 @@ numbers as a live-store contract and do not hand-edit generated sections.
 | Runtime and non-functional requirements | [Software Requirements Specification](SRS.md) |
 | Technical design and validation strategy | [Technical Design Document](TDD.md) |
 | Extension boundaries and roadmap | [Extensions](EXTENSIONS.md) |
+| P0–P3 delivery, phase preparation and acceptance | [Transaction Write Implementation Plan](proposals/TRANSACTION-WRITE-IMPLEMENTATION-PLAN.md) |
+| Proposed transaction contracts and technical evidence | [Transaction Write API Proposal](proposals/TRANSACTION-WRITE-API.md) |
 | Build-time repository relationship | [Repository Integration](REPO-INTEGRATION.md) |
 | Product/API/writer architecture decisions | [Wayfinder Map](wayfinder/MAP.md) |
 
