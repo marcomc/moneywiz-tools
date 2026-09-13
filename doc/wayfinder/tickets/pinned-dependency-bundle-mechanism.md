@@ -15,7 +15,7 @@ bundle without requiring a local nested checkout at build or runtime?
 ## Resolution
 
 `pyproject.toml` pins `moneywiz-api` to the immutable commit
-`cd1f8b5b81426ea7bb1f05fefcc9501453390d7c`, and `uv.lock` resolves that same
+`3020435cef7b9ae6b788ac6e779f54ac146e7489`, and `uv.lock` resolves that same
 commit. The bundle build uses `uv export --frozen` and `uv pip install` to
 install the locked dependency graph into
 `Contents/Resources/runtime/python/venv` alongside the bundled Python runtime.

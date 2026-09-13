@@ -51,6 +51,9 @@ inspection. Treat exported JSON as private financial data.
 Pair-level owner, date and reconciliation observations require reciprocal
 withdrawal/deposit transaction and account links. They are emitted once with
 withdrawal/deposit ID ordering, even when selection displays only one leg.
+If a referenced leg exists in transaction source IDs but was skipped during
+parsing, the audit reports `unreadable_transfer_leg`; `missing_transfer_leg` is
+reserved for a reference absent from the observed transaction source.
 
 Amount/date coincidence is a review candidate, never authority to merge or delete.
 Different transfer dates can be legitimate. The cached account balance is not an
@@ -77,11 +80,12 @@ diagnostic envelope. Partial reads also emit structured diagnostics on stderr.
 Accounts and holdings load their relevant managers; transactions additionally
 load account and payee information for enrichment. The snapshot loads all managers.
 
-`--until YYYY-MM-DD` includes the entire calendar day in `--timezone` (UTC by
-default), using the next midnight as an exclusive boundary. A timestamp cutoff
-requires an explicit offset, for example `2026-09-12T18:30:00+02:00`, and is
-inclusive. Transaction times are decoded from the absolute Core Data epoch;
-daylight-saving changes do not shift that epoch. Output includes the UTC offset.
+`--until YYYY-MM-DD` is an inclusive cutoff at that date's midnight in
+`--timezone` (UTC by default); it does not include the rest of that day. A
+timestamp cutoff requires an explicit offset, for example
+`2026-09-12T18:30:00+02:00`, and is also inclusive. Transaction times are decoded
+from the absolute Core Data epoch; daylight-saving changes do not shift that
+epoch. Output includes the UTC offset.
 
 ## Exit statuses and planning boundary
 

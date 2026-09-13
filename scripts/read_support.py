@@ -18,6 +18,8 @@ def json_value(value):
         if not value.is_finite():
             raise ValueError("non-finite decimal in read result")
         return str(value)
+    if isinstance(value, float) and not math.isfinite(value):
+        raise ValueError("non-finite float in read result")
     if isinstance(value, datetime):
         return value.isoformat()
     if isinstance(value, dict):
@@ -51,7 +53,7 @@ def transaction_time(record) -> datetime:
 
 
 def cutoff(value: str | None, zone_name: str = "UTC") -> tuple[datetime, bool]:
-    """Return UTC boundary and exclusivity; date-only input includes the whole day."""
+    """Return an inclusive UTC boundary; a date means local midnight."""
     zone = ZoneInfo(zone_name)
     if value is None:
         return datetime.now(UTC), False
@@ -59,8 +61,8 @@ def cutoff(value: str | None, zone_name: str = "UTC") -> tuple[datetime, bool]:
         day = date.fromisoformat(value)
         if day == date.max:
             raise ValueError("date cutoff exceeds the supported range")
-        end = datetime.combine(day + timedelta(days=1), time(), tzinfo=zone)
-        return end.astimezone(UTC), True
+        boundary = datetime.combine(day, time(), tzinfo=zone)
+        return boundary.astimezone(UTC), False
     parsed = datetime.fromisoformat(value)
     if parsed.tzinfo is None:
         raise ValueError("timestamp cutoff requires an explicit UTC offset")

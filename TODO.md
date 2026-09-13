@@ -9,10 +9,10 @@ as prerequisites become concrete; preserve the propositions below as requirement
 
 | ID | Deliverable / owner | Depends on | Acceptance | State |
 | --- | --- | --- | --- | --- |
-| P0-01 | Complete scoped API reads / API worker | Pinned compatibility baseline | Nullable metadata, safe diagnostics, per-consumer aliases, explicit completeness and opt-in DB tests | Reviewed head pinned; API CI pending |
+| P0-01 | Complete scoped API reads / API worker | Pinned compatibility baseline | Nullable metadata, safe diagnostics, per-consumer aliases, explicit completeness and opt-in DB tests | Reviewed head pinned; API CI green (run 34757017904) |
 | P0-02 | Runtime identity / identity worker | Existing v1 model resolver | TestFlight/Setapp discovery, explicit overrides, ambiguity and mismatch rejection; v1 regression checks | In progress |
 | P0-03 | CLI snapshots and graph audit / controller | P0-01 interface | Structured completeness, identities/relationships/flags, explicit cutoff/timezone and diagnostic exit status | In progress |
-| P0-04 | API pin, packaging and P0 integration / controller | P0-01–P0-03 | Pre-PR readiness, current-head Codex clean per PR, tested packaged runtime and updated docs | In progress; promotion pending API CI |
+| P0-04 | API pin, packaging and P0 integration / controller | P0-01–P0-03 | Pre-PR readiness, current-head Codex clean per PR, tested packaged runtime and updated docs | In progress; API CI green (run 34757017904) |
 
 PR links and evidence are recorded here once created. Runtime and remote
 acceptance remain distinct from implementation and local test completion.
@@ -77,9 +77,9 @@ records. A failed partial batch must identify the completed and untouched IDs.
   - Regress `ZINFO=NULL` with valid `ZSTATEMENTENDDAY`, then test absent optional
     statement metadata separately. Never serialize incomplete dataclasses in errors.
   - Compare the separate API checkout's nullable-info/post-construction validation
-    against reviewed revision `cd1f8b5b`; validate the pinned dependency and
-    rebuilt bundle rather than patching installed site-packages. Promotion
-    remains pending upstream API CI.
+    against reviewed revision `3020435cef7b9ae6b788ac6e779f54ac146e7489`;
+    validate the pinned dependency and rebuilt bundle rather than patching
+    installed site-packages. API CI is green for that head (run 34757017904).
   - Make `moneywiz accounts` and account-scoped transaction reads share the
     operation-specific aliases instead of constructing every account subtype
     with fields irrelevant to the requested operation.

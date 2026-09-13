@@ -36,18 +36,17 @@ def test_invalid_timestamp_is_not_a_silent_missing_row(reads, value):
         reads.transaction_time(SimpleNamespace(_raw={"ZDATE1": value}))
 
 
-def test_until_whole_day_includes_dst_short_day(reads):
-    end, exclusive = reads.cutoff("2026-03-29", "Europe/Rome")
-    assert exclusive
-    assert end == datetime(2026, 3, 29, 22, tzinfo=UTC)
-    previous, _ = reads.cutoff("2026-03-28", "Europe/Rome")
-    assert (end - previous).total_seconds() == 23 * 3600
-
-
-def test_until_whole_day_includes_dst_long_day(reads):
-    end, _ = reads.cutoff("2026-10-25", "Europe/Rome")
-    previous, _ = reads.cutoff("2026-10-24", "Europe/Rome")
-    assert (end - previous).total_seconds() == 25 * 3600
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        ("2026-03-29", datetime(2026, 3, 28, 23, tzinfo=UTC)),
+        ("2026-10-25", datetime(2026, 10, 24, 22, tzinfo=UTC)),
+    ],
+)
+def test_date_only_cutoff_is_inclusive_local_midnight(reads, value, expected):
+    boundary, exclusive = reads.cutoff(value, "Europe/Rome")
+    assert boundary == expected
+    assert exclusive is False
 
 
 def test_timestamp_requires_explicit_offset(reads):
@@ -68,7 +67,7 @@ def test_midnight_boundary_and_account_scope(reads):
     api = SimpleNamespace(transaction_manager=SimpleNamespace(records=lambda: rows))
     assert [
         row.id for row in reads.selected_transactions(api, 10, "2026-09-12", "UTC")
-    ] == [1]
+    ] == [1, 2]
 
 
 def test_snapshot_selection_preserves_accountless_budget_rows(reads):
@@ -117,6 +116,12 @@ def test_read_failure_does_not_leak_row_values(reads, capsys):
     output = capsys.readouterr().err
     assert "private financial payload" not in output
     assert json.loads(output)["error"] == "ValueError"
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_json_value_rejects_nonfinite_float_leaves(reads, value):
+    with pytest.raises(ValueError, match="non-finite float"):
+        reads.json_value({"raw": [value]})
 
 
 def transfer_rows():
@@ -607,7 +612,7 @@ def test_snapshot_blob_description_is_a_bounded_read_error(reads, synthetic_stor
 
 
 @pytest.mark.parametrize("command", ["snapshot", "transactions"])
-def test_extreme_date_is_a_bounded_read_error(reads, synthetic_store, command):
+def test_out_of_range_offset_is_a_bounded_read_error(reads, synthetic_store, command):
     script = Path(__file__).resolve().parents[2] / "scripts" / f"{command}.py"
     result = subprocess.run(
         [
@@ -616,12 +621,26 @@ def test_extreme_date_is_a_bounded_read_error(reads, synthetic_store, command):
             "--db",
             str(synthetic_store),
             "--until",
-            "9999-12-31",
+            "9999-12-31T23:59:59-01:00",
         ],
         capture_output=True,
         text=True,
         check=False,
     )
+
+    assert result.returncode == 2
+    assert result.stdout == ""
+    error = json.loads(result.stderr)
+    assert error["error"] == "OverflowError"
+    assert error["message"] == (
+        "Read failed; check database, schema and command arguments"
+    )
+    assert "Traceback" not in result.stderr
+
+
+@pytest.mark.parametrize("command", ["snapshot", "transactions"])
+def test_maximum_date_is_a_bounded_read_error(reads, synthetic_store, command):
+    result = run_read_script(synthetic_store, command, "--until", "9999-12-31")
 
     assert result.returncode == 2
     assert result.stdout == ""
@@ -730,6 +749,25 @@ def run_read_script(store, command, *args):
     )
 
 
+@pytest.mark.parametrize("command", ["snapshot", "transactions"])
+@pytest.mark.parametrize("offset,expected_ids", [(0, [11]), (1, [])])
+def test_date_only_cli_cutoff_is_inclusive_midnight_not_end_of_day(
+    reads, synthetic_store, command, offset, expected_ids
+):
+    with sqlite3.connect(synthetic_store) as connection:
+        connection.execute(
+            "UPDATE ZSYNCOBJECT SET ZDATE1 = ? WHERE Z_PK = 11", (86400 + offset,)
+        )
+    extra = ("--format", "json") if command == "transactions" else ()
+
+    result = run_read_script(synthetic_store, command, "--until", "2001-01-02", *extra)
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    rows = payload["transactions"] if command == "snapshot" else payload
+    assert [row["id"] for row in rows] == expected_ids
+
+
 def assert_bounded_read_error(result, expected_error):
     assert result.returncode == 2
     assert result.stdout == ""
@@ -821,6 +859,64 @@ def test_snapshot_cutoff_hidden_counterpart_is_not_missing_or_duplicated(
     ]
     assert all(finding["ids"] == [11, 12] for finding in payload["audit"])
     assert "missing_transfer_leg" not in finding_kinds(payload["audit"])
+
+
+@pytest.mark.parametrize(
+    "counterpart_state,expected_kind,expected_status",
+    [
+        ("skipped", "unreadable_transfer_leg", 3),
+        ("absent", "missing_transfer_leg", 0),
+    ],
+)
+def test_snapshot_distinguishes_unreadable_and_absent_transfer_legs(
+    reads, synthetic_store, counterpart_state, expected_kind, expected_status
+):
+    replace_transaction_with_transfer_pair(synthetic_store)
+    with sqlite3.connect(synthetic_store) as connection:
+        if counterpart_state == "skipped":
+            connection.execute("UPDATE ZSYNCOBJECT SET ZAMOUNT1 = NULL WHERE Z_PK = 12")
+        else:
+            connection.execute("DELETE FROM ZSYNCOBJECT WHERE Z_PK = 12")
+
+    result = run_read_script(synthetic_store, "snapshot", "--account", "10")
+
+    assert result.returncode == expected_status, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["audit"] == [{"kind": expected_kind, "ids": [11], "related_id": 12}]
+    transaction_report = payload["completeness"]["managers"]["transactions"]
+    if counterpart_state == "skipped":
+        assert 12 in transaction_report["source_ids"]
+        assert 12 not in transaction_report["parsed_ids"]
+        assert transaction_report["skipped"][0]["record_id"] == 12
+    else:
+        assert 12 not in transaction_report["source_ids"]
+
+
+@pytest.mark.parametrize(
+    "value,expected_status",
+    [(float("nan"), 0), (float("inf"), 3), (float("-inf"), 3)],
+)
+def test_transactions_all_fields_never_emits_nonstandard_json_float(
+    reads, synthetic_store, value, expected_status
+):
+    with sqlite3.connect(synthetic_store) as connection:
+        connection.execute(
+            "UPDATE ZSYNCOBJECT SET ZPRICEPERSHARE = ? WHERE Z_PK = 11", (value,)
+        )
+
+    result = run_read_script(
+        synthetic_store, "transactions", "--all-fields", "--format", "json"
+    )
+
+    # SQLite normalizes NaN to NULL; infinities reach the optional raw payload
+    # and must become an explicit partial enrichment rather than invalid JSON.
+    assert result.returncode == expected_status, result.stderr
+    payload = json.loads(result.stdout, parse_constant=lambda token: pytest.fail(token))
+    assert isinstance(payload, list)
+    assert "NaN" not in result.stdout
+    assert "Infinity" not in result.stdout
+    if expected_status == 3:
+        assert "enrichment_errors" in result.stderr
 
 
 @pytest.mark.parametrize(

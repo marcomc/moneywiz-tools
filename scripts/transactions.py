@@ -42,7 +42,7 @@ def main() -> int:
     ap.add_argument(
         "--until",
         type=str,
-        help="Inclusive ISO date (whole day) or offset-qualified timestamp",
+        help="Inclusive local-midnight date or offset-qualified timestamp",
     )
     ap.add_argument(
         "--timezone",
@@ -199,6 +199,7 @@ def main() -> int:
             json.dumps(
                 {"rows": rows, "completeness": report} if args.diagnostics else rows,
                 indent=2,
+                allow_nan=False,
             )
         )
     else:

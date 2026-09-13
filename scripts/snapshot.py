@@ -29,9 +29,30 @@ def record_view(record) -> dict:
     return result
 
 
-def audit_graph(accounts: list[dict], transactions: list[dict]) -> list[dict]:
+def audit_graph(
+    accounts: list[dict],
+    transactions: list[dict],
+    transaction_report: dict | None = None,
+) -> list[dict]:
     """Find structural defects and non-authoritative duplicate candidates."""
     findings = []
+    transaction_report = transaction_report or {}
+    source_ids = {
+        record_id
+        for record_id in transaction_report.get("source_ids", [])
+        if type(record_id) is int
+    }
+    parsed_ids = {
+        record_id
+        for record_id in transaction_report.get("parsed_ids", [])
+        if type(record_id) is int
+    }
+    skipped_ids = {
+        skipped.get("record_id")
+        for skipped in transaction_report.get("skipped", [])
+        if type(skipped.get("record_id")) is int
+    }
+    unreadable_ids = (source_ids - parsed_ids) | skipped_ids
     account_map = {}
     for row in accounts:
         account_id = _audit_scalar(row, "id")
@@ -70,7 +91,11 @@ def audit_graph(accounts: list[dict], transactions: list[dict]) -> list[dict]:
         if paired is None:
             findings.append(
                 {
-                    "kind": "missing_transfer_leg",
+                    "kind": (
+                        "unreadable_transfer_leg"
+                        if paired_id in unreadable_ids
+                        else "missing_transfer_leg"
+                    ),
                     "ids": [record_id],
                     "related_id": paired_id,
                 }
@@ -203,7 +228,11 @@ def build_snapshot(api, account: int | None, until: str | None, zone: str) -> di
     ]
     findings = [
         finding
-        for finding in audit_graph(all_accounts, all_transactions)
+        for finding in audit_graph(
+            all_accounts,
+            all_transactions,
+            completeness["managers"]["transactions"],
+        )
         if account is None or any(record_id in selected for record_id in finding["ids"])
     ]
     return {
@@ -241,7 +270,7 @@ def main() -> int:
     parser.add_argument("--db", type=Path, required=True)
     parser.add_argument("--account", type=int)
     parser.add_argument(
-        "--until", help="Inclusive ISO date or offset-qualified timestamp"
+        "--until", help="Inclusive local-midnight date or offset-qualified timestamp"
     )
     parser.add_argument(
         "--timezone", default="UTC", help="IANA timezone for dates/output (default UTC)"
