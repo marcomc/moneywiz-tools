@@ -60,6 +60,26 @@ machine-readable result, pass `--format json` to commands that advertise the
 `table|json` format. `record`, `summary`, and the interactive shell retain
 their command-specific output behavior.
 
+## Versioned writer and recovery
+
+The P1F interface accepts a saved version-2 plan and defaults to inspection.
+It does not enable W01–W04. See [Writer Recovery](doc/WRITER-RECOVERY.md) for
+the contract, journal configuration and interruption semantics.
+
+| Command | Behavior |
+| --- | --- |
+| `write validate --plan FILE` | Validate and display the exact plan and canonical digest |
+| `write apply --plan FILE` | Inspect without mutation |
+| `write apply --plan FILE --reviewed-digest SHA --apply` | Apply the reviewed coherent unit with durable recovery evidence |
+| `write recover --plan FILE` | Inspect persisted state without replaying an unknown outcome |
+| `write locations` | Discover private artifact paths, provenance and retention |
+| `write journal` | List durable execution states |
+| `write cleanup` | Preview eligible evidence and space |
+| `write cleanup --apply` | Recheck eligibility and prune only expired verified evidence |
+
+Apply and recover also accept `--app`, `--model` and `--owner`; the global
+`--db` option selects the store. Runtime selection must match the reviewed plan.
+
 ## Retired raw-SQL commands
 
 Earlier releases exposed `insert`, `update`, `delete`, `safe-delete`, `rename`,

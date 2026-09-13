@@ -1,6 +1,8 @@
 # Transaction write implementation plan
 
-Status: implementation started on 12 September 2026; P0 is active.
+Status: P0 merged on `release/0.3.0`; P1F implemented and locally validated
+on 13 September 2026 in `feat/p1f-writer-foundation`; independent GitHub review
+and release integration remain pending.
 The first delivery scope is confirmed. Later phases describe intended scope and
 require phase preparation before executable tasks are added.
 
@@ -228,7 +230,8 @@ tested during development. It must work when an operation saves but confirmation
 is lost. A receipt alone cannot resolve a crash between database save and receipt
 creation: inspect persisted identities and postconditions before replaying.
 
-Confirmed storage and retention design; command syntax remains to be designed:
+Confirmed storage and retention design; P1F command syntax is documented in
+[Writer recovery](../WRITER-RECOVERY.md):
 
 - The CLI owns a private machine-readable journal under the platform's local
   application-data directory, independent of Obsidian or cloud availability.
@@ -253,8 +256,8 @@ this interface under the confirmed retention policy instead of deleting files
 with shell commands. Recheck eligibility and active-writer state at apply time;
 preserve active, prepared, pending, unknown and failed/unresolved entries and
 any evidence still referenced by them. Missing or malformed state means retain.
-Snapshot retention needs its own policy during phase preparation; journal expiry
-alone must not authorize removing recovery snapshots.
+P1F snapshot policy: retain snapshots indefinitely. Journal expiry alone does not
+authorize removing recovery snapshots; future pruning requires its own policy.
 
 Include discovery, cleanup preview/apply, expired verified entries, unresolved
 entries, active-writer races and custom storage paths in foundation tests. Keep a
@@ -345,8 +348,8 @@ promote a whole model or phase based on one operation's success.
 
 | Phase | Current state | Completion evidence |
 | --- | --- | --- |
-| P0 | Active: API reads, runtime identity and CLI snapshots | Pending |
-| P1F | First-delivery scope and journal policy confirmed; interface/tasks to refine | Pending |
+| P0 | Integrated on `release/0.3.0` | PR #3 merged at `374ebd4`; no live write promotion |
+| P1F | Implemented on `feat/p1f-writer-foundation`; TODO tasks P1F-01–05 refined | Synthetic native/crash tests and relocated bundle passed; GitHub review/integration pending |
 | P1 | First-delivery scope confirmed; operation tasks not yet refined | Pending |
 | P2 | Roadmap only; prepare after earlier evidence | Pending |
 | P3 | Roadmap only; prepare after earlier evidence | Pending |

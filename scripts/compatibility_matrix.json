@@ -34,7 +34,14 @@
       "capabilities": {
         "read.core": "supported",
         "write.reassign-payees-by-id": "verified",
-        "write.merge-duplicate-payees": "blocked"
+        "write.merge-duplicate-payees": "blocked",
+        "write.create-income": "blocked",
+        "write.create-expense": "blocked",
+        "write.create-refund": "blocked",
+        "write.edit-transaction": "blocked",
+        "write.assign-payee-categories": "blocked",
+        "write.reconcile": "blocked",
+        "write.unreconcile": "blocked"
       }
     },
     {
