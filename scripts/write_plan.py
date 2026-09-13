@@ -6,6 +6,7 @@ import hashlib
 import json
 import math
 import re
+import uuid
 from collections.abc import Mapping
 from copy import deepcopy
 from datetime import datetime
@@ -16,10 +17,22 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 CONTRACT_VERSION = 2
 OPERATION_SCHEMA_VERSION = 1
 PAYEE_CAPABILITY = "write.reassign-payees-by-id"
+CREATE_OPERATION_POLICIES = {
+    "create_income": ("write.create-income", "DepositTransaction", 1),
+    "create_expense": ("write.create-expense", "WithdrawTransaction", -1),
+    "create_refund": ("write.create-refund", "RefundTransaction", 1),
+}
+CREATE_CAPABILITIES = frozenset(
+    capability for capability, _entity, _sign in CREATE_OPERATION_POLICIES.values()
+)
 _HEX_DIGEST = re.compile(r"^[0-9a-f]{64}$")
 _DECIMAL = re.compile(r"^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$")
+_CURRENCY = re.compile(r"^[A-Z]{3}$")
 _TIMESTAMP = re.compile(
     r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$"
+)
+_WHOLE_TIMESTAMP = re.compile(
+    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:Z|[+-]\d{2}:\d{2})$"
 )
 _ENTITIES = {
     "DepositTransaction",
@@ -40,7 +53,7 @@ class PlanValidationError(ValueError):
 
 
 class PayeeReassignmentOperation(TypedDict):
-    """The only enabled operation schema in the P1F bridge."""
+    """The preserved P1F payee operation schema."""
 
     operation_id: str
     kind: str
@@ -53,6 +66,44 @@ class PayeeReassignmentOperation(TypedDict):
     source_event_id: str
     expected_postcondition: dict[str, str]
     allowed_changed_fields: list[str]
+
+
+class CategorySplit(TypedDict):
+    """One exact category assignment for a created transaction."""
+
+    category_gid: str
+    amount: str
+
+
+class RefundReference(TypedDict):
+    """The original supported withdrawal referenced by a refund."""
+
+    original_transaction_entity: str
+    original_transaction_gid: str
+
+
+class CreateTransactionOperation(TypedDict):
+    """One strict W01 ordinary transaction creation operation."""
+
+    operation_id: str
+    kind: str
+    capability: str
+    transaction_entity: str
+    transaction_gid: str
+    account_gid: str
+    owner_uri: str
+    source_event_id: str
+    amount: str
+    currency_unit: str
+    occurred_at: str
+    timezone: str
+    payee_gid: str | None
+    category_splits: list[CategorySplit]
+    tag_gids: list[str]
+    note: str | None
+    refund_reference: RefundReference | None
+    expected_balance_delta: str
+    expected_postcondition: dict[str, Any]
 
 
 class WritePlan(TypedDict):
@@ -76,7 +127,7 @@ class WritePlan(TypedDict):
     expected_account_gid: str
     expected_cached_account_balance: str
     currency_unit: str
-    operations: list[PayeeReassignmentOperation]
+    operations: list[PayeeReassignmentOperation | CreateTransactionOperation]
 
 
 def canonical_json(payload: Mapping[str, Any]) -> str:
@@ -130,14 +181,311 @@ def _timestamp(value: object, field: str) -> str:
     return value
 
 
+def normalize_decimal(value: object, field: str) -> str:
+    """Return one non-exponent decimal representation for a validated value."""
+    parsed = Decimal(_decimal(value, field))
+    if parsed == 0:
+        return "0"
+    return format(parsed.normalize(), "f")
+
+
+def _canonical_decimal(value: object, field: str) -> str:
+    original = _decimal(value, field)
+    canonical = normalize_decimal(original, field)
+    if original != canonical:
+        raise PlanValidationError(f"{field} must use canonical decimal text")
+    return canonical
+
+
+def _whole_timestamp(value: object, field: str) -> str:
+    timestamp = _timestamp(value, field)
+    if not _WHOLE_TIMESTAMP.fullmatch(timestamp):
+        raise PlanValidationError(f"{field} must use whole-second precision")
+    return timestamp
+
+
 def _string_list(value: object, field: str) -> list[str]:
     if not isinstance(value, list) or not value:
         raise PlanValidationError(f"{field} must be a nonempty list")
     return [_text(item, f"{field}[]") for item in value]
 
 
+def _optional_text(value: object, field: str) -> str | None:
+    if value is None:
+        return None
+    return _text(value, field)
+
+
+def _currency(value: object, field: str) -> str:
+    value = _text(value, field)
+    if not _CURRENCY.fullmatch(value):
+        raise PlanValidationError(f"{field} must be a canonical three-letter currency")
+    return value
+
+
+def deterministic_transaction_gid(
+    *, store_uuid: str, owner_uri: str, source_event_id: str
+) -> str:
+    """Derive one stable UUID-shaped GID from the source identity boundary."""
+    identity = {
+        "owner_uri": owner_uri,
+        "source_event_id": source_event_id,
+        "store_uuid": store_uuid,
+    }
+    digest = hashlib.sha256(canonical_json(identity).encode("utf-8")).digest()
+    return str(uuid.UUID(bytes=digest[:16])).upper()
+
+
+def _validate_timezone_offset(timestamp: str, timezone: str, field: str) -> None:
+    parsed = datetime.fromisoformat(timestamp)
+    expected = parsed.astimezone(ZoneInfo(timezone)).utcoffset()
+    if parsed.utcoffset() != expected:
+        raise PlanValidationError(f"{field} offset does not match timezone")
+
+
+def _validate_payee_operation(
+    operation: Mapping[str, Any], prefix: str, plan: dict[str, Any]
+) -> str:
+    expected_keys = {
+        "operation_id",
+        "kind",
+        "capability",
+        "transaction_entity",
+        "transaction_gid",
+        "expected_old_payee_gid",
+        "target_payee_gid",
+        "owner_uri",
+        "source_event_id",
+        "expected_postcondition",
+        "allowed_changed_fields",
+    }
+    if set(operation) != expected_keys:
+        raise PlanValidationError(f"{prefix} has unknown or missing fields")
+    if operation.get("kind") != "reassign_payee":
+        raise PlanValidationError(f"{prefix}.kind is not enabled")
+    if operation.get("capability") != PAYEE_CAPABILITY:
+        raise PlanValidationError(f"{prefix}.capability is not enabled")
+    for field in (
+        "transaction_entity",
+        "transaction_gid",
+        "target_payee_gid",
+        "owner_uri",
+        "source_event_id",
+    ):
+        _text(operation.get(field), f"{prefix}.{field}")
+    if operation["transaction_entity"] not in _ENTITIES:
+        raise PlanValidationError(f"{prefix}.transaction_entity is not enabled")
+    if (
+        operation["owner_uri"] != plan["owner_uri"]
+        or operation["source_event_id"] != plan["source_event_id"]
+    ):
+        raise PlanValidationError(
+            f"{prefix} owner_uri and source_event_id must match the envelope"
+        )
+    old = operation.get("expected_old_payee_gid")
+    if old is not None:
+        _text(old, f"{prefix}.expected_old_payee_gid")
+    postcondition = operation.get("expected_postcondition")
+    if (
+        not isinstance(postcondition, Mapping)
+        or set(postcondition) != {"payee_gid"}
+        or postcondition.get("payee_gid") != operation.get("target_payee_gid")
+    ):
+        raise PlanValidationError(
+            f"{prefix}.expected_postcondition.payee_gid must equal target_payee_gid"
+        )
+    if operation.get("allowed_changed_fields") != ["payee"]:
+        raise PlanValidationError(f"{prefix}.allowed_changed_fields must be ['payee']")
+    return operation["transaction_gid"]
+
+
+def _validate_category_splits(
+    value: object, *, prefix: str, transaction_amount: Decimal
+) -> list[dict[str, str]]:
+    if not isinstance(value, list):
+        raise PlanValidationError(f"{prefix} must be a list")
+    validated: list[dict[str, str]] = []
+    seen: set[str] = set()
+    total = Decimal(0)
+    for index, split in enumerate(value):
+        split_prefix = f"{prefix}[{index}]"
+        if not isinstance(split, Mapping) or set(split) != {"category_gid", "amount"}:
+            raise PlanValidationError(f"{split_prefix} has unknown or missing fields")
+        category_gid = _text(split.get("category_gid"), f"{split_prefix}.category_gid")
+        if category_gid in seen:
+            raise PlanValidationError("category_splits must not repeat a category")
+        seen.add(category_gid)
+        amount = _canonical_decimal(split.get("amount"), f"{split_prefix}.amount")
+        parsed = Decimal(amount)
+        if parsed == 0 or (parsed > 0) != (transaction_amount > 0):
+            raise PlanValidationError(
+                "category split signs must match transaction amount"
+            )
+        total += parsed
+        validated.append({"category_gid": category_gid, "amount": amount})
+    if validated and total != transaction_amount:
+        raise PlanValidationError(
+            "category split amounts must sum to transaction amount"
+        )
+    if validated != sorted(validated, key=lambda item: item["category_gid"]):
+        raise PlanValidationError("category_splits must be sorted by category_gid")
+    return validated
+
+
+def _validate_refund_reference(
+    value: object, *, prefix: str, refund: bool
+) -> dict[str, str] | None:
+    if not refund:
+        if value is not None:
+            raise PlanValidationError(f"{prefix} is only valid for refunds")
+        return None
+    if not isinstance(value, Mapping) or set(value) != {
+        "original_transaction_entity",
+        "original_transaction_gid",
+    }:
+        raise PlanValidationError(f"{prefix} must identify one original withdrawal")
+    if value.get("original_transaction_entity") != "WithdrawTransaction":
+        raise PlanValidationError(f"{prefix} must reference WithdrawTransaction")
+    return {
+        "original_transaction_entity": "WithdrawTransaction",
+        "original_transaction_gid": _text(
+            value.get("original_transaction_gid"),
+            f"{prefix}.original_transaction_gid",
+        ),
+    }
+
+
+def _create_postcondition(operation: Mapping[str, Any]) -> dict[str, Any]:
+    fields = (
+        "transaction_entity",
+        "transaction_gid",
+        "account_gid",
+        "owner_uri",
+        "amount",
+        "currency_unit",
+        "occurred_at",
+        "timezone",
+        "payee_gid",
+        "category_splits",
+        "tag_gids",
+        "note",
+        "refund_reference",
+        "expected_balance_delta",
+    )
+    return {field: deepcopy(operation[field]) for field in fields}
+
+
+def _validate_create_operation(
+    operation: Mapping[str, Any], prefix: str, plan: dict[str, Any]
+) -> str:
+    expected_keys = {
+        "operation_id",
+        "kind",
+        "capability",
+        "transaction_entity",
+        "transaction_gid",
+        "account_gid",
+        "owner_uri",
+        "source_event_id",
+        "amount",
+        "currency_unit",
+        "occurred_at",
+        "timezone",
+        "payee_gid",
+        "category_splits",
+        "tag_gids",
+        "note",
+        "refund_reference",
+        "expected_balance_delta",
+        "expected_postcondition",
+    }
+    if set(operation) != expected_keys:
+        raise PlanValidationError(f"{prefix} has unknown or missing fields")
+    kind = operation.get("kind")
+    if kind not in CREATE_OPERATION_POLICIES:
+        raise PlanValidationError(f"{prefix}.kind is not enabled")
+    capability, entity, sign = CREATE_OPERATION_POLICIES[kind]
+    if operation.get("capability") != capability or plan["capability"] != capability:
+        raise PlanValidationError(f"{prefix}.capability does not match its kind")
+    if operation.get("transaction_entity") != entity:
+        raise PlanValidationError(
+            f"{prefix}.transaction_entity does not match its kind"
+        )
+    for field in ("transaction_gid", "account_gid", "owner_uri", "source_event_id"):
+        _text(operation.get(field), f"{prefix}.{field}")
+    if (
+        operation["owner_uri"] != plan["owner_uri"]
+        or operation["source_event_id"] != plan["source_event_id"]
+        or operation["account_gid"] != plan["expected_account_gid"]
+    ):
+        raise PlanValidationError(
+            f"{prefix} owner, source event, and account must match the envelope"
+        )
+    expected_gid = deterministic_transaction_gid(
+        store_uuid=plan["store_identity"]["store_uuid"],
+        owner_uri=plan["owner_uri"],
+        source_event_id=plan["source_event_id"],
+    )
+    if operation["transaction_gid"] != expected_gid:
+        raise PlanValidationError(f"{prefix}.transaction_gid is not deterministic")
+    amount = _canonical_decimal(operation.get("amount"), f"{prefix}.amount")
+    parsed_amount = Decimal(amount)
+    if parsed_amount == 0 or (parsed_amount > 0) != (sign > 0):
+        raise PlanValidationError(f"{prefix}.amount has the wrong sign for {kind}")
+    currency = _currency(operation.get("currency_unit"), f"{prefix}.currency_unit")
+    occurred_at = _whole_timestamp(
+        operation.get("occurred_at"), f"{prefix}.occurred_at"
+    )
+    timezone = _text(operation.get("timezone"), f"{prefix}.timezone")
+    try:
+        ZoneInfo(timezone)
+    except ZoneInfoNotFoundError as exc:
+        raise PlanValidationError(
+            f"{prefix}.timezone must be an IANA timezone"
+        ) from exc
+    _validate_timezone_offset(occurred_at, timezone, f"{prefix}.occurred_at")
+    if currency != plan["currency_unit"] or timezone != plan["timezone"]:
+        raise PlanValidationError(
+            f"{prefix} currency_unit and timezone must match the envelope"
+        )
+    _optional_text(operation.get("payee_gid"), f"{prefix}.payee_gid")
+    _validate_category_splits(
+        operation.get("category_splits"),
+        prefix=f"{prefix}.category_splits",
+        transaction_amount=parsed_amount,
+    )
+    tags = operation.get("tag_gids")
+    if not isinstance(tags, list):
+        raise PlanValidationError(f"{prefix}.tag_gids must be a list")
+    validated_tags = [_text(tag, f"{prefix}.tag_gids[]") for tag in tags]
+    if len(set(validated_tags)) != len(validated_tags) or validated_tags != sorted(
+        validated_tags
+    ):
+        raise PlanValidationError(f"{prefix}.tag_gids must be unique and sorted")
+    _optional_text(operation.get("note"), f"{prefix}.note")
+    _validate_refund_reference(
+        operation.get("refund_reference"),
+        prefix=f"{prefix}.refund_reference",
+        refund=kind == "create_refund",
+    )
+    balance_delta = _canonical_decimal(
+        operation.get("expected_balance_delta"),
+        f"{prefix}.expected_balance_delta",
+    )
+    if Decimal(balance_delta) != parsed_amount:
+        raise PlanValidationError(f"{prefix}.expected_balance_delta must equal amount")
+    postcondition = operation.get("expected_postcondition")
+    if not isinstance(postcondition, Mapping) or dict(
+        postcondition
+    ) != _create_postcondition(operation):
+        raise PlanValidationError(
+            f"{prefix}.expected_postcondition must exactly match all requested fields"
+        )
+    return operation["transaction_gid"]
+
+
 def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
-    """Validate the complete P1F envelope and reject unverified future writes."""
+    """Validate the complete v2 envelope and its strict operation union."""
     if not isinstance(payload, Mapping):
         raise PlanValidationError("plan must be a JSON object")
     plan = deepcopy(dict(payload))
@@ -188,8 +536,9 @@ def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
         ZoneInfo(timezone)
     except ZoneInfoNotFoundError as exc:
         raise PlanValidationError("timezone must be an IANA timezone") from exc
-    if plan.get("capability") != PAYEE_CAPABILITY:
-        raise PlanValidationError("capability is not enabled by P1F")
+    capability = plan.get("capability")
+    if capability not in {PAYEE_CAPABILITY, *CREATE_CAPABILITIES}:
+        raise PlanValidationError("capability is not enabled")
     store = plan.get("store_identity")
     if not isinstance(store, Mapping):
         raise PlanValidationError("store_identity must be an object")
@@ -227,72 +576,38 @@ def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
         raise PlanValidationError("operations must be a nonempty list")
     operation_ids: set[str] = set()
     transaction_gids: set[str] = set()
+    create_operations = 0
     for index, operation in enumerate(operations):
         prefix = f"operations[{index}]"
         if not isinstance(operation, Mapping):
             raise PlanValidationError(f"{prefix} must be an object")
-        expected_keys = {
-            "operation_id",
-            "kind",
-            "capability",
-            "transaction_entity",
-            "transaction_gid",
-            "expected_old_payee_gid",
-            "target_payee_gid",
-            "owner_uri",
-            "source_event_id",
-            "expected_postcondition",
-            "allowed_changed_fields",
-        }
-        if set(operation) != expected_keys:
-            raise PlanValidationError(f"{prefix} has unknown or missing fields")
         operation_id = _text(operation.get("operation_id"), f"{prefix}.operation_id")
         if operation_id in operation_ids:
             raise PlanValidationError("operation_id values must be unique")
         operation_ids.add(operation_id)
-        if operation.get("kind") != "reassign_payee":
-            raise PlanValidationError(f"{prefix}.kind is not enabled by P1F")
-        if operation.get("capability") != PAYEE_CAPABILITY:
-            raise PlanValidationError(f"{prefix}.capability is not enabled by P1F")
-        for field in (
-            "transaction_entity",
-            "transaction_gid",
-            "target_payee_gid",
-            "owner_uri",
-            "source_event_id",
-        ):
-            _text(operation.get(field), f"{prefix}.{field}")
-        if operation["transaction_entity"] not in _ENTITIES:
-            raise PlanValidationError(
-                f"{prefix}.transaction_entity is not enabled by P1F"
-            )
-        if (
-            operation["owner_uri"] != plan["owner_uri"]
-            or operation["source_event_id"] != plan["source_event_id"]
-        ):
-            raise PlanValidationError(
-                f"{prefix} owner_uri and source_event_id must match the envelope"
-            )
-        transaction_gid = operation["transaction_gid"]
+        kind = operation.get("kind")
+        if kind == "reassign_payee":
+            if plan["capability"] != PAYEE_CAPABILITY:
+                raise PlanValidationError(
+                    f"{prefix}.kind does not match the envelope capability"
+                )
+            transaction_gid = _validate_payee_operation(operation, prefix, plan)
+        elif kind in CREATE_OPERATION_POLICIES:
+            create_operations += 1
+            transaction_gid = _validate_create_operation(operation, prefix, plan)
+        else:
+            raise PlanValidationError(f"{prefix}.kind is not enabled")
         if transaction_gid in transaction_gids:
             raise PlanValidationError("operations must not target a transaction twice")
         transaction_gids.add(transaction_gid)
-        old = operation.get("expected_old_payee_gid")
-        if old is not None:
-            _text(old, f"{prefix}.expected_old_payee_gid")
-        postcondition = operation.get("expected_postcondition")
-        if (
-            not isinstance(postcondition, Mapping)
-            or set(postcondition) != {"payee_gid"}
-            or postcondition.get("payee_gid") != operation.get("target_payee_gid")
-        ):
-            raise PlanValidationError(
-                f"{prefix}.expected_postcondition.payee_gid must equal target_payee_gid"
-            )
-        if operation.get("allowed_changed_fields") != ["payee"]:
-            raise PlanValidationError(
-                f"{prefix}.allowed_changed_fields must be ['payee']"
-            )
+    if create_operations and len(operations) != 1:
+        raise PlanValidationError(
+            "a W01 source event must create exactly one transaction"
+        )
+    if create_operations:
+        _whole_timestamp(plan["created_at"], "created_at")
+    if not create_operations and plan["capability"] != PAYEE_CAPABILITY:
+        raise PlanValidationError("create capability requires a create operation")
     actual = compute_digest(plan)
     supplied = plan.get("plan_digest")
     if supplied is not None and (
@@ -370,7 +685,16 @@ def validate_result(plan: dict[str, Any], result: object) -> dict[str, Any]:
             receipt.get("durable_numeric_id"),
             receipt.get("durable_uri"),
         )
-        if (
+        creation_retry_safe = (
+            operation["kind"] in CREATE_OPERATION_POLICIES
+            and classification == "retry_safe"
+        )
+        if creation_retry_safe:
+            if numeric_id is not None or uri is not None:
+                raise PlanValidationError(
+                    "retry-safe creation receipt must not claim a durable identity"
+                )
+        elif (
             not isinstance(numeric_id, str)
             or not numeric_id.isascii()
             or not numeric_id.isdigit()
@@ -379,20 +703,34 @@ def validate_result(plan: dict[str, Any], result: object) -> dict[str, Any]:
             raise PlanValidationError(
                 "native operation receipt has no durable numeric identity"
             )
-        if (
-            not isinstance(uri, str)
-            or not uri.startswith(
-                f"x-coredata://{plan['store_identity']['store_uuid']}/"
-            )
-            or not uri.endswith(f"/p{numeric_id}")
-            or uri in uris
-        ):
+        if not creation_retry_safe:
+            if (
+                not isinstance(uri, str)
+                or not uri.startswith(
+                    f"x-coredata://{plan['store_identity']['store_uuid']}/"
+                )
+                or not uri.endswith(f"/p{numeric_id}")
+                or uri in uris
+            ):
+                raise PlanValidationError(
+                    "native operation receipt has no matching durable store identity"
+                )
+            uris.add(uri)
+        if operation["kind"] == "reassign_payee":
+            if (
+                success
+                and receipt.get("new_payee_gid") != operation["target_payee_gid"]
+            ):
+                raise PlanValidationError(
+                    "native operation receipt violates its payee postcondition"
+                )
+        elif success:
+            if receipt.get("postcondition") != operation["expected_postcondition"]:
+                raise PlanValidationError(
+                    "native operation receipt violates its creation postcondition"
+                )
+        elif receipt.get("postcondition") is not None:
             raise PlanValidationError(
-                "native operation receipt has no matching durable store identity"
-            )
-        uris.add(uri)
-        if success and receipt.get("new_payee_gid") != operation["target_payee_gid"]:
-            raise PlanValidationError(
-                "native operation receipt violates its postcondition"
+                "unverified creation receipt must not claim a postcondition"
             )
     return result

@@ -4,13 +4,15 @@
 
 P1F provides the version-2 shared writer infrastructure. Its narrow
 `reassign_payee` bridge uses the existing payee relationship operation to exercise
-preflight, atomic persistence and recovery. W01–W04 transaction creation, editing,
-category assignment and reconciliation remain disabled. Existing version-1
-commands retain their interface and capability checks.
+preflight, atomic persistence and recovery. W01 creation uses the same journal
+with deterministic source-event identities on marked disposable fixtures.
+Live W01, editing, post-create category assignment and reconciliation remain
+disabled. Existing version-1 commands retain their interface and capability checks.
 
 This phase is validated with synthetic/disposable stores. Local persisted
 read-back, MoneyWiz application acceptance and remote sync are separate evidence.
-No P1 operation is cleared by these tests.
+No live P1 operation is cleared by these tests. See
+[Transaction Creation](TRANSACTION-CREATION.md) for W01 fields and evidence.
 
 ## Review and apply
 

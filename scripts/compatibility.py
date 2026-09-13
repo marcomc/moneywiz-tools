@@ -254,6 +254,54 @@ def require_write_capability(db_path: Path, capability: str) -> CompatibilityAss
     return assessment
 
 
+DISPOSABLE_CREATE_CAPABILITIES = frozenset(
+    {
+        "write.create-income",
+        "write.create-expense",
+        "write.create-refund",
+    }
+)
+DISPOSABLE_METADATA_KEY = "MoneyWizToolsDisposableFixture"
+DISPOSABLE_METADATA_VALUE = "W01-v1"
+
+
+def require_disposable_write_capability(
+    db_path: Path, capability: str
+) -> CompatibilityAssessment:
+    """Admit W01 experiments only on explicitly marked model-48 fixture stores.
+
+    This is separate from live capability clearance. The native host independently
+    enforces the same persistent-store metadata boundary before opening for writes.
+    Plans and environment variables cannot designate an existing store as a fixture.
+    """
+    assessment = assess_database(db_path)
+    if (
+        capability not in DISPOSABLE_CREATE_CAPABILITIES
+        or assessment.profile_id != "moneywiz-2026-model-48"
+    ):
+        raise CompatibilityError("W01 requires an exact model-48 disposable profile")
+    connection = _open_read_only(db_path)
+    try:
+        rows = connection.execute("SELECT Z_PLIST FROM Z_METADATA").fetchall()
+        if len(rows) != 1:
+            raise CompatibilityError(
+                "W01 requires one disposable store metadata record"
+            )
+        metadata = plistlib.loads(bytes(rows[0][0]))
+        if (
+            not isinstance(metadata, dict)
+            or metadata.get(DISPOSABLE_METADATA_KEY) != DISPOSABLE_METADATA_VALUE
+        ):
+            raise CompatibilityError(
+                "W01 live creation remains blocked; an invented disposable fixture is required"
+            )
+    except (sqlite3.Error, ValueError, TypeError, plistlib.InvalidFileException) as exc:
+        raise CompatibilityError("cannot verify disposable store metadata") from exc
+    finally:
+        connection.close()
+    return assessment
+
+
 def _json_payload(
     assessment: CompatibilityAssessment, capability: str | None
 ) -> dict[str, Any]:

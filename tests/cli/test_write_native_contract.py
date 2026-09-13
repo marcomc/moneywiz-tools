@@ -6,9 +6,11 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from test_transaction_create import request
 from test_write_plan import plan
 from write_journal import store_lock
 from write_plan import validate_plan
+from write_transactions import build_plan
 
 
 @pytest.fixture(scope="module")
@@ -95,6 +97,22 @@ def test_native_validator_rejects_changed_reviewed_fields(
         check=False,
     )
     assert completed.returncode == 2
+
+
+def test_python_w01_creation_plan_validates_natively(
+    native_plan_validator: Path, tmp_path: Path
+) -> None:
+    validated = build_plan(request())
+    source = tmp_path / "create-plan.json"
+    source.write_text(json.dumps(validated))
+    completed = subprocess.run(
+        [str(native_plan_validator), str(source)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.strip() == validated["plan_digest"]
 
 
 def test_native_and_python_share_the_same_private_store_lock(

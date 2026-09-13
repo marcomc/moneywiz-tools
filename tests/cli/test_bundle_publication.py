@@ -34,6 +34,7 @@ REQUIRED_DISPATCHER_PROGRAMS = (
     "scripts/transactions.py",
     "scripts/users.py",
     "scripts/write.py",
+    "scripts/write_transactions.py",
     "scripts/write_journal.py",
     "scripts/write_plan.py",
     "scripts/writer_client.py",
@@ -60,6 +61,12 @@ def _prepare_source_tree(destination: Path) -> Path:
         capture_output=True,
         check=True,
     ).stdout.split(b"\0")
+    # Include explicitly packaged additions before the first implementation commit.
+    tracked += [
+        os.fsencode(item)
+        for item in REQUIRED_DISPATCHER_PROGRAMS
+        if os.fsencode(item) not in tracked
+    ]
     for encoded_path in tracked:
         if not encoded_path:
             continue

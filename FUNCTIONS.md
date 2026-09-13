@@ -62,12 +62,14 @@ their command-specific output behavior.
 
 ## Versioned writer and recovery
 
-The P1F interface accepts a saved version-2 plan and defaults to inspection.
-It does not enable W01–W04. See [Writer Recovery](doc/WRITER-RECOVERY.md) for
-the contract, journal configuration and interruption semantics.
+The version-2 interface accepts a saved typed plan and defaults to inspection.
+W01 creation is restricted to marked disposable fixtures; live W01 and W02–W04
+remain blocked. See [Transaction Creation](doc/TRANSACTION-CREATION.md) for
+creation fields and [Writer Recovery](doc/WRITER-RECOVERY.md) for journals.
 
 | Command | Behavior |
 | --- | --- |
+| `transaction create --request FILE --plan FILE` | Build a W01 plan from explicit JSON inputs without opening a store |
 | `write validate --plan FILE` | Validate and display the exact plan and canonical digest |
 | `write apply --plan FILE` | Inspect without mutation |
 | `write apply --plan FILE --reviewed-digest SHA --apply` | Apply the reviewed coherent unit with durable recovery evidence |

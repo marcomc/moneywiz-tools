@@ -23,7 +23,8 @@ Entry: P0 merged into `release/0.3.0` at `374ebd4`. Implementation owner:
 `feat/p1f-writer-foundation`; PR target: `release/0.3.0`. Scope follows
 [P1F](doc/proposals/TRANSACTION-WRITE-IMPLEMENTATION-PLAN.md#p1f-shared-writer-foundation)
 and the [shared contract](doc/proposals/TRANSACTION-WRITE-API.md#proposed-plan-and-result-contract).
-W01–W04 operation implementations and live financial writes are excluded.
+W01–W04 operation implementations and live financial writes are excluded from
+P1F. P1F integrated into the release branch at `1020c40`.
 
 | ID | Deliverable / owner | Depends on | Acceptance | State |
 | --- | --- | --- | --- | --- |
@@ -31,7 +32,27 @@ W01–W04 operation implementations and live financial writes are excluded.
 | P1F-02 | Native preflight, atomic save and read-back / native worker | P1F-01 contract | Reject invalid references/stale state before mutation; one save; durable IDs and independent persisted results | Implemented; synthetic validation passed |
 | P1F-03 | Journal, snapshots, retry and recovery / Python and native workers | P1F-01–02 | Private flushed preimage/receipt; before/after-save interruption tests; no replay of unknown outcomes | Implemented; synthetic validation passed |
 | P1F-04 | Discovery and bounded retention cleanup / Python worker | P1F-03 | Effective paths/provenance; explicit cleanup apply; 90-day verified retention and indefinite unresolved evidence | Implemented; synthetic validation passed |
-| P1F-05 | CLI, packaging, documentation and integration / controller | P1F-01–04 | Relocated bundle tests, unchanged v1/P0 tests, local READY and current-head independent GitHub clean evidence | Bundle validation passed; GitHub review/integration pending |
+| P1F-05 | CLI, packaging, documentation and integration / controller | P1F-01–04 | Relocated bundle tests, unchanged v1/P0 tests, local READY and current-head independent GitHub clean evidence | Integrated at `1020c40`; W01 builds on this baseline |
+
+### P1 W01 transaction creation
+
+Entry: P1F integrated at `1020c400d4740f45f29f1e2c87a11aa0a74f8603`.
+Branch: `feat/p1-w01-transaction-create`; PR target: `release/0.3.0`.
+Scope: [W01](doc/proposals/TRANSACTION-WRITE-API.md#operation-contracts-and-acceptance)
+through the version-2 typed plan and shared native writer. Only invented
+fixtures and disposable stores are authorized for validation. W02 editing,
+W03 post-create assignment/split mutation, W04 flags and all P2/P3 variants
+remain excluded. The API revision remains pinned at `7cfa1ea9f09263f87e4099c4315bd2cc83c25d5c`.
+
+| ID | Deliverable / owner | Depends on | Acceptance | State |
+| --- | --- | --- | --- | --- |
+| P1-W01-01 | Exact model semantics and disposable fixtures / native worker | P1F merge | Compiled TestFlight model fields, inverse relationships and supported variants recorded without live data | Model 48 / build 449 inspected; CashAccount income, expense and linked refund fixtures |
+| P1-W01-02 | Typed creation plans and CLI / Python worker | P1-W01-01 schema | Explicit owner/account/currency/Decimal/date/timezone/source identity; strict per-kind schema; negative input coverage | Implemented; Python/native schema and CLI validation passed |
+| P1-W01-03 | Atomic creation and persisted verification / controller | P1-W01-01–02 | Income, expense and supported refunds; preflight ownership/split totals/stale balance; one save; durable IDs and independent read-back | Implemented; production host persisted-field and relationship checks passed |
+| P1-W01-04 | Source-event retry and interruption recovery / Python and native workers | P1-W01-03 | No duplicate on repeated event; before/after-save crash evidence; conflicting/mixed outcomes refuse replay | Before/after-save recovery and journal no-op tests passed; mutation-sensitive boundary tests |
+| P1-W01-05 | Product bundle and regression integration / controller | P1-W01-02–04 | Required lint/tests; production host on disposable stores; relocated installed copy after build source removal; P0/P1F/v1 preserved | Production bundle built; installed validation evidence accompanies PR handoff |
+| P1-W01-06 | Independent review and release handoff / controller | P1-W01-05 | One cumulative ledger, local READY, current-head GitHub review, PR targeting release branch; no merge | Independent local review complete; current-head GitHub evidence accompanies PR handoff |
+| P1-W01-07 | Application and sync acceptance / future authorized acceptance owner | P1-W01-06 | Direct MoneyWiz reopen/history and remote-client evidence for each promoted variant | Not authorized in this synthetic-only task; live capabilities blocked |
 
 ## Propositions
 
@@ -58,8 +79,8 @@ the active app bundle, return durable record IDs, and read back the persisted
 records. A failed partial batch must identify the completed and untouched IDs.
 
 - [ ] **Introduce the versioned transaction writer contract (P1 foundation).**
-  Implemented and locally validated in `feat/p1f-writer-foundation`; independent
-  GitHub review and release integration remain pending. Preserves v1 reassignment.
+  Implemented in `feat/p1f-writer-foundation` and integrated at `1020c40`.
+  Preserves v1 reassignment.
   See the proposal's source map, contract and phase plan.
   - Extract shared runtime identity and writer invocation from the payee helper;
     bind plans to store UUID, owner, model checksum and exact capabilities.
@@ -110,6 +131,8 @@ records. A failed partial batch must identify the completed and untouched IDs.
     traceback for optional metadata.
 
 - [ ] **Create expense and income transactions from the CLI.**
+  W01 is implemented for marked disposable CashAccount stores; live clearance
+  and other account variants remain pending. See `P1-W01-01`–`P1-W01-07`.
   Monthly fees currently require repetitive UI entry; interest and dividends
   need the corresponding income operation.
   - Accept account ID, amount, currency, date/time with explicit timezone,

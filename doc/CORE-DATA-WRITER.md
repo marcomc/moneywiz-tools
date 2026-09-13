@@ -85,9 +85,11 @@ capability payloads fail closed.
 
 Version 2 adds a strict shared envelope, expected old values, reviewed digest,
 store/owner/app binding, durable per-operation IDs and independent persisted
-read-back. Its P1F bridge exercises only the existing reassignment to an existing
-payee. Creation, transaction editing, category writes and reconciliation remain
-blocked. Version 1 keeps its existing result and destination-payee creation
+read-back. The P1F payee bridge remains supported. W01 adds creation handlers
+restricted to explicitly marked disposable stores; its live capabilities stay
+blocked pending application acceptance. Editing, post-create category mutation
+and reconciliation remain blocked. See [Transaction Creation](TRANSACTION-CREATION.md)
+for the exact supported experimental contract. Version 1 keeps its result and destination-payee creation
 behavior. See [Writer Recovery](WRITER-RECOVERY.md) for version-2 commands,
 journal retention and interrupted execution.
 

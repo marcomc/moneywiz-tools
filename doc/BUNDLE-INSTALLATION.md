@@ -62,6 +62,11 @@ copies development helpers, build inputs, `tests/`, or untracked and ignored
 artifacts such as local databases, SQLite sidecars, logs, or Python caches into
 the product bundle.
 
+The product manifest includes the W01 plan builder, shared version-2 modules
+and native creation handlers. Disposable fixture builders remain source-only.
+See [Transaction Creation](TRANSACTION-CREATION.md) for the experimental scope;
+bundling a handler does not enable its live capability.
+
 The default app location is:
 
 ```text

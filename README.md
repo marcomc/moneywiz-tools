@@ -167,6 +167,12 @@ documented in
 The exact-duplicate policy and the approval-only fuzzy map are documented in
 [Payee Consolidation](doc/PAYEE-CONSOLIDATION.md).
 
+Version-2 plans also support W01 creation experiments on explicitly marked
+disposable stores. `moneywiz transaction create --help` describes plan generation;
+reviewed plans use `moneywiz write apply` and the durable recovery journal.
+Live income, expense and refund creation remain blocked pending application
+acceptance. See [Transaction Creation](doc/TRANSACTION-CREATION.md).
+
 ## Check compatibility
 
 Inspect the detected schema profile and its operation capabilities before a

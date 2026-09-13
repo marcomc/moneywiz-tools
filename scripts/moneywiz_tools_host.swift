@@ -561,11 +561,24 @@ struct WriterOperationV2: Decodable {
     let transactionEntity: String
     let transactionGID: String
     let expectedOldPayeeGID: String?
-    let targetPayeeGID: String
+    let targetPayeeGID: String?
     let ownerURI: String
     let sourceEventID: String
-    let expectedPostcondition: PayeePostcondition
-    let allowedChangedFields: [String]
+    let expectedPostcondition: PayeePostcondition?
+    let allowedChangedFields: [String]?
+    // W01 creation fields.  They remain optional at decode time because the same
+    // v2 envelope also carries the already-shipped reassignment operation.
+    let accountGID: String?
+    let amount: String?
+    let currencyUnit: String?
+    let occurredAt: String?
+    let timezone: String?
+    let payeeGID: String?
+    let categorySplits: [CategorySplit]?
+    let tagGIDs: [String]?
+    let note: String?
+    let refundReference: RefundReference?
+    let expectedBalanceDelta: String?
 
     enum CodingKeys: String, CodingKey {
         case operationID = "operation_id"
@@ -579,11 +592,39 @@ struct WriterOperationV2: Decodable {
         case sourceEventID = "source_event_id"
         case expectedPostcondition = "expected_postcondition"
         case allowedChangedFields = "allowed_changed_fields"
+        case accountGID = "account_gid"
+        case amount
+        case currencyUnit = "currency_unit"
+        case occurredAt = "occurred_at"
+        case timezone
+        case payeeGID = "payee_gid"
+        case categorySplits = "category_splits"
+        case tagGIDs = "tag_gids"
+        case note
+        case refundReference = "refund_reference"
+        case expectedBalanceDelta = "expected_balance_delta"
+    }
+}
+
+struct CategorySplit: Codable, Equatable {
+    let categoryGID: String
+    let amount: String
+
+    enum CodingKeys: String, CodingKey { case categoryGID = "category_gid"; case amount }
+}
+
+struct RefundReference: Codable, Equatable {
+    let originalTransactionEntity: String
+    let originalTransactionGID: String
+
+    enum CodingKeys: String, CodingKey {
+        case originalTransactionEntity = "original_transaction_entity"
+        case originalTransactionGID = "original_transaction_gid"
     }
 }
 
 struct PayeePostcondition: Decodable {
-    let payeeGID: String
+    let payeeGID: String?
 
     enum CodingKeys: String, CodingKey { case payeeGID = "payee_gid" }
 }
@@ -593,10 +634,11 @@ struct WriterOperationResultV2: Encodable {
     let status: String
     let transactionEntity: String
     let transactionGID: String
-    let durableURI: String
-    let durableNumericID: String
+    let durableURI: String?
+    let durableNumericID: String?
     let oldPayeeGID: String?
     let newPayeeGID: String?
+    let postcondition: CreateTransactionPostconditionV2?
 
     enum CodingKeys: String, CodingKey {
         case operationID = "operation_id"
@@ -607,7 +649,64 @@ struct WriterOperationResultV2: Encodable {
         case durableNumericID = "durable_numeric_id"
         case oldPayeeGID = "old_payee_gid"
         case newPayeeGID = "new_payee_gid"
+        case postcondition
     }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(operationID, forKey: .operationID)
+        try container.encode(status, forKey: .status)
+        try container.encode(transactionEntity, forKey: .transactionEntity)
+        try container.encode(transactionGID, forKey: .transactionGID)
+        try container.encode(durableURI, forKey: .durableURI)
+        try container.encode(durableNumericID, forKey: .durableNumericID)
+        try container.encode(oldPayeeGID, forKey: .oldPayeeGID)
+        try container.encode(newPayeeGID, forKey: .newPayeeGID)
+        try container.encodeIfPresent(postcondition, forKey: .postcondition)
+    }
+}
+
+struct CreateTransactionPostconditionV2: Encodable {
+    let transactionEntity: String
+    let transactionGID: String
+    let accountGID: String
+    let ownerURI: String
+    let amount: String
+    let currencyUnit: String
+    let occurredAt: String
+    let timezone: String
+    let payeeGID: String?
+    let categorySplits: [CategorySplit]
+    let tagGIDs: [String]
+    let note: String?
+    let refundReference: RefundReference?
+    let expectedBalanceDelta: String
+
+    enum CodingKeys: String, CodingKey {
+        case transactionEntity = "transaction_entity", transactionGID = "transaction_gid"
+        case accountGID = "account_gid", ownerURI = "owner_uri", amount, currencyUnit = "currency_unit"
+        case occurredAt = "occurred_at", timezone, payeeGID = "payee_gid", categorySplits = "category_splits"
+        case tagGIDs = "tag_gids", note, refundReference = "refund_reference"
+        case expectedBalanceDelta = "expected_balance_delta"
+    }
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(transactionEntity, forKey: .transactionEntity)
+        try c.encode(transactionGID, forKey: .transactionGID)
+        try c.encode(accountGID, forKey: .accountGID)
+        try c.encode(ownerURI, forKey: .ownerURI)
+        try c.encode(amount, forKey: .amount)
+        try c.encode(currencyUnit, forKey: .currencyUnit)
+        try c.encode(occurredAt, forKey: .occurredAt)
+        try c.encode(timezone, forKey: .timezone)
+        try c.encode(payeeGID, forKey: .payeeGID)
+        try c.encode(categorySplits, forKey: .categorySplits)
+        try c.encode(tagGIDs, forKey: .tagGIDs)
+        try c.encode(note, forKey: .note)
+        try c.encode(refundReference, forKey: .refundReference)
+        try c.encode(expectedBalanceDelta, forKey: .expectedBalanceDelta)
+    }
+
 }
 
 struct WriterResultV2: Encodable {
@@ -670,6 +769,11 @@ func validateWriterPlanV2(_ plan: WriterPlanV2, rawPlan: [String: Any]) throws {
         throw HostError.message("writer v2 operations must be JSON objects")
     }
     for rawOperation in rawOperations {
+        let kind = rawOperation["kind"] as? String
+        if kind == "create_income" || kind == "create_expense" || kind == "create_refund" {
+            try validateCreationOperationShape(rawOperation, plan: plan)
+            continue
+        }
         guard Set(rawOperation.keys) == operationKeys,
               let postcondition = rawOperation["expected_postcondition"] as? [String: Any],
               Set(postcondition.keys) == ["payee_gid"] else {
@@ -680,7 +784,7 @@ func validateWriterPlanV2(_ plan: WriterPlanV2, rawPlan: [String: Any]) throws {
           plan.operationSchemaVersion == 1,
           plan.profileID == policy.profileID,
           plan.modelChecksum == policy.modelChecksum,
-          plan.capability == policy.capability,
+          (plan.capability == policy.capability || ["write.create-income", "write.create-expense", "write.create-refund"].contains(plan.capability)),
           moneyWizBundleIdentifiers.contains(plan.appIdentity.bundleID),
           !isBlank(plan.appIdentity.version),
           !isBlank(plan.appIdentity.path),
@@ -713,17 +817,42 @@ func validateWriterPlanV2(_ plan: WriterPlanV2, rawPlan: [String: Any]) throws {
     }
     var operationIDs: Set<String> = []
     var transactionGIDs: Set<String> = []
+    let creationKinds = Set(["create_income", "create_expense", "create_refund"])
+    let creationCount = plan.operations.filter { creationKinds.contains($0.kind) }.count
+    if creationCount > 0 && creationCount != plan.operations.count || creationCount > 1 {
+        throw HostError.message("writer v2 creation plans must contain exactly one homogeneous operation")
+    }
     for operation in plan.operations {
+        if ["create_income", "create_expense", "create_refund"].contains(operation.kind) {
+            guard operation.capability == plan.capability,
+                  operation.accountGID == plan.expectedAccountGID,
+                  operation.currencyUnit == plan.currencyUnit,
+                  operation.timezone == plan.timezone,
+                  operation.ownerURI == plan.ownerURI,
+                  operation.sourceEventID == plan.sourceEventID else {
+                throw HostError.message("writer v2 creation operation does not match its envelope")
+            }
+            guard operation.transactionGID == deterministicCreationGID(plan: plan) else {
+                throw HostError.message("writer v2 creation GID is not the deterministic source-event identity")
+            }
+            guard operationIDs.insert(operation.operationID).inserted,
+                  transactionGIDs.insert(operation.transactionGID).inserted else {
+                throw HostError.message("writer v2 operation identifiers and transaction GIDs must be unique")
+            }
+            continue
+        }
         guard operation.kind == "reassign_payee",
+              plan.capability == policy.capability,
               operation.capability == policy.capability,
               policy.transactionEntities.contains(operation.transactionEntity),
               !isBlank(operation.operationID),
               !isBlank(operation.transactionGID),
-              !isBlank(operation.targetPayeeGID),
+              let targetPayeeGID = operation.targetPayeeGID,
+              !isBlank(targetPayeeGID),
               !isBlank(operation.ownerURI),
               !isBlank(operation.sourceEventID),
               operation.sourceEventID == plan.sourceEventID,
-              operation.expectedPostcondition.payeeGID == operation.targetPayeeGID,
+              operation.expectedPostcondition?.payeeGID == operation.targetPayeeGID,
               operation.allowedChangedFields == ["payee"] else {
             throw HostError.message("writer v2 operation is unsupported or incomplete")
         }
@@ -735,6 +864,129 @@ func validateWriterPlanV2(_ plan: WriterPlanV2, rawPlan: [String: Any]) throws {
               transactionGIDs.insert(operation.transactionGID).inserted else {
             throw HostError.message("writer v2 operation identifiers and transaction GIDs must be unique")
         }
+    }
+}
+
+func deterministicCreationGID(plan: WriterPlanV2) -> String {
+    let identity: [String: String] = [
+        "owner_uri": plan.ownerURI,
+        "source_event_id": plan.sourceEventID,
+        "store_uuid": plan.storeIdentity.storeUUID,
+    ]
+    let data = try! JSONSerialization.data(withJSONObject: identity, options: [.sortedKeys, .withoutEscapingSlashes])
+    let bytes = Array(SHA256.hash(data: data).prefix(16))
+    let hex = bytes.map { String(format: "%02X", $0) }.joined()
+    return "\(hex.prefix(8))-\(hex.dropFirst(8).prefix(4))-\(hex.dropFirst(12).prefix(4))-\(hex.dropFirst(16).prefix(4))-\(hex.dropFirst(20).prefix(12))"
+}
+
+func validateCreationOperationShape(_ raw: [String: Any], plan: WriterPlanV2) throws {
+    let required: Set<String> = [
+        "operation_id", "kind", "capability", "transaction_entity", "transaction_gid",
+        "account_gid", "owner_uri", "source_event_id", "amount", "currency_unit",
+        "occurred_at", "timezone", "payee_gid", "category_splits", "tag_gids", "note",
+        "refund_reference", "expected_balance_delta", "expected_postcondition",
+    ]
+    guard Set(raw.keys) == required,
+          let kind = raw["kind"] as? String,
+          let capability = raw["capability"] as? String,
+          let entity = raw["transaction_entity"] as? String,
+          let amount = raw["amount"] as? String,
+          let delta = raw["expected_balance_delta"] as? String,
+          let occurredAt = raw["occurred_at"] as? String,
+          let splits = raw["category_splits"] as? [[String: Any]],
+          let tags = raw["tag_gids"] as? [String],
+          raw["payee_gid"] is String || raw["payee_gid"] is NSNull,
+          raw["note"] is String || raw["note"] is NSNull,
+          let postcondition = raw["expected_postcondition"] as? [String: Any],
+          Set(postcondition.keys) == required.subtracting(["operation_id", "kind", "capability", "source_event_id", "expected_postcondition"]),
+          postcondition["transaction_entity"] as? String == entity,
+          postcondition["transaction_gid"] as? String == raw["transaction_gid"] as? String,
+          postcondition["amount"] as? String == amount,
+          postcondition["expected_balance_delta"] as? String == delta else {
+        throw HostError.message("writer v2 creation operation contains unknown, missing, or unreviewed fields")
+    }
+    let expectedPost = raw.filter { !["operation_id", "kind", "capability", "source_event_id", "expected_postcondition"].contains($0.key) }
+    guard NSDictionary(dictionary: postcondition).isEqual(to: expectedPost) else {
+        throw HostError.message("W01 postcondition differs from reviewed fields")
+    }
+    for field in ["operation_id", "transaction_gid", "account_gid", "owner_uri", "source_event_id", "currency_unit", "timezone"] {
+        guard let value = raw[field] as? String, !isBlank(value), value == value.trimmingCharacters(in: .whitespacesAndNewlines) else {
+            throw HostError.message("W01 identity text must be trimmed and nonblank")
+        }
+    }
+    for field in ["payee_gid", "note"] {
+        if let value = raw[field] as? String, isBlank(value) || value != value.trimmingCharacters(in: .whitespacesAndNewlines) {
+            throw HostError.message("W01 optional text must be trimmed and nonblank")
+        }
+    }
+    guard plan.currencyUnit.range(of: "^[A-Z]{3}$", options: .regularExpression) != nil,
+          !occurredAt.contains("."), !plan.createdAt.contains(".") else {
+        throw HostError.message("W01 requires canonical currency and whole-second timestamps")
+    }
+    let instant = try planTimestamp(occurredAt)
+    let offset: Int
+    if occurredAt.hasSuffix("Z") { offset = 0 }
+    else {
+        let suffix = String(occurredAt.suffix(6))
+        guard let hours = Int(suffix.dropFirst().prefix(2)), let minutes = Int(suffix.suffix(2)) else {
+            throw HostError.message("W01 invalid timestamp offset")
+        }
+        offset = (hours * 60 + minutes) * 60 * (suffix.first == "-" ? -1 : 1)
+    }
+    guard TimeZone(identifier: plan.timezone)?.secondsFromGMT(for: instant) == offset else {
+        throw HostError.message("W01 timestamp offset differs from timezone")
+    }
+    func canonicalDecimal(_ value: String) throws -> Decimal {
+        let parsed = try decimalValue(value, field: "creation amount")
+        guard NSDecimalNumber(decimal: parsed).stringValue == value else {
+            throw HostError.message("W01 amounts must be canonical Decimal text")
+        }
+        return parsed
+    }
+    let mappings = [
+        "create_income": ("write.create-income", "DepositTransaction", 1),
+        "create_expense": ("write.create-expense", "WithdrawTransaction", -1),
+        "create_refund": ("write.create-refund", "RefundTransaction", 1),
+    ]
+    let parsedAmount = try canonicalDecimal(amount)
+    let parsedDelta = try canonicalDecimal(delta)
+    guard let mapping = mappings[kind], capability == mapping.0, entity == mapping.1,
+          capability == plan.capability, !isBlank(occurredAt),
+          parsedAmount * Decimal(mapping.2) > 0, parsedDelta == parsedAmount else {
+        throw HostError.message("writer v2 creation kind, amount, or capability is invalid")
+    }
+    _ = try planTimestamp(occurredAt)
+    var categoryGIDs: Set<String> = []
+    var total = Decimal.zero
+    for split in splits {
+        guard Set(split.keys) == ["category_gid", "amount"], let gid = split["category_gid"] as? String,
+              !isBlank(gid), categoryGIDs.insert(gid).inserted, let splitAmount = split["amount"] as? String else {
+            throw HostError.message("writer v2 category split is invalid")
+        }
+        let value = try canonicalDecimal(splitAmount)
+        guard value * parsedAmount > 0, gid == gid.trimmingCharacters(in: .whitespacesAndNewlines) else {
+            throw HostError.message("W01 category split sign or identity is invalid")
+        }
+        total += value
+    }
+    let transactionAmount = try decimalValue(amount, field: "creation amount")
+    if !splits.isEmpty && total != transactionAmount {
+        throw HostError.message("writer v2 category split total does not equal transaction amount")
+    }
+    guard Set(tags).count == tags.count, tags == tags.sorted(),
+          tags.allSatisfy({ !isBlank($0) && $0 == $0.trimmingCharacters(in: .whitespacesAndNewlines) }),
+          splits.compactMap({ $0["category_gid"] as? String }) == categoryGIDs.sorted() else {
+        throw HostError.message("writer v2 tags must be unique nonblank GIDs")
+    }
+    let refund = raw["refund_reference"]
+    if kind == "create_refund" {
+        guard let reference = refund as? [String: Any], Set(reference.keys) == ["original_transaction_entity", "original_transaction_gid"],
+              reference["original_transaction_entity"] as? String == "WithdrawTransaction",
+              let gid = reference["original_transaction_gid"] as? String, !isBlank(gid) else {
+            throw HostError.message("writer v2 refund requires one explicit withdraw reference")
+        }
+    } else if !(refund is NSNull) {
+        throw HostError.message("writer v2 refund reference is unsupported for this kind")
     }
 }
 
@@ -776,6 +1028,24 @@ func planTimestamp(_ value: String) throws -> Date {
     if value.contains(".") { formatter.formatOptions.insert(.withFractionalSeconds) }
     guard let result = formatter.date(from: value) else {
         throw HostError.message("writer v2 timestamp is invalid")
+    }
+    // ISO8601DateFormatter normalizes impossible dates. Compare original wall-clock
+    // components to the parsed instant to reject rollovers and leap-second aliases.
+    let fields = value.prefix(19).split(whereSeparator: { "-T:".contains($0) }).compactMap { Int($0) }
+    var offset = 0
+    if !value.hasSuffix("Z") {
+        let suffix = value.suffix(6)
+        guard let hours = Int(suffix.dropFirst().prefix(2)), let minutes = Int(suffix.suffix(2)),
+              hours < 24, minutes < 60 else { throw HostError.message("writer v2 timestamp offset is invalid") }
+        offset = (hours * 60 + minutes) * 60 * (suffix.first == "-" ? -1 : 1)
+    }
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let components = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second],
+        from: result.addingTimeInterval(TimeInterval(offset)))
+    guard fields.count == 6,
+          fields == [components.year!, components.month!, components.day!, components.hour!, components.minute!, components.second!] else {
+        throw HostError.message("writer v2 timestamp has invalid calendar components")
     }
     return result
 }
@@ -850,7 +1120,10 @@ func resolveV2References(
         throw HostError.message("writer v2 transaction owner does not match plan owner")
     }
     try validateAccountGuards(account, plan: plan)
-    let target = try fetchExactObject(entityName: "Payee", gid: operation.targetPayeeGID, context: context)
+    guard let targetGID = operation.targetPayeeGID else {
+        throw HostError.message("writer v2 payee operation lacks target payee")
+    }
+    let target = try fetchExactObject(entityName: "Payee", gid: targetGID, context: context)
     guard let targetOwner = target.value(forKey: "user") as? NSManagedObject,
           targetOwner.objectID == owner.objectID else {
         throw HostError.message("writer v2 target payee owner does not match transaction owner")
@@ -863,13 +1136,17 @@ func recoverPlanV2(_ plan: WriterPlanV2, container: NSPersistentContainer) throw
     var result: Result<WriterResultV2, Error> = .failure(HostError.message("writer v2 recovery did not run"))
     context.performAndWait {
         do {
+            if let creation = plan.operations.first, creation.kind.hasPrefix("create_") {
+                result = .success(try inspectCreation(creation, plan: plan, context: context))
+                return
+            }
             var recovered: [(WriterOperationV2, NSManagedObject, String?)] = []
             for operation in plan.operations {
                 let (transaction, _) = try resolveV2References(operation, plan: plan, context: context)
                 recovered.append((operation, transaction, payeeGID(transaction)))
             }
             let classification = classifyRecoveryStates(recovered.map {
-                (expectedOld: $0.0.expectedOldPayeeGID, target: $0.0.targetPayeeGID, actual: $0.2)
+                (expectedOld: $0.0.expectedOldPayeeGID, target: $0.0.targetPayeeGID!, actual: $0.2)
             })
             let status = classification == "noop" ? "noop" : "unknown"
             result = .success(WriterResultV2(
@@ -881,7 +1158,7 @@ func recoverPlanV2(_ plan: WriterPlanV2, container: NSPersistentContainer) throw
                         transactionEntity: operation.transactionEntity, transactionGID: operation.transactionGID,
                         durableURI: transaction.objectID.uriRepresentation().absoluteString,
                         durableNumericID: durableNumericID(transaction.objectID), oldPayeeGID: actual,
-                        newPayeeGID: actual
+                        newPayeeGID: actual, postcondition: nil
                     )
                 }
             ))
@@ -901,6 +1178,11 @@ func writePlanV2(
     context.performAndWait {
         do {
             try requireStopped()
+            if let creation = plan.operations.first,
+               ["create_income", "create_expense", "create_refund"].contains(creation.kind) {
+                result = .success(try createTransactionV2(creation, plan: plan, context: context, requireStopped: requireStopped))
+                return
+            }
             var resolved: [(WriterOperationV2, NSManagedObject, NSManagedObject, String?, [String: NSObject])] = []
             for operation in plan.operations {
                 let (transaction, target) = try resolveV2References(operation, plan: plan, context: context)
@@ -908,7 +1190,7 @@ func writePlanV2(
                 resolved.append((operation, transaction, target, oldPayee, try immutableTransactionFingerprint(transaction)))
             }
             let recoveryClassification = classifyRecoveryStates(resolved.map {
-                (expectedOld: $0.0.expectedOldPayeeGID, target: $0.0.targetPayeeGID, actual: $0.3)
+                (expectedOld: $0.0.expectedOldPayeeGID, target: $0.0.targetPayeeGID!, actual: $0.3)
             })
             if recoveryClassification == "noop" {
                 let noops = resolved.map { operation, transaction, _, oldPayee, _ in
@@ -917,7 +1199,7 @@ func writePlanV2(
                         transactionEntity: operation.transactionEntity, transactionGID: operation.transactionGID,
                         durableURI: transaction.objectID.uriRepresentation().absoluteString,
                         durableNumericID: durableNumericID(transaction.objectID), oldPayeeGID: oldPayee,
-                        newPayeeGID: oldPayee
+                        newPayeeGID: oldPayee, postcondition: nil
                     )
                 }
                 result = .success(WriterResultV2(
@@ -952,7 +1234,7 @@ func writePlanV2(
                             entityName: operation.transactionEntity, gid: operation.transactionGID, context: readback
                         )
                         let actualPayee = payeeGID(persisted)
-                        guard actualPayee == operation.expectedPostcondition.payeeGID else {
+                        guard actualPayee == operation.expectedPostcondition?.payeeGID else {
                             throw HostError.message("writer v2 persisted read-back failed for \(operation.transactionGID)")
                         }
                         guard try immutableTransactionFingerprint(persisted) == preimage else {
@@ -967,7 +1249,7 @@ func writePlanV2(
                             transactionEntity: operation.transactionEntity, transactionGID: operation.transactionGID,
                             durableURI: persisted.objectID.uriRepresentation().absoluteString,
                             durableNumericID: durableNumericID(persisted.objectID), oldPayeeGID: oldPayee,
-                            newPayeeGID: actualPayee
+                            newPayeeGID: actualPayee, postcondition: nil
                         ))
                     }
                 } catch { readbackError = error }
@@ -983,6 +1265,324 @@ func writePlanV2(
         }
     }
     return try result.get()
+}
+
+// Core Data Double setters must receive the same conversion used by plan validation.
+// NSDecimalNumber.doubleValue takes a different rounding path for some small values.
+func nativeDouble(_ value: Decimal) -> Double {
+    Double(NSDecimalNumber(decimal: value).stringValue)!
+}
+
+func creationObjects(entity: String, gid: String, context: NSManagedObjectContext) throws -> [NSManagedObject] {
+    let request = NSFetchRequest<NSManagedObject>(entityName: entity)
+    request.predicate = NSPredicate(format: "GID == %@", gid)
+    return try context.fetch(request)
+}
+
+func nativeDecimal(_ object: NSManagedObject, _ key: String) throws -> Decimal {
+    guard let number = object.value(forKey: key) as? NSNumber, number.doubleValue.isFinite,
+          let value = Decimal(string: String(number.doubleValue), locale: Locale(identifier: "en_US_POSIX")) else {
+        throw HostError.message("W01 invalid native decimal \(key)")
+    }
+    return value
+}
+
+func relatedObjects(_ object: NSManagedObject, _ key: String) throws -> Set<NSManagedObject> {
+    guard object.entity.relationshipsByName[key]?.isToMany == true,
+          let result = object.value(forKey: key) as? Set<NSManagedObject> else {
+        throw HostError.message("W01 missing or invalid relationship \(key)")
+    }
+    return result
+}
+
+func requireCreationFixture(_ coordinator: NSPersistentStoreCoordinator) throws {
+    guard coordinator.persistentStores.count == 1,
+          coordinator.metadata(for: coordinator.persistentStores[0])["MoneyWizToolsDisposableFixture"] as? String == "W01-v1" else {
+        throw HostError.message("W01 live creation remains blocked; marked disposable fixture required")
+    }
+}
+
+struct CreationReferences {
+    let account: NSManagedObject
+    let payee: NSManagedObject?
+    let categories: [NSManagedObject]
+    let tags: [NSManagedObject]
+    let original: NSManagedObject?
+    let amount: Decimal
+    let balanceAfter: Decimal
+}
+
+func preflightCreation(_ operation: WriterOperationV2, plan: WriterPlanV2,
+                       context: NSManagedObjectContext, alreadyPresent: Bool) throws -> CreationReferences {
+    guard let coordinator = context.persistentStoreCoordinator else { throw HostError.message("W01 missing coordinator") }
+    try requireCreationFixture(coordinator)
+    let account = try fetchExactObject(entityName: "CashAccount", gid: plan.expectedAccountGID, context: context)
+    guard account.entity.name == "CashAccount",
+          let owner = account.value(forKey: "user") as? NSManagedObject,
+          owner.objectID.uriRepresentation().absoluteString == plan.ownerURI,
+          account.value(forKey: "currencyName") as? String == plan.currencyUnit,
+          (account.value(forKey: "archived") as? NSNumber)?.boolValue == false,
+          account.value(forKey: "onlineBankAccount") == nil else {
+        throw HostError.message("W01 requires an active, same-owner, same-currency disposable CashAccount")
+    }
+    let amount = try decimalValue(operation.amount!, field: "creation amount")
+    let before = try decimalValue(plan.expectedCachedAccountBalance, field: "cached balance")
+    let after = before + amount
+    // Each operand being representable is insufficient: their sum must also survive Double.
+    _ = try decimalValue(NSDecimalNumber(decimal: after).stringValue, field: "resulting balance")
+    guard try nativeDecimal(account, "ballance") == (alreadyPresent ? after : before) else {
+        throw HostError.message("W01 account balance is stale")
+    }
+    func owned(_ entity: String, _ gid: String) throws -> NSManagedObject {
+        let object = try fetchExactObject(entityName: entity, gid: gid, context: context)
+        guard (object.value(forKey: "user") as? NSManagedObject)?.objectID == owner.objectID else {
+            throw HostError.message("W01 \(entity) owner mismatch")
+        }
+        return object
+    }
+    let payee = try operation.payeeGID.map { try owned("Payee", $0) }
+    let categories = try (operation.categorySplits ?? []).map { split -> NSManagedObject in
+        let category = try owned("Category", split.categoryGID)
+        let expectedType = operation.kind == "create_income" ? 2 : 1
+        guard (category.value(forKey: "type") as? NSNumber)?.intValue == expectedType else {
+            throw HostError.message("W01 category type does not match transaction kind")
+        }
+        return category
+    }
+    let tags = try (operation.tagGIDs ?? []).map { try owned("Tag", $0) }
+    var original: NSManagedObject?
+    if let reference = operation.refundReference {
+        let withdrawal = try fetchExactObject(entityName: "WithdrawTransaction", gid: reference.originalTransactionGID, context: context)
+        guard withdrawal.entity.name == "WithdrawTransaction",
+              (withdrawal.value(forKey: "account") as? NSManagedObject)?.objectID == account.objectID,
+              withdrawal.value(forKey: "originalCurrency") as? String == plan.currencyUnit,
+              try nativeDecimal(withdrawal, "amount") < 0,
+              try nativeDecimal(withdrawal, "originalAmount") == nativeDecimal(withdrawal, "amount"),
+              (withdrawal.value(forKey: "voidCheque") as? NSNumber)?.intValue == 0,
+              (withdrawal.value(forKey: "status") as? NSNumber)?.intValue == 1,
+              (withdrawal.value(forKey: "flags") as? NSNumber)?.intValue == 0,
+              withdrawal.value(forKey: "investmentHolding") == nil else {
+            throw HostError.message("W01 refund requires an ordinary same-account withdrawal")
+        }
+        var refunded = Decimal.zero
+        var seen: Set<NSManagedObjectID> = []
+        for link in try relatedObjects(withdrawal, "refundTransactionsLinks") {
+            guard let refund = link.value(forKey: "refundTransaction") as? NSManagedObject,
+                  refund.entity.name == "RefundTransaction",
+                  (refund.value(forKey: "account") as? NSManagedObject)?.objectID == account.objectID,
+                  refund.value(forKey: "originalCurrency") as? String == plan.currencyUnit,
+                  seen.insert(refund.objectID).inserted,
+                  try relatedObjects(refund, "withdrawTransactionsLinks").count == 1 else {
+                throw HostError.message("W01 existing refund graph is ambiguous")
+            }
+            let value = try nativeDecimal(refund, "amount")
+            guard value > 0, try nativeDecimal(refund, "originalAmount") == value else {
+                throw HostError.message("W01 existing refund amount is invalid")
+            }
+            refunded += value
+        }
+        let proposedTotal = refunded + (alreadyPresent ? 0 : amount)
+        guard proposedTotal <= -(try nativeDecimal(withdrawal, "amount")) else {
+            throw HostError.message("W01 refund total exceeds original withdrawal")
+        }
+        original = withdrawal
+    }
+    return CreationReferences(account: account, payee: payee, categories: categories, tags: tags,
+                              original: original, amount: amount, balanceAfter: after)
+}
+
+// Verify requested fields, fixed native initialization, and every remaining attribute/relationship.
+// Model defaults are evidence only for these explicitly disposable experiments.
+func verifyCreatedTransaction(_ transaction: NSManagedObject, operation: WriterOperationV2,
+                              plan: WriterPlanV2, references: CreationReferences) throws {
+    let fixed: [String: Any] = [
+        "GID": operation.transactionGID, "amount": nativeDouble(references.amount),
+        "originalAmount": nativeDouble(references.amount), "originalCurrency": plan.currencyUnit,
+        "originalExchangeRate": 1.0, "date": try planTimestamp(operation.occurredAt!),
+        "objectCreationDate": try planTimestamp(plan.createdAt), "notes": operation.note as Any? ?? NSNull(),
+    ]
+    guard transaction.entity.name == operation.transactionEntity else { throw HostError.message("W01 source identity collision") }
+    for (key, attribute) in transaction.entity.attributesByName {
+        let expected = fixed[key] ?? attribute.defaultValue ?? NSNull()
+        let actual = transaction.value(forKey: key) ?? NSNull()
+        if attribute.attributeType == .doubleAttributeType, let number = expected as? NSNumber {
+            guard try nativeDecimal(transaction, key) == Decimal(string: String(number.doubleValue)) else {
+                throw HostError.message("W01 persisted decimal differs: \(key)")
+            }
+            continue
+        }
+        guard let expectedObject = expected as? NSObject, let actualObject = actual as? NSObject,
+              actualObject.isEqual(expectedObject) else {
+            throw HostError.message("W01 persisted attribute differs: \(key)")
+        }
+    }
+    let scalarRefs: [String: NSManagedObject?] = ["account": references.account, "payee": references.payee]
+    for (key, relationship) in transaction.entity.relationshipsByName {
+        if let expected = scalarRefs[key] {
+            guard (transaction.value(forKey: key) as? NSManagedObject)?.objectID == expected?.objectID else {
+                throw HostError.message("W01 persisted reference differs: \(key)")
+            }
+        } else if key == "tags" {
+            guard try relatedObjects(transaction, key) == Set(references.tags) else { throw HostError.message("W01 persisted tags differ") }
+        } else if key == "categoriesAssigments" {
+            let assignments = try relatedObjects(transaction, key)
+            guard assignments.count == references.categories.count else { throw HostError.message("W01 persisted category count differs") }
+            for (index, category) in references.categories.enumerated() {
+                let matching = assignments.filter { ($0.value(forKey: "category") as? NSManagedObject)?.objectID == category.objectID }
+                guard matching.count == 1, let assignment = matching.first,
+                      try nativeDecimal(assignment, "amount") == decimalValue(operation.categorySplits![index].amount, field: "split"),
+                      (assignment.value(forKey: "assigmentNumber") as? NSNumber)?.intValue == index,
+                      assignment.value(forKey: "budget") == nil,
+                      assignment.value(forKey: "scheduledTransacition") == nil,
+                      assignment.value(forKey: "stringHistoryItem") == nil else {
+                    throw HostError.message("W01 persisted category assignment differs")
+                }
+            }
+        } else if key == "withdrawTransactionsLinks", let original = references.original {
+            let links = try relatedObjects(transaction, key)
+            guard links.count == 1, let link = links.first,
+                  (link.value(forKey: "withdrawTransaction") as? NSManagedObject)?.objectID == original.objectID else {
+                throw HostError.message("W01 persisted refund endpoint differs")
+            }
+        } else if relationship.isToMany {
+            guard try relatedObjects(transaction, key).isEmpty else { throw HostError.message("W01 unexpected relationship: \(key)") }
+        } else if transaction.value(forKey: key) != nil {
+            throw HostError.message("W01 unexpected relationship: \(key)")
+        }
+    }
+}
+
+func creationReceipt(_ operation: WriterOperationV2, plan: WriterPlanV2, classification: String,
+                     objectID: NSManagedObjectID?) -> WriterResultV2 {
+    let success = classification == "applied" || classification == "noop"
+    return WriterResultV2(contractVersion: 2, planID: plan.planID, planDigest: plan.planDigest,
+        classification: classification, verified: success, operations: [WriterOperationResultV2(
+            operationID: operation.operationID, status: success ? classification : "unknown",
+            transactionEntity: operation.transactionEntity, transactionGID: operation.transactionGID,
+            durableURI: objectID?.uriRepresentation().absoluteString,
+            durableNumericID: objectID.map(durableNumericID), oldPayeeGID: nil, newPayeeGID: nil,
+            postcondition: success ? creationPostcondition(operation) : nil)])
+}
+
+func inspectCreation(_ operation: WriterOperationV2, plan: WriterPlanV2,
+                     context: NSManagedObjectContext, saved: Bool = false) throws -> WriterResultV2 {
+    let existing = try creationObjects(entity: "SyncObject", gid: operation.transactionGID, context: context)
+    guard existing.count <= 1 else { throw HostError.message("W01 source identity is ambiguous") }
+    let refs = try preflightCreation(operation, plan: plan, context: context, alreadyPresent: !existing.isEmpty)
+    guard let transaction = existing.first else {
+        guard !saved else { throw HostError.message("W01 persisted creation is missing") }
+        return creationReceipt(operation, plan: plan, classification: "retry_safe", objectID: nil)
+    }
+    try verifyCreatedTransaction(transaction, operation: operation, plan: plan, references: refs)
+    return creationReceipt(operation, plan: plan, classification: saved ? "applied" : "noop", objectID: transaction.objectID)
+}
+
+struct CreationPreimage {
+    let objectID: NSManagedObjectID
+    let fingerprint: [String: NSObject]
+    let allowedKeys: Set<String>
+}
+
+func creationPreimages(_ refs: CreationReferences, context: NSManagedObjectContext) throws -> [CreationPreimage] {
+    var results: [CreationPreimage] = []
+    for name in ["SyncObject", "User", "CategoryAssigment", "WithdrawRefundTransactionLink"] {
+        for object in try context.fetch(NSFetchRequest<NSManagedObject>(entityName: name)) {
+            var allowed: Set<String> = []
+            if object.objectID == refs.account.objectID { allowed = ["attribute:ballance", "relationship:transactionsHistory"] }
+            if object.objectID == refs.payee?.objectID || refs.tags.contains(object) { allowed.insert("relationship:transactions") }
+            if refs.categories.contains(object) { allowed.insert("relationship:categoryAssigments") }
+            if object.objectID == refs.original?.objectID { allowed.insert("relationship:refundTransactionsLinks") }
+            var fingerprint = try immutableTransactionFingerprint(object)
+            // The shared payee helper intentionally excludes payee; creation preserves existing payees too.
+            if object.entity.relationshipsByName["payee"] != nil {
+                fingerprint["relationship:payee"] = (object.value(forKey: "payee") as? NSManagedObject)
+                    .map { $0.objectID.uriRepresentation().absoluteString as NSString } ?? NSNull()
+            }
+            results.append(CreationPreimage(objectID: object.objectID,
+                fingerprint: fingerprint.filter { !allowed.contains($0.key) }, allowedKeys: allowed))
+        }
+    }
+    return results
+}
+
+func verifyCreationPreimages(_ preimages: [CreationPreimage], context: NSManagedObjectContext) throws {
+    for preimage in preimages {
+        let object = try context.existingObject(with: preimage.objectID)
+        var fingerprint = try immutableTransactionFingerprint(object)
+        if object.entity.relationshipsByName["payee"] != nil {
+            fingerprint["relationship:payee"] = (object.value(forKey: "payee") as? NSManagedObject)
+                .map { $0.objectID.uriRepresentation().absoluteString as NSString } ?? NSNull()
+        }
+        guard fingerprint.filter({ !preimage.allowedKeys.contains($0.key) }) == preimage.fingerprint else {
+            throw HostError.message("W01 modified an immutable or unrelated existing field")
+        }
+    }
+}
+
+func createTransactionV2(_ operation: WriterOperationV2, plan: WriterPlanV2,
+                         context: NSManagedObjectContext,
+                         requireStopped: () throws -> Void) throws -> WriterResultV2 {
+    let prior = try inspectCreation(operation, plan: plan, context: context)
+    if prior.classification == "noop" { return prior }
+    let refs = try preflightCreation(operation, plan: plan, context: context, alreadyPresent: false)
+    let preimages = try creationPreimages(refs, context: context)
+    // All references and numerical postconditions have been resolved before any insertion.
+    let transaction = NSEntityDescription.insertNewObject(forEntityName: operation.transactionEntity, into: context)
+    transaction.setValue(operation.transactionGID, forKey: "GID")
+    transaction.setValue(nativeDouble(refs.amount), forKey: "amount")
+    transaction.setValue(nativeDouble(refs.amount), forKey: "originalAmount")
+    transaction.setValue(plan.currencyUnit, forKey: "originalCurrency")
+    transaction.setValue(1.0, forKey: "originalExchangeRate")
+    transaction.setValue(try planTimestamp(operation.occurredAt!), forKey: "date")
+    transaction.setValue(try planTimestamp(plan.createdAt), forKey: "objectCreationDate")
+    transaction.setValue(operation.note, forKey: "notes")
+    transaction.setValue(refs.account, forKey: "account")
+    transaction.setValue(refs.payee, forKey: "payee")
+    transaction.setValue(NSSet(array: refs.tags), forKey: "tags")
+    for (index, category) in refs.categories.enumerated() {
+        let assignment = NSEntityDescription.insertNewObject(forEntityName: "CategoryAssigment", into: context)
+        assignment.setValue(nativeDouble(try decimalValue(operation.categorySplits![index].amount, field: "split")), forKey: "amount")
+        assignment.setValue(index, forKey: "assigmentNumber")
+        assignment.setValue(category, forKey: "category")
+        assignment.setValue(transaction, forKey: "transaction")
+    }
+    if let original = refs.original {
+        let link = NSEntityDescription.insertNewObject(forEntityName: "WithdrawRefundTransactionLink", into: context)
+        link.setValue(original, forKey: "withdrawTransaction")
+        link.setValue(transaction, forKey: "refundTransaction")
+    }
+    refs.account.setValue(nativeDouble(refs.balanceAfter), forKey: "ballance")
+    try requireStopped()
+#if MONEYWIZ_TOOLS_TESTING
+    if writerTestCrashPoint == .beforeSave { _exit(86) }
+#endif
+    try context.save()
+#if MONEYWIZ_TOOLS_TESTING
+    if writerTestCrashPoint == .afterSave { _exit(87) }
+#endif
+    // A new queue/context fetches objects from the persistent store, never from the mutation context.
+    let readback = NSManagedObjectContext(concurrencyType: .privateQueueConcurrencyType)
+    readback.persistentStoreCoordinator = context.persistentStoreCoordinator
+    var result: Result<WriterResultV2, Error> = .failure(HostError.message("W01 read-back did not run"))
+    readback.performAndWait {
+        result = Result {
+            let receipt = try inspectCreation(operation, plan: plan, context: readback, saved: true)
+            try verifyCreationPreimages(preimages, context: readback)
+            return receipt
+        }
+    }
+    return try result.get()
+}
+
+func creationPostcondition(_ operation: WriterOperationV2) -> CreateTransactionPostconditionV2 {
+    CreateTransactionPostconditionV2(
+        transactionEntity: operation.transactionEntity, transactionGID: operation.transactionGID,
+        accountGID: operation.accountGID!, ownerURI: operation.ownerURI, amount: operation.amount!,
+        currencyUnit: operation.currencyUnit!, occurredAt: operation.occurredAt!, timezone: operation.timezone!,
+        payeeGID: operation.payeeGID, categorySplits: operation.categorySplits ?? [], tagGIDs: operation.tagGIDs ?? [],
+        note: operation.note, refundReference: operation.refundReference,
+        expectedBalanceDelta: operation.expectedBalanceDelta!
+    )
 }
 
 func readModelChecksum(at modelURL: URL) throws -> String {
@@ -1122,6 +1722,18 @@ func run() throws {
         guard plan.appIdentity.modelPath == selectedModelPath,
               plan.storeIdentity.storeUUID == actualStoreIdentity else {
             throw HostError.message("writer v2 runtime store or model identity does not match reviewed plan")
+        }
+        if plan.capability.hasPrefix("write.create-") {
+            guard moneyWizApp.bundleIdentifier == "com.moneywiz.personalfinance",
+                  installedVersion == "2026.37.1",
+                  moneyWizApp.object(forInfoDictionaryKey: "CFBundleVersion") as? String == "449" else {
+                throw HostError.message("W01 disposable evidence is limited to TestFlight 2026.37.1 build 449")
+            }
+            let metadata = try NSPersistentStoreCoordinator.metadataForPersistentStore(
+                ofType: NSSQLiteStoreType, at: arguments.store, options: nil)
+            guard metadata["MoneyWizToolsDisposableFixture"] as? String == "W01-v1" else {
+                throw HostError.message("W01 live creation remains blocked; marked disposable fixture required")
+            }
         }
         let container = try loadContainer(
             storeURL: arguments.store, modelURL: arguments.model,
