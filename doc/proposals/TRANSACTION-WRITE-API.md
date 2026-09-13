@@ -153,7 +153,7 @@ Define a new contract version and an independently versioned operation schema.
 | --- | --- |
 | `contract_version`, operation schema versions | Reject unknown shapes and preserve v1 reassignment |
 | `plan_id`, canonical digest, creation time | Bind the reviewed proposal to exact operations |
-| Store UUID, owner GID, profile, model checksum, app identity | Prevent cross-container, cross-user and stale-model writes |
+| Store UUID, owner local identity, profile, model checksum, app identity | Prevent cross-container, cross-user and stale-model writes; model-48 User has no GID |
 | Source interval, timezone, source evidence references | Make accounting scope reviewable without embedding credentials |
 | `operations[]`: operation ID, kind, capability, dependencies | Typed command union; no arbitrary entity/key-value mutation |
 | Exact entity/GID and temporary creation reference | Address existing objects; connect newly created paired objects |
@@ -166,6 +166,13 @@ The digest is an integrity check, not user authentication. A source hash proves 
 not financial truth. Authorization comes from the user's task and reviewed scope.
 The host validates every field it relies on, including owner and old values, rather
 than trusting Python to have validated them.
+
+Compiled model inspection during P0 established that `User` is a root entity
+without `GID`. Bind its store-local object identity to the store UUID instead.
+Category/refund link entities also lack GIDs; use local object identities and
+expected endpoint tuples for those relationships. Monetary attributes are native
+Double values, so Decimal plan values need an explicit conversion/read-back
+contract. These schema facts do not establish new-operation application acceptance.
 
 For results return operation status (`applied`, `noop`, `rejected`, `unknown`), entity
 and GID, numeric ID resolved after save, before/after fields, paired IDs, affected

@@ -6,11 +6,16 @@ These rules do not apply outside of work under `moneywiz-tools/`.
 
 - Follow `doc/proposals/TRANSACTION-WRITE-IMPLEMENTATION-PLAN.md` for phase scope
   and progressive TODO refinement.
-- Give each implementation phase its own `release/` branch. Create individual
-  implementation branches from that phase branch using the `feat/` prefix.
+- Use `release/0.3.0` to integrate P0, P1F and P1. Later release scopes get their
+  own `release/` branches. Create individual implementation branches from the
+  owning release branch using the `feat/` prefix.
 - Target implementation pull requests at their owning release branch. Require
   independent code review on GitHub and resolution of actionable findings before
   merging; an implementation agent's self-review is not sufficient.
+- Run `$scoped-pre-pr-remediation` before committing/pushing the final changes
+  and creating a PR. Then run `$codex-pr-review-remediation-loop`, reusing the
+  same coordinator and ledger until local readiness and current-head remote
+  clean evidence agree. Do not duplicate active review requests or monitors.
 - Complete phase validation and application acceptance before phase promotion.
   A release branch name alone does not assign a version or enable capabilities.
 
@@ -52,3 +57,6 @@ These rules apply only to work under `moneywiz-api/`.
 - Schema profiles must define aliases per consumer or operation. Do not infer
   one global active alias from physical column presence when holdings and
   transactions can use different columns; cover mixed-layout regressions.
+- Keep schema nullability aligned with the model type and validator contract.
+  Relax conversion only for an evidenced legacy shape with a regression test;
+  do not generalize an observed zero value into unobserved NULL acceptance.

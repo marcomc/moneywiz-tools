@@ -115,6 +115,8 @@ def test_source_dispatcher_help_does_not_require_configured_database(
         "tags",
         "transactions",
         "holdings",
+        "snapshot",
+        "identity",
         "reassign-payees-by-id",
         "merge-duplicate-payees",
         "compatibility",
@@ -200,7 +202,7 @@ def test_concepts_links_to_pinned_installed_dependency_source() -> None:
     revision = moneywiz_api_dependency.rsplit("@", maxsplit=1)[1]
     pinned_source_url = (
         "https://github.com/marcomc/moneywiz-api/blob/"
-        f"{revision}/src/moneywiz_api/utils.py#L6-L15"
+        f"{revision}/src/moneywiz_api/utils.py"
     )
     concepts = (repo_root / "doc/CONCEPTS.md").read_text()
     dependency_ticket = (

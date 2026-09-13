@@ -470,7 +470,27 @@ func writePlan(_ plan: WriterPlan, container: NSPersistentContainer) throws -> W
     return try result.get()
 }
 
+func readModelChecksum(at modelURL: URL) throws -> String {
+    configureTransformers()
+    guard FileManager.default.fileExists(atPath: modelURL.path),
+          let model = NSManagedObjectModel(contentsOf: modelURL) else {
+        throw HostError.message("cannot load managed-object model")
+    }
+    // Attaching a model freezes it for a stable checksum; no store is opened.
+    let coordinator = NSPersistentStoreCoordinator(managedObjectModel: model)
+    return coordinator.managedObjectModel.versionChecksum
+}
+
 func run() throws {
+    let invocation = Array(CommandLine.arguments.dropFirst())
+    if invocation.first == "--model-checksum" {
+        guard invocation.count == 2 else {
+            throw HostError.message("usage: MoneyWizTools --model-checksum PATH")
+        }
+        let checksum = try readModelChecksum(at: URL(fileURLWithPath: invocation[1]))
+        FileHandle.standardOutput.write(Data((checksum + "\n").utf8))
+        return
+    }
     guard Bundle.main.bundleIdentifier == expectedBundleIdentifier else {
         throw HostError.message("host must run from the installed MoneyWiz Tools.app bundle")
     }

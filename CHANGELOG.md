@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.3.0] - Unreleased
+
+### Added
+
+- Read-only runtime identity discovery binding the application edition/build,
+  store UUID, local owner identity and exact Core Data model checksum.
+- Reconciliation snapshots with explicit read completeness, relationship and
+  transfer audits, and timezone-aware date cutoffs.
+- Optional completeness diagnostics for account, transaction and holding lists;
+  partial reads return exit status 3 instead of appearing complete.
+
+### Changed
+
+- Defined the 0.3.0 P0/P1F/P1 implementation and acceptance sequence, private
+  runtime-journal retention, and CLI-first reconciliation requirements.
+- Required local scoped remediation before each implementation PR and a clean,
+  current-head GitHub Codex review before integration into the release branch.
+
+New write operations remain disabled until their implementation and independent
+application-acceptance gates are satisfied. This entry is not write clearance.
+
 ## [0.2.1] - 2026-08-13
 
 ### Changed

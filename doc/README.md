@@ -10,6 +10,7 @@ design documents explain implementation constraints after the task is clear.
 | --- | --- |
 | Install, relocate, update, or remove the app bundle | [Bundle Installation](BUNDLE-INSTALLATION.md) |
 | Configure the store and run everyday commands | [Project README](../README.md) |
+| Inspect reconciliation completeness, graph and runtime identity | [Reconciliation Reads](RECONCILIATION-READS.md) |
 | Run and revalidate a live payee reassignment | [Live Write Compatibility](LIVE-WRITE-COMPATIBILITY.md) |
 | Find commands and their intended scope | [Functions Reference](../FUNCTIONS.md) |
 

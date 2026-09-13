@@ -105,9 +105,9 @@ interface has four command groups:
 
 | Group | Commands | Access |
 | --- | --- | --- |
-| Reads | `users`, `accounts`, `categories`, `payees`, `tags`, `transactions`, `holdings` | Read-only database access |
+| Reads | `users`, `accounts`, `categories`, `payees`, `tags`, `transactions`, `holdings`, `snapshot` | Read-only database access |
 | Writes and plans | `reassign-payees-by-id`, `merge-duplicate-payees` | Dry-run by default; live apply is capability-gated |
-| Introspection | `compatibility`, `schema`, `summary`, `stats`, `record` | Read-only inspection and reports |
+| Introspection | `identity`, `compatibility`, `schema`, `summary`, `stats`, `record` | Read-only inspection and reports |
 | Interactive | `shell` | Read-only API shell |
 
 Common read-only operations include:
@@ -199,6 +199,7 @@ command table and exact examples.
 
 | Need | Document |
 | --- | --- |
+| Inspect complete reconciliation reads and runtime identity | [Reconciliation Reads](doc/RECONCILIATION-READS.md) |
 | Install, relocate, or remove the app | [Bundle Installation](doc/BUNDLE-INSTALLATION.md) |
 | Understand the live writer | [Core Data Writer](doc/CORE-DATA-WRITER.md) |
 | Operate and revalidate live writes | [Live Write Compatibility](doc/LIVE-WRITE-COMPATIBILITY.md) |

@@ -153,6 +153,19 @@ def test_resolve_model_accepts_exact_mom_manifest_leaf_without_appending_twice(
     assert reassign_payees_by_id._resolve_model() == model
 
 
+def test_resolve_model_accepts_testflight_bundle(
+    fake_moneywiz_app: Callable[[], tuple[Path, Path, Path]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app, _model_directory, model = fake_moneywiz_app()
+    with (app / "Contents/Info.plist").open("wb") as info_file:
+        plistlib.dump({"CFBundleIdentifier": "com.moneywiz.personalfinance"}, info_file)
+    monkeypatch.delenv("MONEYWIZ_MODEL_PATH", raising=False)
+    monkeypatch.setenv("MONEYWIZ_APP", str(app))
+
+    assert reassign_payees_by_id._resolve_model() == model
+
+
 @pytest.mark.parametrize(
     "version_name",
     [

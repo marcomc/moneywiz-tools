@@ -1,28 +1,32 @@
-#!/usr/bin/env python3
 from __future__ import annotations
 
 import argparse
+import json
 import os
 from pathlib import Path
-from datetime import datetime
-import json
+from zoneinfo import ZoneInfo
 
 from moneywiz_api.moneywiz_api import MoneywizApi
+from read_support import (
+    json_value,
+    report_completeness,
+    run_read_command,
+    selected_transactions,
+    transaction_time,
+)
 
 
 def default_db() -> Path:
     return Path(__file__).resolve().parents[1] / "tests/test_db.sqlite"
 
 
-def parse_date(val: str | None) -> datetime | None:
-    if not val:
-        return None
-    return datetime.fromisoformat(val)
-
-
 def main() -> int:
-    ap = argparse.ArgumentParser(description="List MoneyWiz transactions for an account")
-    ap.add_argument("--db", type=Path, default=default_db(), help="Path to MoneyWiz sqlite DB")
+    ap = argparse.ArgumentParser(
+        description="List MoneyWiz transactions for an account"
+    )
+    ap.add_argument(
+        "--db", type=Path, default=default_db(), help="Path to MoneyWiz sqlite DB"
+    )
     ap.add_argument(
         "--account",
         type=int,
@@ -35,9 +39,27 @@ def main() -> int:
         default=0,
         help="Max rows to output (0 = no limit; default 0)",
     )
-    ap.add_argument("--until", type=str, help="Include transactions up to this ISO date (YYYY-MM-DD)")
-    ap.add_argument("--with-categories", action="store_true", help="Include category assignments")
-    ap.add_argument("--with-tags", action="store_true", help="Include tags for each transaction")
+    ap.add_argument(
+        "--until",
+        type=str,
+        help="Inclusive ISO date (whole day) or offset-qualified timestamp",
+    )
+    ap.add_argument(
+        "--timezone",
+        default="UTC",
+        help="IANA timezone for date cutoff and output (default UTC)",
+    )
+    ap.add_argument(
+        "--diagnostics",
+        action="store_true",
+        help="Wrap JSON rows with completeness metadata",
+    )
+    ap.add_argument(
+        "--with-categories", action="store_true", help="Include category assignments"
+    )
+    ap.add_argument(
+        "--with-tags", action="store_true", help="Include tags for each transaction"
+    )
     ap.add_argument(
         "--all-fields",
         action="store_true",
@@ -55,43 +77,27 @@ def main() -> int:
     )
     ap.add_argument("--format", choices=["table", "json"], default="table")
     args = ap.parse_args()
+    if args.diagnostics and (args.format != "json" or args.list_fields):
+        ap.error("--diagnostics requires --format json without --list-fields")
 
-    api = MoneywizApi(args.db)
-    until_dt = parse_date(args.until) or datetime.now()
-    if args.account is not None:
-        txs = api.transaction_manager.get_all_for_account(args.account, until=until_dt)
-    else:
-        txs = api.transaction_manager.get_all(until=until_dt)
+    api = MoneywizApi(args.db, managers=("accounts", "transactions", "payees"))
+    txs = selected_transactions(api, args.account, args.until, args.timezone)
     # Sort newest first and apply optional limit (0 or negative means no limit)
     txs = list(reversed(txs))
     if args.limit and args.limit > 0:
         txs = txs[: args.limit]
 
-    def sanitize(obj):
-        try:
-            from decimal import Decimal
-        except Exception:
-            Decimal = None  # type: ignore
-        try:
-            from datetime import datetime as _dt
-        except Exception:
-            _dt = None  # type: ignore
-        if isinstance(obj, dict):
-            return {k: sanitize(v) for k, v in obj.items()}
-        if isinstance(obj, list):
-            return [sanitize(x) for x in obj]
-        if Decimal is not None and isinstance(obj, Decimal):
-            return str(obj)
-        if _dt is not None and isinstance(obj, _dt):
-            return obj.isoformat(sep=" ", timespec="seconds")
-        return obj
+    sanitize = json_value
 
     rows: list[dict] = []
+    enrichment_errors = []
     need_enrich = bool(args.all_fields or args.fields or args.list_fields)
     for t in txs:
         item: dict = {
             "id": t.id,
-            "datetime": t.datetime.isoformat(sep=" ", timespec="seconds"),
+            "datetime": transaction_time(t)
+            .astimezone(ZoneInfo(args.timezone))
+            .isoformat(timespec="seconds"),
             "account": getattr(t, "account", None),
             "amount": str(t.amount),
             "description": t.description,
@@ -101,8 +107,10 @@ def main() -> int:
             acc = api.account_manager.get(getattr(t, "account", None))
             if acc is not None:
                 item["account_name"] = acc.name
-        except Exception:
-            pass
+        except (AttributeError, KeyError, TypeError, ValueError) as exc:
+            enrichment_errors.append(
+                {"id": t.id, "field": "account_name", "error": type(exc).__name__}
+            )
         # Add payee id and payee name (where applicable)
         try:
             payee_id = getattr(t, "payee", None)
@@ -111,14 +119,19 @@ def main() -> int:
                 p = api.payee_manager.get(payee_id)
                 if p is not None:
                     item["payee_name"] = p.name
-        except Exception:
-            pass
+        except (AttributeError, KeyError, TypeError, ValueError) as exc:
+            enrichment_errors.append(
+                {"id": t.id, "field": "payee_name", "error": type(exc).__name__}
+            )
         # Enrich with all known fields if requested or when fields/list-fields specified
         if need_enrich:
             item["__type__"] = type(t).__name__
             try:
                 model_fields = sanitize(t.as_dict())
-            except Exception:
+            except (AttributeError, KeyError, TypeError, ValueError) as exc:
+                enrichment_errors.append(
+                    {"id": t.id, "field": "model_fields", "error": type(exc).__name__}
+                )
                 model_fields = {}
             # Merge, keeping the simple keys already set
             for k, v in model_fields.items():
@@ -127,8 +140,10 @@ def main() -> int:
             # Add raw filtered columns for complete visibility
             try:
                 item["__raw"] = sanitize(t.filtered())
-            except Exception:
-                pass
+            except (AttributeError, KeyError, TypeError, ValueError) as exc:
+                enrichment_errors.append(
+                    {"id": t.id, "field": "raw", "error": type(exc).__name__}
+                )
             # Add complete raw row (unfiltered) to truly show all available fields
             raw_all_sanitized = None
             try:
@@ -139,18 +154,33 @@ def main() -> int:
                         if isinstance(v, (bytes, bytearray, memoryview)):
                             return f"BLOB({len(v)} bytes)"
                         return v
-                    raw_all_sanitized = sanitize({k: _blob_safe(v) for k, v in raw_all.items()})
+
+                    raw_all_sanitized = sanitize(
+                        {k: _blob_safe(v) for k, v in raw_all.items()}
+                    )
                     item["__raw_all"] = raw_all_sanitized
-            except Exception:
-                pass
+            except (AttributeError, KeyError, TypeError, ValueError) as exc:
+                enrichment_errors.append(
+                    {"id": t.id, "field": "raw_all", "error": type(exc).__name__}
+                )
             # Do not merge raw DB columns into top-level; keep them under __raw/__raw_all
         if args.with_categories:
             cats = api.transaction_manager.category_for_transaction(t.id) or []
-            item["categories"] = [{"category_id": cid, "amount": str(amt)} for cid, amt in cats]
+            item["categories"] = [
+                {"category_id": cid, "amount": str(amt)} for cid, amt in cats
+            ]
         if args.with_tags:
             tags = api.transaction_manager.tags_for_transaction(t.id) or []
             item["tags"] = tags
         rows.append(item)
+
+    report, status = report_completeness(api)
+    api.close()
+    if enrichment_errors:
+        report["complete"] = False
+        report["enrichment_errors"] = enrichment_errors
+        print(json.dumps({"enrichment_errors": enrichment_errors}), file=os.sys.stderr)
+        status = 3
 
     # If only listing columns, print union of keys and exit
     if args.list_fields:
@@ -162,10 +192,15 @@ def main() -> int:
         keys.discard("__raw_all")
         for k in sorted(keys):
             print(k)
-        return 0
+        return status
 
     if args.format == "json":
-        print(json.dumps(rows, indent=2))
+        print(
+            json.dumps(
+                {"rows": rows, "completeness": report} if args.diagnostics else rows,
+                indent=2,
+            )
+        )
     else:
         # Determine headers
         headers = None
@@ -194,12 +229,21 @@ def main() -> int:
             remaining = [k for k in sorted(keys) if k not in preferred]
             headers = [k for k in preferred if k in keys] + remaining
         if not headers:
-            headers = ["id", "datetime", "account", "account_name", "amount", "description"]
+            headers = [
+                "id",
+                "datetime",
+                "account",
+                "account_name",
+                "amount",
+                "description",
+            ]
         # Pretty-print a fixed-width table that preserves empty fields
         # Build matrix of string values
         table_rows = []
         for r in rows:
-            table_rows.append([str(r.get(h, "")) if r.get(h, "") is not None else "" for h in headers])
+            table_rows.append(
+                [str(r.get(h, "")) if r.get(h, "") is not None else "" for h in headers]
+            )
 
         # Compute column widths
         widths = []
@@ -221,8 +265,8 @@ def main() -> int:
             print("\n# categories: use --format json to see per-transaction details")
         if args.with_tags:
             print("# tags: use --format json to see per-transaction details")
-    return 0
+    return status
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(run_read_command(main))

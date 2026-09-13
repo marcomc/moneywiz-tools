@@ -1,6 +1,6 @@
 # Transaction write implementation plan
 
-Status: roadmap recorded on 12 September 2026; implementation has not started.
+Status: implementation started on 12 September 2026; P0 is active.
 The first delivery scope is confirmed. Later phases describe intended scope and
 require phase preparation before executable tasks are added.
 
@@ -30,7 +30,7 @@ No proposed command or roadmap entry constitutes an enabled write capability.
 | Initial application acceptance target: MoneyWiz TestFlight | Confirmed; rediscover exact app, store and model during execution |
 | Use Obsidian for private recovery/session information | Confirmed in principle |
 | Create detailed TODO tasks progressively as each phase is prepared | Requested by user |
-| Separate release branch for each phase; child implementation branches with independent GitHub review | Required by user |
+| Integrate P0/P1F/P1 on `release/0.3.0`; child implementation branches with independent GitHub review | Confirmed by execution goal; supersedes separate branches for these phases |
 | Read models and database discovery belong in `moneywiz-api` | Existing architecture, retained |
 | Python plans and native Core Data persistence belong in MoneyWiz Tools | Existing architecture, retained |
 | Machine journal stored locally, readable reports in Obsidian | Confirmed by user |
@@ -45,10 +45,12 @@ Extend the existing Swift Core Data host. Preserve verified v1 payee reassignmen
 and its guards. Each new operation and meaningful variant needs an independently
 verified capability; direct SQLite mutation is outside this design.
 
-This roadmap authorizes no implementation or live acceptance by itself. Current
-work is documentation on `release/0.3.0`. A future instruction to implement a phase establishes its
-execution scope; source inspection and ordinary implementation decisions should
-then proceed without repeatedly seeking the same approval.
+The execution goal authorizes P0/P1F/P1 implementation, scoped commits, pushes,
+PR creation/review and merges into `release/0.3.0`, including required API fork
+changes. Main-branch merges, release publication and fabricated production
+transactions are outside that authority. Live financial writes require an
+authorized real reconciliation scope. Routine technical choices proceed from
+the confirmed requirements without repeating resolved questions.
 
 ## Progressive phase preparation
 
@@ -92,14 +94,23 @@ this planning update does not change the installed product version.
 | --- | --- | --- |
 | P0 documentation baseline | `release/0.3.0` | Documentation validation; separate from executable changes |
 | Individual implementation | `feat/<task-id>-<topic>` from the owning phase branch | PR targets that phase branch; independent GitHub code review and required checks |
-| P1F, P1, P2 and P3 | New `release/<phase>-<topic>` branch when that phase starts | Previous phase accepted and integrated; scope/tasks refined first |
-| Completed phase | Release branch PR to `main` | Independent review, phase exit evidence and version/release decision |
+| P1F and P1 | Child implementation branches of `release/0.3.0` | Prerequisite implementation reviewed and integrated; scope/tasks refined first |
+| P2 and P3 | Future release branches with separately defined scope | Not part of 0.3.0 |
+| Completed 0.3.0 delivery | Reviewed integration on `release/0.3.0` | Exit evidence; main merge and publication require separate authorization |
 
 Use the actual phase release branch as the review base, not `main`, for each
 implementation PR. Each reviewer must be independent of the implementation agent
 and inspect the current PR changes. Record review evidence on GitHub; address
 actionable findings and rerun affected checks after changes before merging.
 Local tests or self-review alone do not satisfy this requirement.
+
+Run `$scoped-pre-pr-remediation` before PR creation and reach local `READY`.
+Commit and push the implementation/remediations, create the PR, then run
+`$codex-pr-review-remediation-loop` using the same coordinator and ledger.
+Observe an existing active pass before requesting one; monitor each pass once.
+After fixes, push and revalidate affected evidence. Merge only with local
+`READY`, passing required checks and a verified clean Codex result for the
+current pushed head. Reuse unchanged evidence without skipping required gates.
 
 Track the phase branch, implementation branch, PR and review evidence against
 each activated TODO task. Dependent task branches start from the release branch
@@ -287,20 +298,23 @@ most 45 seconds during every live import/reconciliation, including CLI work.
 
 ## Agent coordination
 
-Use this task as the control point. At implementation time, create user-visible
-implementation/control tasks when requested; use bounded subagents for delegated
-work within a task. Creating this roadmap does not dispatch either kind of work.
+Use this task as the control point. For each future implementation branch and
+pull request, create one user-visible Codex task as its owner. That same visible
+owner handles review remediation, using bounded supporting subagents where useful,
+while this task coordinates phase scope, dependencies, integration and acceptance.
+Existing P0 branches predate this ownership rule and do not require duplicate
+replacement tasks. Creating this roadmap does not dispatch any work.
 
 | Role | Recommended model / reasoning | Ownership |
 | --- | --- | --- |
 | Main control | `gpt-6-astra` / `xhigh` | Phase scope, decisions, dependencies, integration and acceptance ledger |
-| API/read worker | `gpt-6-astra` / `high` | P0 models, scoped loading, completeness and read regressions |
-| Runtime identity worker | `gpt-6-astra` / `high` | App/store/model discovery and identity tests |
+| API/read worker | `gpt-5.6-sol` / `high` | P0 models, scoped loading, completeness and read regressions; escalate difficult contracts to Astra |
+| Runtime identity worker | `gpt-5.6-sol` / `high` | App/store/model discovery and identity tests |
 | Fixture/evidence worker | `gpt-5.6-sol` / `high` | Synthetic fixtures, native-reference comparisons and test scenarios |
 | Foundation/native writer owner | `gpt-6-astra` / `xhigh` | Shared contract, persistence, recovery and later transfer semantics |
-| Operation worker | `gpt-6-astra` / `high` | One bounded W operation and its tests; use `xhigh` for complex graph changes |
+| Operation worker | `gpt-5.6-sol` / `high` | One bounded W operation and its tests; use Astra/high for difficult logic and Astra/xhigh for unresolved persistence contracts |
 | Independent reviewer | `gpt-6-astra` / `high` | Changed-code review, negative paths and evidence sufficiency |
-| Documentation/skill worker | `gpt-5.6-sol` / `medium` | Implemented command docs, verified capability guidance and skill checks |
+| Documentation/skill worker | `gpt-5.6-sol` / `high` | Implemented command docs, verified capability guidance and skill checks |
 
 These are recommendations, not fixed future availability; check supported model
 and reasoning combinations when dispatching. Current capacity permits the controller
@@ -331,7 +345,7 @@ promote a whole model or phase based on one operation's success.
 
 | Phase | Current state | Completion evidence |
 | --- | --- | --- |
-| P0 | First-delivery scope confirmed; tasks not yet refined | Pending |
+| P0 | Active: API reads, runtime identity and CLI snapshots | Pending |
 | P1F | First-delivery scope and journal policy confirmed; interface/tasks to refine | Pending |
 | P1 | First-delivery scope confirmed; operation tasks not yet refined | Pending |
 | P2 | Roadmap only; prepare after earlier evidence | Pending |

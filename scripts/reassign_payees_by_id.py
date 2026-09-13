@@ -6,7 +6,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import plistlib
 import sqlite3
 import subprocess
 import tempfile
@@ -21,9 +20,15 @@ from compatibility import (
     CompatibilityError,
     require_write_capability,
 )
+from runtime_identity import DEFAULT_MONEYWIZ_APP as RUNTIME_DEFAULT_MONEYWIZ_APP
+from runtime_identity import (
+    SETAPP_BUNDLE_IDENTIFIER,
+    RuntimeIdentityError,
+    resolve_model,
+)
 
-DEFAULT_MONEYWIZ_APP = Path("/Applications/Setapp/MoneyWiz 2026.app")
-EXPECTED_BUNDLE_IDENTIFIER = "com.moneywiz.personalfinance-setapp"
+DEFAULT_MONEYWIZ_APP = RUNTIME_DEFAULT_MONEYWIZ_APP
+EXPECTED_BUNDLE_IDENTIFIER = SETAPP_BUNDLE_IDENTIFIER
 
 TRANSACTION_TYPENAMES: tuple[str, ...] = (
     "DepositTransaction",
@@ -509,84 +514,10 @@ def _configured_bundle_directory() -> Path:
 
 
 def _resolve_model() -> Path:
-    configured = os.environ.get("MONEYWIZ_MODEL_PATH")
-    if configured:
-        model = Path(configured).expanduser()
-        if model.is_file():
-            return model
-        raise ReassignmentError(f"MONEYWIZ_MODEL_PATH does not exist: {model}")
-
-    app = Path(os.environ.get("MONEYWIZ_APP", DEFAULT_MONEYWIZ_APP)).expanduser()
-    info_path = app / "Contents/Info.plist"
     try:
-        with info_path.open("rb") as info_file:
-            app_info = plistlib.load(info_file)
-    except (OSError, plistlib.InvalidFileException) as exc:
-        raise ReassignmentError(
-            f"Cannot read MoneyWiz app metadata at {info_path}: {exc}"
-        ) from exc
-    if not isinstance(app_info, dict):
-        raise ReassignmentError(
-            f"MoneyWiz app metadata is not a dictionary: {info_path}"
-        )
-    if app_info.get("CFBundleIdentifier") != EXPECTED_BUNDLE_IDENTIFIER:
-        raise ReassignmentError(
-            f"Unexpected MoneyWiz bundle identifier at {app}: {app_info.get('CFBundleIdentifier')!r}"
-        )
-
-    model_directory = app / "Contents/Resources/MoneyWizDataModel.momd"
-    version_info_path = model_directory / "VersionInfo.plist"
-    try:
-        with version_info_path.open("rb") as version_file:
-            version_info = plistlib.load(version_file)
-    except (OSError, plistlib.InvalidFileException) as exc:
-        raise ReassignmentError(
-            f"Cannot read MoneyWiz model manifest at {version_info_path}: {exc}"
-        ) from exc
-    if not isinstance(version_info, dict):
-        raise ReassignmentError(
-            f"MoneyWiz model manifest is not a dictionary: {version_info_path}"
-        )
-    version_name = version_info.get("NSManagedObjectModel_CurrentVersionName")
-    if (
-        not isinstance(version_name, str)
-        or not version_name
-        or version_name != version_name.strip()
-    ):
-        raise ReassignmentError(
-            f"MoneyWiz model manifest has an invalid current version: {version_info_path}"
-        )
-    version_leaf = Path(version_name)
-    if (
-        version_leaf.is_absolute()
-        or len(version_leaf.parts) != 1
-        or version_leaf.name != version_name
-        or version_name in {".", ".."}
-        or any(unicodedata.category(char).startswith("C") for char in version_name)
-    ):
-        raise ReassignmentError(
-            "MoneyWiz model manifest current version must be a single file name: "
-            f"{version_name!r}"
-        )
-    if version_name.endswith(".mom"):
-        model_stem = version_name[: -len(".mom")]
-        if not model_stem or model_stem in {".", ".."}:
-            raise ReassignmentError(
-                "MoneyWiz model manifest has an invalid current version: "
-                f"{version_info_path}"
-            )
-        model_leaf = version_name
-    elif version_leaf.suffix:
-        raise ReassignmentError(
-            "MoneyWiz model manifest current version has an unsupported suffix: "
-            f"{version_name!r}"
-        )
-    else:
-        model_leaf = f"{version_name}.mom"
-    model = model_directory / model_leaf
-    if not model.is_file():
-        raise ReassignmentError(f"MoneyWiz model file does not exist: {model}")
-    return model
+        return resolve_model()
+    except RuntimeIdentityError as exc:
+        raise ReassignmentError(str(exc)) from exc
 
 
 def require_coredata_write_capability(

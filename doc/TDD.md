@@ -60,6 +60,25 @@ and command-specific help, verify `moneywiz --version`, run the CLI tests, and
 check changed Markdown with the repository Markdown configuration. Release
 notes should describe user-visible capability and behavior, not commit order.
 
+After building a candidate bundle, run the opt-in installed-runtime smoke test:
+
+~~~sh
+MONEYWIZ_TEST_BUNDLE_PATH="$HOME/Applications/MoneyWiz Tools.app" \
+  MONEYWIZ_TEST_MODEL_PATH="/Applications/MoneyWiz.app/Contents/Resources/MoneyWizDataModel.momd/MoneyWizDataModel 48.mom" \
+  .venv/bin/python -m pytest -q tests/cli/test_installed_bundle_smoke.py
+~~~
+
+The test invokes that bundle's launcher, Python runtime and native host from an
+unrelated working directory with Python environment overrides removed. It uses
+only a temporary synthetic SQLite store and an isolated home directory; it does
+not discover or open the configured user database. The explicit model path is
+read only: the native host checks a valid compiled model checksum without
+opening a store, and separately proves that a missing model fails with a bounded
+error. Without `MONEYWIZ_TEST_BUNDLE_PATH`, the installed-runtime tests are
+skipped. Without `MONEYWIZ_TEST_MODEL_PATH`, only the valid-model checksum test
+is skipped; the launcher and native negative-path checks still run. The fast
+bundle-publication tests remain separate.
+
 For each new live writer, validation must include:
 
 1. A minimal native-app comparison for the target operation.

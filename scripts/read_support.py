@@ -1,0 +1,162 @@
+"""Shared read completeness and absolute-time semantics for CLI consumers."""
+
+from __future__ import annotations
+
+import json
+import math
+import sqlite3
+import sys
+from datetime import UTC, date, datetime, time, timedelta
+from decimal import Decimal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+APPLE_EPOCH = datetime(2001, 1, 1, tzinfo=UTC)
+
+
+def json_value(value):
+    if isinstance(value, Decimal):
+        if not value.is_finite():
+            raise ValueError("non-finite decimal in read result")
+        return str(value)
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {key: json_value(item) for key, item in value.items()}
+    if isinstance(value, (tuple, list)):
+        return [json_value(item) for item in value]
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return {"binary_bytes": len(value)}
+    return value
+
+
+def transaction_time(record) -> datetime:
+    """Read Core Data absolute seconds; do not inherit legacy local epoch offsets."""
+    seconds = record._raw.get("ZDATE1")
+    if isinstance(seconds, bool) or not isinstance(seconds, (int, float)):
+        raise TypeError("transaction date is not a numeric Core Data timestamp")
+    if not math.isfinite(seconds):
+        raise ValueError("transaction date is not finite")
+    return APPLE_EPOCH + timedelta(seconds=seconds)
+
+
+def cutoff(value: str | None, zone_name: str = "UTC") -> tuple[datetime, bool]:
+    """Return UTC boundary and exclusivity; date-only input includes the whole day."""
+    zone = ZoneInfo(zone_name)
+    if value is None:
+        return datetime.now(UTC), False
+    if len(value) == 10:
+        day = date.fromisoformat(value)
+        if day == date.max:
+            raise ValueError("date cutoff exceeds the supported range")
+        end = datetime.combine(day + timedelta(days=1), time(), tzinfo=zone)
+        return end.astimezone(UTC), True
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None:
+        raise ValueError("timestamp cutoff requires an explicit UTC offset")
+    return parsed.astimezone(UTC), False
+
+
+def _selected_transactions(
+    api,
+    account: int | None,
+    until: str | None,
+    zone: str,
+    *,
+    include_accountless: bool,
+    resolved_cutoff: tuple[datetime, bool] | None = None,
+):
+    boundary, exclusive = resolved_cutoff or cutoff(until, zone)
+    records = []
+    for record in api.transaction_manager.records().values():
+        if not hasattr(record, "account") and (
+            not include_accountless or account is not None
+        ):
+            continue
+        if account is not None and record.account != account:
+            continue
+        instant = transaction_time(record)
+        if instant < boundary or (not exclusive and instant == boundary):
+            records.append(record)
+    return sorted(records, key=lambda record: (transaction_time(record), record.id))
+
+
+def selected_transactions(
+    api,
+    account: int | None,
+    until: str | None,
+    zone: str,
+    *,
+    resolved_cutoff: tuple[datetime, bool] | None = None,
+):
+    """Select account-backed rows for the transaction-list command."""
+    return _selected_transactions(
+        api,
+        account,
+        until,
+        zone,
+        include_accountless=False,
+        resolved_cutoff=resolved_cutoff,
+    )
+
+
+def selected_snapshot_transactions(
+    api,
+    account: int | None,
+    until: str | None,
+    zone: str,
+    *,
+    resolved_cutoff: tuple[datetime, bool] | None = None,
+):
+    """Preserve every parsed row when the snapshot scope is unfiltered."""
+    return _selected_transactions(
+        api,
+        account,
+        until,
+        zone,
+        include_accountless=True,
+        resolved_cutoff=resolved_cutoff,
+    )
+
+
+def report_completeness(api) -> tuple[dict, int]:
+    report = api.completeness().as_dict()
+    if not report["complete"]:
+        summary = {
+            **report,
+            "managers": {
+                name: {
+                    key: value
+                    for key, value in manager.items()
+                    if key not in {"source_ids", "parsed_ids"}
+                }
+                for name, manager in report["managers"].items()
+            },
+        }
+        print(json.dumps({"read_completeness": summary}), file=sys.stderr)
+    return report, 0 if report["complete"] else 3
+
+
+def run_read_command(main) -> int:
+    """Bound failures without accidentally serializing financial row values."""
+    try:
+        return main()
+    except (
+        OSError,
+        OverflowError,
+        ValueError,
+        TypeError,
+        KeyError,
+        sqlite3.Error,
+        ZoneInfoNotFoundError,
+    ) as exc:
+        print(
+            json.dumps(
+                {
+                    "status": "error",
+                    "error": type(exc).__name__,
+                    "message": "Read failed; check database, schema and command arguments",
+                }
+            ),
+            file=sys.stderr,
+        )
+        return 2

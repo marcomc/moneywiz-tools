@@ -1,8 +1,17 @@
+import json
 import subprocess
 
 
 def run(cmd):
-    return subprocess.run(cmd, capture_output=True, text=True, check=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    # The legacy fixture contains unreadable transfers. Listing parsed rows is
+    # supported, but the CLI must explicitly report that the read is partial.
+    assert result.returncode == 3, result.stderr
+    assert (
+        json.loads(result.stderr.splitlines()[-1])["read_completeness"]["complete"]
+        is False
+    )
+    return result
 
 
 def test_transactions_fields_header(moneywiz_command: list[str]):

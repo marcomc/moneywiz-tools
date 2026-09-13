@@ -6,9 +6,11 @@ This document captures important conventions in the MoneyWiz database that help 
 
 - The DB stores many timestamps as floats relative to 2001‑01‑01 00:00:00 UTC (Apple epoch).
 - Conversion is provided by the installed `moneywiz_api` module; see the
-  [`get_datetime` and `get_date` helpers](https://github.com/marcomc/moneywiz-api/blob/6ea3cdec8b1543356e00f6b529450b5aa1b39264/src/moneywiz_api/utils.py#L6-L15).
-  - `get_datetime(raw)`: returns Python `datetime` from DB float.
+  [`get_datetime` and `get_date` helpers](https://github.com/marcomc/moneywiz-api/blob/cd1f8b5b81426ea7bb1f05fefcc9501453390d7c/src/moneywiz_api/utils.py).
+  - `get_datetime(raw)`: preserves the API's naive local `datetime` interface.
   - `get_date(dt)`: converts Python `datetime` to DB float.
+- Reconciliation snapshots decode the absolute UTC epoch and emit explicit
+  offsets. See [read cutoff and timezone rules](RECONCILIATION-READS.md).
 
 ## Amounts and precision
 
@@ -24,7 +26,8 @@ This document captures important conventions in the MoneyWiz database that help 
 ## Relationships
 
 - Category splits: `ZCATEGORYASSIGMENT` with `(ZTRANSACTION, ZCATEGORY, ZAMOUNT)`; totals should sum to the transaction amount (respect sign).
-- Tags: `Z_36TAGS` with `(Z_36TRANSACTIONS, Z_35TAGS)`.
+- Tag join-table names and numeric column prefixes depend on the model's entity
+  numbering; resolve the supported layout rather than assuming `Z_36TAGS`.
 - Refund link: `ZWITHDRAWREFUNDTRANSACTIONLINK` with `(ZREFUNDTRANSACTION, ZWITHDRAWTRANSACTION)`.
 
 ## Entity typing and lookup
@@ -45,7 +48,10 @@ This document captures important conventions in the MoneyWiz database that help 
 
 ## GIDs (Global IDs)
 
-- `ZGID` is a UUID-like identifier for a row; set a new UUID for inserted objects to keep global uniqueness.
+- `ZGID` identifies GID-bearing sync objects. Model 48's `User`, category
+  assignments and refund links have no GID; use store-scoped local identities
+  and relationship endpoints for those entities. New identity assignment belongs
+  to a verified, operation-specific native writer contract.
 
 ## Column naming patterns
 

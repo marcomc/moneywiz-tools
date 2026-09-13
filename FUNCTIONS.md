@@ -48,6 +48,8 @@ otherwise.
 | `schema` | `moneywiz schema` | Export schema documentation and JSON under `${XDG_DATA_HOME:-$HOME/.local/share}/moneywiz-tools/schema`; use `--out-md` and `--out-json` for explicit destinations. |
 | `shell` | `moneywiz shell` | Start the configuration-aware interactive API shell. |
 | `compatibility` | `moneywiz compatibility --capability write.reassign-payees-by-id` | Show the detected profile and operation status. |
+| `identity` | `moneywiz identity --app /Applications/MoneyWiz.app` | Read app/store/owner identity and verify the selected compiled model checksum. |
+| `snapshot` | `moneywiz snapshot --account 10 --until 2026-09-12 --timezone Europe/Rome` | Export JSON completeness, relationships, flags and bounded graph diagnostics. |
 
 Use `moneywiz transactions --list-fields` to discover selectable transaction
 fields. Use `--fields f1,f2` or `--all-fields` when a narrower or wider result
@@ -226,7 +228,7 @@ CSV.
 
 | Database scope | Commands |
 | --- | --- |
-| Any configured store, read-only | `users`, `accounts`, `categories`, `payees`, `tags`, `transactions`, `holdings`, `record`, `summary`, `stats`, `schema`, `shell`, `compatibility` |
+| Configured or explicitly selected store, read-only | `users`, `accounts`, `categories`, `payees`, `tags`, `transactions`, `holdings`, `snapshot`, `identity`, `record`, `summary`, `stats`, `schema`, `shell`, `compatibility` |
 | Live iCloud store through Core Data | `reassign-payees-by-id --apply` when its profile capability is verified |
 | Planning only; apply blocked | `merge-duplicate-payees`; `--apply` remains unavailable until a native implementation has independent acceptance evidence |
 
