@@ -228,6 +228,22 @@ def test_store_identity_rejects_noninteger_raw_owner_without_value_leak(
     assert "private-owner" not in str(raised.value)
 
 
+@pytest.mark.parametrize("owner_id", [None, 1])
+def test_store_identity_rejects_null_owner_before_selection(
+    tmp_path: Path, owner_id: int | None
+) -> None:
+    store = make_store(
+        tmp_path / "store.sqlite",
+        owner_ids=(None, 1),
+        owner_column="",
+    )
+
+    with pytest.raises(
+        runtime_identity.RuntimeIdentityError, match="non-integer User local identity"
+    ):
+        runtime_identity.inspect_store(store, owner_id=owner_id)
+
+
 def test_owner_resolution_rejects_boolean_raw_identity() -> None:
     connection = MagicMock()
     connection.execute.side_effect = [
@@ -241,15 +257,25 @@ def test_owner_resolution_rejects_boolean_raw_identity() -> None:
         runtime_identity._resolve_owner(connection, None)
 
 
+@pytest.mark.parametrize(
+    "owner,owner_column,private_value",
+    [
+        ("private-owner", "", "private-owner"),
+        (None, "", None),
+    ],
+)
 def test_identity_cli_bounds_invalid_raw_owner_without_traceback_or_value_leak(
     tmp_path: Path,
     make_app: Callable[[str, str], tuple[Path, Path]],
+    owner: object,
+    owner_column: str,
+    private_value: str | None,
 ) -> None:
     app, _model = make_app()
     store = make_store(
         tmp_path / "store.sqlite",
-        owner_ids=("private-owner",),
-        owner_column="",
+        owner_ids=(owner,),
+        owner_column=owner_column,
     )
     script = REPO_ROOT / "scripts/identity.py"
 
@@ -266,7 +292,8 @@ def test_identity_cli_bounds_invalid_raw_owner_without_traceback_or_value_leak(
         "status": "error",
         "message": "MoneyWiz store has a non-integer User local identity",
     }
-    assert "private-owner" not in result.stderr
+    if private_value is not None:
+        assert private_value not in result.stderr
     assert "Traceback" not in result.stderr
 
 
@@ -367,6 +394,122 @@ def test_store_discovery_rejects_multiple_valid_candidates(tmp_path: Path) -> No
         runtime_identity.resolve_store(candidates=(current, legacy))
 
     assert runtime_identity.resolve_store(current, candidates=(legacy,)).path == current
+
+
+@pytest.mark.parametrize(
+    "first_owners,second_owners,owner_id",
+    [
+        ((1,), (2,), 1),
+        ((1,), (1, 2), None),
+        ((1,), (1, 2), 2),
+    ],
+)
+def test_store_discovery_resolves_store_before_store_local_owner(
+    tmp_path: Path,
+    first_owners: tuple[int, ...],
+    second_owners: tuple[int, ...],
+    owner_id: int | None,
+) -> None:
+    first = make_store(tmp_path / "first.sqlite", owner_ids=first_owners)
+    second = make_store(
+        tmp_path / "second.sqlite",
+        owner_ids=second_owners,
+        store_uuid="4A1A2D66-BD6C-4CC6-811F-9B6920BCB04A",
+    )
+
+    with pytest.raises(
+        runtime_identity.RuntimeIdentityError, match="Multiple valid MoneyWiz stores"
+    ):
+        runtime_identity.resolve_store(candidates=(first, second), owner_id=owner_id)
+
+
+def test_store_discovery_applies_owner_after_unique_store_selection(
+    tmp_path: Path,
+) -> None:
+    store = make_store(tmp_path / "store.sqlite", owner_ids=(1, 2))
+
+    identity = runtime_identity.resolve_store(candidates=(store,), owner_id=2)
+
+    assert identity.path == store
+    assert identity.owner_local_id == 2
+
+
+@pytest.mark.parametrize("owner_id", [None, 1])
+@pytest.mark.parametrize("ownerless_first", [False, True])
+def test_store_discovery_ignores_ownerless_candidate_that_cannot_bind(
+    tmp_path: Path, owner_id: int | None, ownerless_first: bool
+) -> None:
+    normal = make_store(tmp_path / "normal.sqlite")
+    ownerless = make_store(
+        tmp_path / "ownerless.sqlite",
+        owner_ids=(),
+        store_uuid="4A1A2D66-BD6C-4CC6-811F-9B6920BCB04A",
+    )
+    candidates = (ownerless, normal) if ownerless_first else (normal, ownerless)
+
+    identity = runtime_identity.resolve_store(candidates=candidates, owner_id=owner_id)
+
+    assert identity.path == normal
+    assert identity.owner_local_id == 1
+
+
+@pytest.mark.parametrize("explicit", [False, True])
+def test_ownerless_store_is_a_bounded_invalid_candidate(
+    tmp_path: Path, explicit: bool
+) -> None:
+    ownerless = make_store(tmp_path / "ownerless.sqlite", owner_ids=())
+
+    with pytest.raises(
+        runtime_identity.RuntimeIdentityError, match="no User local identities"
+    ):
+        if explicit:
+            runtime_identity.inspect_store(ownerless)
+        else:
+            runtime_identity.resolve_store(candidates=(ownerless,))
+
+
+def test_store_discovery_deduplicates_canonical_aliases_before_owner_selection(
+    tmp_path: Path,
+) -> None:
+    store = make_store(tmp_path / "store.sqlite", owner_ids=(1, 2))
+    alias = tmp_path / "store-alias.sqlite"
+    alias.symlink_to(store)
+
+    identity = runtime_identity.resolve_store(candidates=(store, alias), owner_id=2)
+
+    assert identity.path == store
+    assert identity.owner_local_id == 2
+
+
+def test_runtime_identity_store_discovery_precedes_owner_and_model_overrides(
+    tmp_path: Path,
+    make_app: Callable[[str, str], tuple[Path, Path]],
+) -> None:
+    app, _model = make_app()
+    first = make_store(tmp_path / "first.sqlite", owner_ids=(1,))
+    second = make_store(
+        tmp_path / "second.sqlite",
+        owner_ids=(2,),
+        store_uuid="4A1A2D66-BD6C-4CC6-811F-9B6920BCB04A",
+    )
+    checksum_calls = []
+
+    def model_checksum(_path: Path) -> str:
+        checksum_calls.append(_path)
+        return MODEL_CHECKSUM
+
+    with pytest.raises(
+        runtime_identity.RuntimeIdentityError, match="Multiple valid MoneyWiz stores"
+    ):
+        runtime_identity.resolve_runtime_identity(
+            owner_id=1,
+            app_path=app,
+            store_candidates=(first, second),
+            model_checksum_reader=model_checksum,
+            environ={},
+        )
+
+    assert checksum_calls == []
 
 
 def test_default_discovery_does_not_guess_an_arbitrary_store(tmp_path: Path) -> None:

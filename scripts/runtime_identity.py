@@ -61,6 +61,16 @@ class StoreIdentity:
 
 
 @dataclass(frozen=True)
+class _StoreCandidate:
+    """Validated store evidence before selecting its store-local owner."""
+
+    path: Path
+    uuid: str
+    owner_rows: tuple[tuple[int, object], ...]
+    model_checksum: str
+
+
+@dataclass(frozen=True)
 class RuntimeIdentity:
     """One unambiguous MoneyWiz application/store/model tuple."""
 
@@ -387,13 +397,9 @@ def _store_metadata(connection: sqlite3.Connection) -> tuple[str, str]:
     return store_uuid, checksum
 
 
-def _resolve_owner(
-    connection: sqlite3.Connection, owner_id: int | None
-) -> tuple[int, str | None]:
-    if isinstance(owner_id, bool) or (
-        owner_id is not None and not isinstance(owner_id, int)
-    ):
-        raise RuntimeIdentityError("MoneyWiz owner id must be an integer")
+def _owner_rows(
+    connection: sqlite3.Connection,
+) -> tuple[tuple[int, object], ...]:
     user_columns = {
         str(row[1]) for row in connection.execute("PRAGMA table_info(ZUSER)").fetchall()
     }
@@ -401,15 +407,26 @@ def _resolve_owner(
         raise RuntimeIdentityError("MoneyWiz store has no User local identity column")
     sync_login_expression = "ZSYNCLOGIN" if "ZSYNCLOGIN" in user_columns else "NULL"
     rows = connection.execute(
-        f"SELECT Z_PK, {sync_login_expression} FROM ZUSER "
-        "WHERE Z_PK IS NOT NULL ORDER BY Z_PK"
+        f"SELECT Z_PK, {sync_login_expression} FROM ZUSER ORDER BY Z_PK"
     ).fetchall()
     if any(type(row[0]) is not int for row in rows):
         raise RuntimeIdentityError(
             "MoneyWiz store has a non-integer User local identity"
         )
+    if not rows:
+        raise RuntimeIdentityError("MoneyWiz store has no User local identities")
     if len({row[0] for row in rows}) != len(rows):
         raise RuntimeIdentityError("MoneyWiz store has duplicate User local identities")
+    return tuple((row[0], row[1]) for row in rows)
+
+
+def _select_owner(
+    rows: tuple[tuple[int, object], ...], owner_id: int | None
+) -> tuple[int, str | None]:
+    if isinstance(owner_id, bool) or (
+        owner_id is not None and not isinstance(owner_id, int)
+    ):
+        raise RuntimeIdentityError("MoneyWiz owner id must be an integer")
     owners = {row[0]: row[1] for row in rows}
     if owner_id is not None:
         if owner_id not in owners:
@@ -429,8 +446,14 @@ def _resolve_owner(
     return selected, sync_login if isinstance(sync_login, str) and sync_login else None
 
 
-def inspect_store(store_path: Path, *, owner_id: int | None = None) -> StoreIdentity:
-    """Read and validate one store's UUID, model checksum, and owner."""
+def _resolve_owner(
+    connection: sqlite3.Connection, owner_id: int | None
+) -> tuple[int, str | None]:
+    return _select_owner(_owner_rows(connection), owner_id)
+
+
+def _inspect_store_candidate(store_path: Path) -> _StoreCandidate:
+    """Read store-level evidence without using a store-local owner selector."""
     store = store_path.expanduser().resolve(strict=False)
     if not store.is_file():
         raise RuntimeIdentityError(f"MoneyWiz store does not exist: {store}")
@@ -443,20 +466,35 @@ def inspect_store(store_path: Path, *, owner_id: int | None = None) -> StoreIden
         ) from exc
     try:
         store_uuid, model_checksum = _store_metadata(connection)
-        resolved_owner, owner_sync_login = _resolve_owner(connection, owner_id)
+        owner_rows = _owner_rows(connection)
     except sqlite3.Error as exc:
         raise RuntimeIdentityError(
             f"Cannot inspect MoneyWiz store identity: {exc}"
         ) from exc
     finally:
         connection.close()
-    return StoreIdentity(
+    return _StoreCandidate(
         path=store,
         uuid=store_uuid,
-        owner_local_id=resolved_owner,
-        owner_sync_login=owner_sync_login,
+        owner_rows=owner_rows,
         model_checksum=model_checksum,
     )
+
+
+def _store_identity(candidate: _StoreCandidate, owner_id: int | None) -> StoreIdentity:
+    resolved_owner, owner_sync_login = _select_owner(candidate.owner_rows, owner_id)
+    return StoreIdentity(
+        path=candidate.path,
+        uuid=candidate.uuid,
+        owner_local_id=resolved_owner,
+        owner_sync_login=owner_sync_login,
+        model_checksum=candidate.model_checksum,
+    )
+
+
+def inspect_store(store_path: Path, *, owner_id: int | None = None) -> StoreIdentity:
+    """Read and validate one store's UUID, model checksum, and owner."""
+    return _store_identity(_inspect_store_candidate(store_path), owner_id)
 
 
 def default_store_candidates(
@@ -498,7 +536,7 @@ def resolve_store(
         if candidates is not None
         else default_store_candidates(home=home, bundle_identifier=bundle_identifier)
     )
-    valid: list[StoreIdentity] = []
+    valid: list[_StoreCandidate] = []
     failures: list[str] = []
     seen: set[Path] = set()
     for candidate in store_candidates:
@@ -508,7 +546,7 @@ def resolve_store(
             continue
         seen.add(canonical)
         try:
-            valid.append(inspect_store(expanded, owner_id=owner_id))
+            valid.append(_inspect_store_candidate(expanded))
         except RuntimeIdentityError as exc:
             failures.append(f"{expanded}: {exc}")
 
@@ -518,7 +556,7 @@ def resolve_store(
             f"Multiple valid MoneyWiz stores found: {paths}. Select a store explicitly."
         )
     if valid:
-        return valid[0]
+        return _store_identity(valid[0], owner_id)
     if failures:
         raise RuntimeIdentityError(
             "No valid MoneyWiz store found; " + "; ".join(failures)

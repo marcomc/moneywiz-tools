@@ -15,7 +15,9 @@ reads the store UUID and owner identity, and checks the compiled model checksum
 through the native host without opening a Core Data store. Explicit `--db`,
 `--app` and `--model` choices take precedence; `MONEYWIZ_APP` and
 `MONEYWIZ_MODEL_PATH` remain supported. Multiple valid apps/stores or owners
-require explicit selection. This command does not launch MoneyWiz or change data.
+require explicit selection. Because owner IDs are local to each store, `--owner`
+is applied only after one store is selected and cannot disambiguate stores. This
+command does not launch MoneyWiz or change data.
 
 Model 48's User has no GID. The binding contains `store_uuid` and
 `owner_local_id`, with optional sync login, plus app version/build and the
