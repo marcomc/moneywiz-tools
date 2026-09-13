@@ -5,7 +5,7 @@ description = "Core Data-backed command-line tools for MoneyWiz"
 requires-python = ">=3.11,<3.12"
 dependencies = [
     "click>=8",
-    "moneywiz-api @ git+https://github.com/marcomc/moneywiz-api.git@3020435cef7b9ae6b788ac6e779f54ac146e7489",
+    "moneywiz-api @ git+https://github.com/marcomc/moneywiz-api.git@cf3f68a1ce1a76e0c7398a76f1bb347fdc9bc275",
     "pandas>=2",
 ]
 
