@@ -118,6 +118,7 @@ def test_source_dispatcher_help_does_not_require_configured_database(
         "holdings",
         "snapshot",
         "identity",
+        "write",
         "reassign-payees-by-id",
         "merge-duplicate-payees",
         "compatibility",

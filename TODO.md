@@ -17,6 +17,22 @@ as prerequisites become concrete; preserve the propositions below as requirement
 PR links and evidence are recorded here once created. Runtime and remote
 acceptance remain distinct from implementation and local test completion.
 
+### P1F shared writer foundation
+
+Entry: P0 merged into `release/0.3.0` at `374ebd4`. Implementation owner:
+`feat/p1f-writer-foundation`; PR target: `release/0.3.0`. Scope follows
+[P1F](doc/proposals/TRANSACTION-WRITE-IMPLEMENTATION-PLAN.md#p1f-shared-writer-foundation)
+and the [shared contract](doc/proposals/TRANSACTION-WRITE-API.md#proposed-plan-and-result-contract).
+W01–W04 operation implementations and live financial writes are excluded.
+
+| ID | Deliverable / owner | Depends on | Acceptance | State |
+| --- | --- | --- | --- | --- |
+| P1F-01 | Typed plans and shared writer client / Python worker | P0 merge | Strict versions, reviewed digest, identity, source event, old values, Decimal/timezone contracts; v1 transport preserved | Implemented; synthetic validation passed |
+| P1F-02 | Native preflight, atomic save and read-back / native worker | P1F-01 contract | Reject invalid references/stale state before mutation; one save; durable IDs and independent persisted results | Implemented; synthetic validation passed |
+| P1F-03 | Journal, snapshots, retry and recovery / Python and native workers | P1F-01–02 | Private flushed preimage/receipt; before/after-save interruption tests; no replay of unknown outcomes | Implemented; synthetic validation passed |
+| P1F-04 | Discovery and bounded retention cleanup / Python worker | P1F-03 | Effective paths/provenance; explicit cleanup apply; 90-day verified retention and indefinite unresolved evidence | Implemented; synthetic validation passed |
+| P1F-05 | CLI, packaging, documentation and integration / controller | P1F-01–04 | Relocated bundle tests, unchanged v1/P0 tests, local READY and current-head independent GitHub clean evidence | Bundle validation passed; GitHub review/integration pending |
+
 ## Propositions
 
 Delivery sequence and phase preparation:
@@ -35,14 +51,15 @@ Each operation must use the existing Core Data writer, default to a dry-run
 plan, require explicit `--apply`, and have its own verified schema capability.
 Reuse app-closed checks and backup/history/sync safeguards. Validate on
 disposable stores before enabling live writes; do not add raw SQL mutations.
-Current commands do not enforce backups; consistent snapshots and durable
-receipts are requirements proposed for the new write flow.
+The v2 writer foundation now enforces consistent snapshots and durable receipts.
+Existing v1 commands retain their prior backup behavior.
 Every write must accept an explicit current-database path or resolve it through
 the active app bundle, return durable record IDs, and read back the persisted
 records. A failed partial batch must identify the completed and untouched IDs.
 
 - [ ] **Introduce the versioned transaction writer contract (P1 foundation).**
-  Extend the existing Core Data host, preserving verified v1 reassignment.
+  Implemented and locally validated in `feat/p1f-writer-foundation`; independent
+  GitHub review and release integration remain pending. Preserves v1 reassignment.
   See the proposal's source map, contract and phase plan.
   - Extract shared runtime identity and writer invocation from the payee helper;
     bind plans to store UUID, owner, model checksum and exact capabilities.

@@ -33,6 +33,10 @@ REQUIRED_DISPATCHER_PROGRAMS = (
     "scripts/tags.py",
     "scripts/transactions.py",
     "scripts/users.py",
+    "scripts/write.py",
+    "scripts/write_journal.py",
+    "scripts/write_plan.py",
+    "scripts/writer_client.py",
 )
 
 

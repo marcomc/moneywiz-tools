@@ -77,11 +77,19 @@ profile as `moneywiz-2026-model-48`. It allows
 `write.merge-duplicate-payees` before the host is launched.
 
 The Python preflight and Swift host both enforce the exact model checksum. The
-Python payload also binds the verified capability. Before it opens the
+Python payload also binds the verified capability. For version 1, before it opens the
 persistent store, the host requires the exact profile ID, checksum,
 `write.reassign-payees-by-id` capability, schema version 1, and a non-empty
 reassignment-only operation list. Schema 2, merge, mixed, blocked, and unknown
 capability payloads fail closed.
+
+Version 2 adds a strict shared envelope, expected old values, reviewed digest,
+store/owner/app binding, durable per-operation IDs and independent persisted
+read-back. Its P1F bridge exercises only the existing reassignment to an existing
+payee. Creation, transaction editing, category writes and reconciliation remain
+blocked. Version 1 keeps its existing result and destination-payee creation
+behavior. See [Writer Recovery](WRITER-RECOVERY.md) for version-2 commands,
+journal retention and interrupted execution.
 
 The default model resolver reads the current-version leaf from the installed
 `MoneyWizDataModel.momd` manifest. It accepts the observed extensionless form

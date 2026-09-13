@@ -4,6 +4,10 @@
 
 ### Added
 
+- Shared version-2 writer plans and reviewed-digest apply/recovery commands,
+  preserving the version-1 payee interface and keeping W01–W04 disabled.
+- Private recovery journals, consistent pre-write snapshots, durable results,
+  source-event retry guards and explicit retention cleanup.
 - Read-only runtime identity discovery binding the application edition/build,
   store UUID, local owner identity and exact Core Data model checksum.
 - Reconciliation snapshots with explicit read completeness, relationship and

@@ -32,10 +32,24 @@ func stringAttribute(_ name: String) -> NSAttributeDescription {
     return attribute
 }
 
+func optionalStringAttribute(_ name: String) -> NSAttributeDescription {
+    let attribute = stringAttribute(name)
+    attribute.isOptional = true
+    return attribute
+}
+
 func dateAttribute(_ name: String) -> NSAttributeDescription {
     let attribute = NSAttributeDescription()
     attribute.name = name
     attribute.attributeType = .dateAttributeType
+    attribute.isOptional = false
+    return attribute
+}
+
+func doubleAttribute(_ name: String) -> NSAttributeDescription {
+    let attribute = NSAttributeDescription()
+    attribute.name = name
+    attribute.attributeType = .doubleAttributeType
     attribute.isOptional = false
     return attribute
 }
@@ -68,7 +82,12 @@ func makeModel() -> NSManagedObjectModel {
     payee.name = "Payee"
     payee.managedObjectClassName = "NSManagedObject"
 
-    account.properties = [toOneRelationship("user", destination: user)]
+    account.properties = [
+        optionalStringAttribute("GID"),
+        doubleAttribute("ballance"),
+        optionalStringAttribute("currencyName"),
+        toOneRelationship("user", destination: user),
+    ]
     payee.properties = [
         stringAttribute("GID"),
         stringAttribute("name"),
@@ -118,6 +137,18 @@ func makeContainer() throws -> NSPersistentContainer {
     return container
 }
 
+func makeSQLiteContainer(at url: URL) throws -> NSPersistentContainer {
+    let container = NSPersistentContainer(name: "MoneyWizFoundationSQLite", managedObjectModel: makeModel())
+    let description = NSPersistentStoreDescription(url: url)
+    description.type = NSSQLiteStoreType
+    description.shouldAddStoreAsynchronously = false
+    container.persistentStoreDescriptions = [description]
+    var loadError: Error?
+    container.loadPersistentStores { _, error in loadError = error }
+    if let loadError { throw loadError }
+    return container
+}
+
 func seed(
     _ container: NSPersistentContainer,
     users: [String],
@@ -139,6 +170,9 @@ func seed(
             forEntityName: "Account",
             into: context
         )
+        account.setValue("account-\(userID)", forKey: "GID")
+        account.setValue(0.0, forKey: "ballance")
+        account.setValue("EUR", forKey: "currencyName")
         account.setValue(userObjects[userID], forKey: "user")
         accounts[userID] = account
     }
@@ -797,9 +831,189 @@ func testReadOnlyModelChecksumWithoutStore() throws {
     }
 }
 
+func ownerURI(for transactionGID: String, in container: NSPersistentContainer) throws -> String {
+    let transaction = try fetchExactObject(
+        entityName: "WithdrawTransaction", gid: transactionGID, context: container.viewContext
+    )
+    guard let account = transaction.value(forKey: "account") as? NSManagedObject,
+          let owner = account.value(forKey: "user") as? NSManagedObject else {
+        throw OwnershipTestError.failure("synthetic transaction lacks an owner")
+    }
+    return owner.objectID.uriRepresentation().absoluteString
+}
+
+func v2Payload(ownerURI: String, expectedOldPayeeGID: String?) throws -> (WriterPlanV2, [String: Any]) {
+    let operation: [String: Any] = [
+        "operation_id": "operation-one",
+        "kind": "reassign_payee",
+        "capability": "write.reassign-payees-by-id",
+        "transaction_entity": "WithdrawTransaction",
+        "transaction_gid": "transaction-one",
+        "expected_old_payee_gid": expectedOldPayeeGID ?? NSNull(),
+        "target_payee_gid": "payee-one",
+        "owner_uri": ownerURI,
+        "source_event_id": "source-event-one",
+        "expected_postcondition": ["payee_gid": "payee-one"],
+        "allowed_changed_fields": ["payee"],
+    ]
+    var raw: [String: Any] = [
+        "contract_version": 2,
+        "operation_schema_version": 1,
+        "plan_id": "plan-one",
+        "profile_id": "moneywiz-2026-model-48",
+        "model_checksum": "+6BY8eaTke2jfAd5Bzt5D49JRMZld5o8ZoUW+4G2ElQ=",
+        "store_identity": ["store_uuid": "synthetic-store"],
+        "owner_uri": ownerURI,
+        "app_identity": [
+            "bundle_id": "com.moneywiz.personalfinance", "version": "0.3.0",
+            "path": "/synthetic/MoneyWiz.app", "model_path": "/synthetic/MoneyWiz.app/model.mom",
+        ],
+        "capability": "write.reassign-payees-by-id",
+        "created_at": "2026-09-13T00:00:00Z",
+        "timezone": "Europe/Rome",
+        "source_interval": ["start": "2026-09-01T00:00:00Z", "end": "2026-09-13T00:00:00Z"],
+        "source_evidence_refs": ["private:source-one"],
+        "expected_account_gid": "account-user-one",
+        "expected_cached_account_balance": "0.00",
+        "currency_unit": "EUR",
+        "source_event_id": "source-event-one",
+        "operations": [operation],
+    ]
+    raw["plan_digest"] = try canonicalV2Digest(raw)
+    let data = try JSONSerialization.data(withJSONObject: raw, options: [])
+    return (try JSONDecoder().decode(WriterPlanV2.self, from: data), raw)
+}
+
+func testV2BridgeValidatesDigestAndRejectsFutureOperations() throws {
+    let container = try makeContainer()
+    try seed(container, users: ["user-one"], transactions: [("transaction-one", "user-one")], payees: [("payee-one", "user-one")])
+    let owner = try ownerURI(for: "transaction-one", in: container)
+    let (valid, raw) = try v2Payload(ownerURI: owner, expectedOldPayeeGID: nil)
+    try validateWriterPlanV2(valid, rawPlan: raw)
+
+    var altered = raw
+    altered["capability"] = "write.create-transaction"
+    let alteredData = try JSONSerialization.data(withJSONObject: altered, options: [])
+    let candidate = try JSONDecoder().decode(WriterPlanV2.self, from: alteredData)
+    do {
+        try validateWriterPlanV2(candidate, rawPlan: altered)
+        throw OwnershipTestError.failure("future operation capability unexpectedly succeeded")
+    } catch is HostError {
+        // A digest cannot promote an unverified operation kind or capability.
+    }
+}
+
+func testV2BridgeAtomicallyAppliesAndRecoversAsNoop() throws {
+    let container = try makeContainer()
+    try seed(container, users: ["user-one"], transactions: [("transaction-one", "user-one")], payees: [("payee-one", "user-one")])
+    let owner = try ownerURI(for: "transaction-one", in: container)
+    let (planV2, _) = try v2Payload(ownerURI: owner, expectedOldPayeeGID: nil)
+    let applied = try writePlanV2(planV2, container: container, requireStopped: {})
+    try require(applied.classification == "applied" && applied.verified, "v2 bridge did not verify write")
+    try require(applied.operations.first?.status == "applied", "v2 bridge did not report per-operation result")
+    let persistedPayee = try payeeGID(for: "transaction-one", in: container)
+    try require(persistedPayee == "payee-one", "v2 bridge did not persist target payee")
+
+    let recovered = try writePlanV2(planV2, container: container, requireStopped: {})
+    try require(recovered.classification == "noop", "post-save recovery did not classify as noop")
+    try require(recovered.operations.first?.status == "noop", "post-save recovery did not return noop status")
+}
+
+func testV2BridgeRefusesMixedRecoveryBeforeMutation() throws {
+    let container = try makeContainer()
+    try seed(
+        container, users: ["user-one"], transactions: [("transaction-one", "user-one")],
+        payees: [("payee-one", "user-one"), ("other-payee", "user-one")]
+    )
+    let context = container.viewContext
+    let transaction = try fetchExactObject(entityName: "WithdrawTransaction", gid: "transaction-one", context: context)
+    let other = try fetchExactObject(entityName: "Payee", gid: "other-payee", context: context)
+    transaction.setValue(other, forKey: "payee")
+    try context.save()
+    let owner = try ownerURI(for: "transaction-one", in: container)
+    let (planV2, _) = try v2Payload(ownerURI: owner, expectedOldPayeeGID: nil)
+    do {
+        _ = try writePlanV2(planV2, container: container, requireStopped: {})
+        throw OwnershipTestError.failure("mixed v2 recovery state unexpectedly replayed")
+    } catch let error as HostError {
+        try require(error.localizedDescription.contains("mixed or unknown"), "mixed recovery returned wrong error")
+    }
+    let finalPayee = try payeeGID(for: "transaction-one", in: container)
+    try require(finalPayee == "other-payee", "mixed recovery changed data")
+}
+
+func testV2BridgeSecondAppCheckRollsBackBeforeSave() throws {
+    let container = try makeContainer()
+    try seed(container, users: ["user-one"], transactions: [("transaction-one", "user-one")], payees: [("payee-one", "user-one")])
+    let owner = try ownerURI(for: "transaction-one", in: container)
+    let (planV2, _) = try v2Payload(ownerURI: owner, expectedOldPayeeGID: nil)
+    var checks = 0
+    do {
+        _ = try writePlanV2(planV2, container: container, requireStopped: {
+            checks += 1
+            if checks == 2 { throw HostError.message("MoneyWiz reopened") }
+        })
+        throw OwnershipTestError.failure("second app check unexpectedly saved")
+    } catch is HostError {
+        // Expected: complete preflight succeeds but save is refused before mutation.
+    }
+    let finalPayee = try payeeGID(for: "transaction-one", in: container)
+    try require(checks == 2, "v2 bridge did not recheck app state before save")
+    try require(finalPayee == nil, "second app check left a partial write")
+}
+
+func runSQLiteCrashProbe(storePath: String, point: WriterTestCrashPoint) throws {
+    let url = URL(fileURLWithPath: storePath)
+    let container = try makeSQLiteContainer(at: url)
+    try seed(
+        container, users: ["user-one"], transactions: [("transaction-one", "user-one")],
+        payees: [("payee-one", "user-one")]
+    )
+    let owner = try ownerURI(for: "transaction-one", in: container)
+    let (planV2, _) = try v2Payload(ownerURI: owner, expectedOldPayeeGID: nil)
+    writerTestCrashPoint = point
+    _ = try writePlanV2(planV2, container: container, requireStopped: {})
+}
+
+func runSQLiteRecoveryProbe(storePath: String) throws {
+    let container = try makeSQLiteContainer(at: URL(fileURLWithPath: storePath))
+    let owner = try ownerURI(for: "transaction-one", in: container)
+    let (planV2, _) = try v2Payload(ownerURI: owner, expectedOldPayeeGID: nil)
+    let result = try recoverPlanV2(planV2, container: container)
+    print(result.classification)
+}
+
+func testV2RecoveryRefusesForeignTargetOwner() throws {
+    let container = try makeContainer()
+    try seed(container, users: ["user-one", "user-two"], transactions: [("transaction-one", "user-one")], payees: [("payee-one", "user-two")])
+    let transaction = try fetchExactObject(entityName: "WithdrawTransaction", gid: "transaction-one", context: container.viewContext)
+    let foreign = try fetchExactObject(entityName: "Payee", gid: "payee-one", context: container.viewContext)
+    transaction.setValue(foreign, forKey: "payee")
+    try container.viewContext.save()
+    let owner = try ownerURI(for: "transaction-one", in: container)
+    let (plan, _) = try v2Payload(ownerURI: owner, expectedOldPayeeGID: nil)
+    do {
+        _ = try recoverPlanV2(plan, container: container)
+        throw OwnershipTestError.failure("recovery verified a foreign payee owner")
+    } catch is HostError { }
+}
+
 @main
 struct MoneyWizToolsHostOwnershipTests {
     static func main() throws {
+        let args = Array(CommandLine.arguments.dropFirst())
+        if args.count == 2, args[0] == "--crash-before-save" {
+            try runSQLiteCrashProbe(storePath: args[1], point: .beforeSave)
+            return
+        }
+        if args.count == 2, args[0] == "--crash-after-save" {
+            try runSQLiteCrashProbe(storePath: args[1], point: .afterSave)
+            return
+        }
+        if args.count == 2, args[0] == "--recover" {
+            try runSQLiteRecoveryProbe(storePath: args[1])
+            return
+        }
         try testReadOnlyModelChecksumWithoutStore()
         try testWriterContractRequiresExactProfileAndChecksum()
         try testWriterPolicyAcceptsExactlyTenTransactionEntities()
@@ -816,6 +1030,11 @@ struct MoneyWizToolsHostOwnershipTests {
         try testNewPayeeKeyCannotCrossOwners()
         try testStableNewPayeeKeyCreatesOnceForOneOwner()
         try testWritePlanRejectsMixedMergePayloadWithoutMutation()
+        try testV2BridgeValidatesDigestAndRejectsFutureOperations()
+        try testV2BridgeAtomicallyAppliesAndRecoversAsNoop()
+        try testV2BridgeRefusesMixedRecoveryBeforeMutation()
+        try testV2BridgeSecondAppCheckRollsBackBeforeSave()
+        try testV2RecoveryRefusesForeignTargetOwner()
         print("MoneyWiz Tools host ownership tests passed")
     }
 }

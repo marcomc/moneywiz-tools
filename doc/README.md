@@ -19,6 +19,7 @@ design documents explain implementation constraints after the task is clear.
 | Topic | Document |
 | --- | --- |
 | Core Data host, identity, and live-write protocol | [Core Data Writer](CORE-DATA-WRITER.md) |
+| Versioned plans, interrupted writes and private journal retention | [Writer Recovery](WRITER-RECOVERY.md) |
 | Exact duplicate consolidation and fuzzy-map review | [Payee Consolidation](PAYEE-CONSOLIDATION.md) |
 | Verified MoneyWiz 2026 payee and transaction mapping | [Live Payee Structure](LIVE-PAYEE-STRUCTURE.md) |
 | Logical object relationships | [Entity Relationship Diagram](ER-DIAGRAM.md) |

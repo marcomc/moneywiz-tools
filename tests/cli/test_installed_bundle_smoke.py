@@ -493,3 +493,129 @@ def test_installed_native_host_reads_explicit_model_checksum(
     assert result.stderr == ""
     checksum = result.stdout.strip()
     assert len(base64.b64decode(checksum, validate=True)) == 32
+
+
+def test_installed_writer_applies_and_recovers_synthetic_reference_store(
+    installed_bundle: tuple[Path, Path, Path], tmp_path: Path
+) -> None:
+    configured_model = os.environ.get(MODEL_ENV)
+    configured_app = os.environ.get("MONEYWIZ_TEST_APP_PATH")
+    if not configured_model or not configured_app:
+        pytest.skip("set MONEYWIZ_TEST_MODEL_PATH and MONEYWIZ_TEST_APP_PATH")
+    bundle, launcher, _native_host = installed_bundle
+    unrelated_cwd, environment = isolated_runtime(tmp_path)
+    environment.pop("MONEYWIZ_CORE_DATA_WRITER", None)
+    environment["MONEYWIZ_JOURNAL_DIR"] = str(tmp_path / "private-journal")
+    source = Path(__file__).resolve().parents[2]
+    fixture_builder = tmp_path / "fixture-builder"
+    built = subprocess.run(
+        [
+            "swiftc",
+            "-parse-as-library",
+            "-D",
+            "MONEYWIZ_TOOLS_TESTING",
+            str(source / "scripts/moneywiz_tools_host.swift"),
+            str(source / "tests/swift/moneywiz_reference_fixture.swift"),
+            "-o",
+            str(fixture_builder),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert built.returncode == 0, built.stderr
+    store, plan_path = tmp_path / "synthetic.sqlite", tmp_path / "plan.json"
+    seeded = subprocess.run(
+        [
+            str(fixture_builder),
+            "--store",
+            str(store),
+            "--model",
+            configured_model,
+            "--app",
+            configured_app,
+            "--plan",
+            str(plan_path),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=environment,
+    )
+    assert seeded.returncode == 0, seeded.stderr
+    plan = json.loads(plan_path.read_text())
+
+    def run(*arguments: str) -> dict:
+        result = subprocess.run(
+            [str(launcher), "--db", str(store), "write", *arguments],
+            cwd=unrelated_cwd,
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
+        return json.loads(result.stdout)
+
+    locations = run("locations")
+    assert locations["journal_root"] == environment["MONEYWIZ_JOURNAL_DIR"]
+    assert not Path(locations["journal_root"]).exists()
+    assert (
+        run("validate", "--plan", str(plan_path))["plan_digest"] == plan["plan_digest"]
+    )
+    assert not Path(locations["journal_root"]).exists()
+    runtime = bundle / "Contents/Resources/runtime"
+    imported = subprocess.run(
+        [
+            str(runtime / "python/venv/bin/python"),
+            "-c",
+            (
+                "import json,sys;sys.path.insert(0,sys.argv[1]);"
+                "import write,write_plan,write_journal,writer_client;"
+                "print(json.dumps([m.__file__ for m in (write,write_plan,write_journal,writer_client)]))"
+            ),
+            str(runtime / "scripts"),
+        ],
+        cwd=unrelated_cwd,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert imported.returncode == 0, imported.stderr
+    assert all(
+        Path(origin).is_relative_to(runtime) for origin in json.loads(imported.stdout)
+    )
+    identity = (
+        "--plan",
+        str(plan_path),
+        "--app",
+        configured_app,
+        "--model",
+        configured_model,
+        "--owner",
+        plan["owner_uri"].rsplit("/p", 1)[1],
+    )
+    applied = run(
+        "apply", *identity, "--reviewed-digest", plan["plan_digest"], "--apply"
+    )
+    assert applied["classification"] == "applied"
+    assert applied["verified"] is True
+    durable_id = int(applied["operations"][0]["durable_numeric_id"])
+    with sqlite3.connect(f"{store.as_uri()}?mode=ro", uri=True) as connection:
+        assert connection.execute(
+            "SELECT p.ZGID FROM ZSYNCOBJECT t JOIN ZSYNCOBJECT p ON p.Z_PK=t.ZPAYEE2 "
+            "WHERE t.Z_PK=?",
+            (durable_id,),
+        ).fetchone() == ("synthetic-payee",)
+    recovered = run("recover", *identity)
+    retried = run(
+        "apply", *identity, "--reviewed-digest", plan["plan_digest"], "--apply"
+    )
+    assert recovered["classification"] == retried["classification"] == "noop"
+    assert (
+        recovered["operations"][0]["durable_uri"]
+        == applied["operations"][0]["durable_uri"]
+    )
+    assert len(run("journal")["entries"]) == 1
+    assert run("cleanup")["eligible"] == []
