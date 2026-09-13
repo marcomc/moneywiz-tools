@@ -29,6 +29,17 @@ def json_value(value):
     return value
 
 
+def cached_balance_value(value):
+    """Render a selected native cached balance without coercing its raw type."""
+    if value is None:
+        return None
+    if type(value) not in (int, float):
+        raise TypeError("cached account balance is not numeric")
+    if type(value) is float and not math.isfinite(value):
+        raise ValueError("cached account balance is not finite")
+    return str(value)
+
+
 def transaction_time(record) -> datetime:
     """Read Core Data absolute seconds; do not inherit legacy local epoch offsets."""
     seconds = record._raw.get("ZDATE1")

@@ -48,11 +48,19 @@ Completeness conservatively covers all loaded managers, not just displayed rows.
 Payee/category/tag records are included across the loaded store for relationship
 inspection. Treat exported JSON as private financial data.
 
+Pair-level owner, date and reconciliation observations require reciprocal
+withdrawal/deposit transaction and account links. They are emitted once with
+withdrawal/deposit ID ordering, even when selection displays only one leg.
+
 Amount/date coincidence is a review candidate, never authority to merge or delete.
 Different transfer dates can be legitimate. The cached account balance is not an
 independent balance calculation, and raw native status/flags are not an established
 cleared/pending interpretation. External activity, accounting scope and native
 business semantics still need verification before write planning.
+
+Financial amounts and quantities must be finite before public output. A selected
+cached balance must also retain its native numeric type; malformed or non-finite
+values fail the operation with status `2` rather than being stringified.
 
 ## Existing list commands
 

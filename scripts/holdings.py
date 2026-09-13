@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 from moneywiz_api.moneywiz_api import MoneywizApi
-from read_support import report_completeness, run_read_command
+from read_support import json_value, report_completeness, run_read_command
 
 
 def default_db() -> Path:
@@ -39,7 +39,7 @@ def main() -> int:
         {
             "account": h.account,
             "symbol": h.symbol,
-            "number_of_shares": str(h.number_of_shares),
+            "number_of_shares": json_value(h.number_of_shares),
             "description": h.description,
         }
         for h in holdings

@@ -52,6 +52,81 @@ def isolated_runtime(tmp_path: Path) -> tuple[Path, dict[str, str]]:
     return unrelated_cwd, environment
 
 
+def assert_bounded_read_error(result: subprocess.CompletedProcess[str]) -> None:
+    assert result.returncode == 2
+    assert result.stdout == ""
+    assert json.loads(result.stderr)["message"] == (
+        "Read failed; check database, schema and command arguments"
+    )
+    assert "Traceback" not in result.stderr
+
+
+def add_nonfinite_holding(store: Path) -> None:
+    with sqlite3.connect(store) as connection:
+        connection.executescript("""
+            INSERT INTO Z_PRIMARYKEY VALUES (24, 'InvestmentHolding', 0);
+            ALTER TABLE ZSYNCOBJECT ADD COLUMN ZINVESTMENTACCOUNT INTEGER;
+            ALTER TABLE ZSYNCOBJECT ADD COLUMN ZOPENNINGNUMBEROFSHARES REAL;
+            ALTER TABLE ZSYNCOBJECT ADD COLUMN ZSYMBOL TEXT;
+            ALTER TABLE ZSYNCOBJECT ADD COLUMN ZHOLDINGTYPE TEXT;
+            ALTER TABLE ZSYNCOBJECT ADD COLUMN ZDESC TEXT;
+            ALTER TABLE ZSYNCOBJECT ADD COLUMN ZISPRICEPERSHAREAVAILABLEONLINE INTEGER;
+            ALTER TABLE ZSYNCOBJECT ADD COLUMN ZINVESTMENTOBJECTTYPE INTEGER;
+            ALTER TABLE ZSYNCOBJECT ADD COLUMN ZCOSTBASISOFMISSINGOBSHARES REAL;
+        """)
+        connection.execute(
+            """
+            INSERT INTO ZSYNCOBJECT
+              (Z_PK,Z_ENT,ZOBJECTCREATIONDATE,ZGID,ZINVESTMENTACCOUNT,
+               ZOPENNINGNUMBEROFSHARES,ZNUMBEROFSHARES,ZPRICEPERSHARE,ZSYMBOL,
+               ZHOLDINGTYPE,ZDESC,ZISPRICEPERSHAREAVAILABLEONLINE,
+               ZINVESTMENTOBJECTTYPE,ZCOSTBASISOFMISSINGOBSHARES)
+            VALUES (12,24,0,'nonfinite-holding',10,0,?,?, 'SYN',NULL,
+                    'Synthetic holding',0,0,0)
+            """,
+            (float("inf"), 1),
+        )
+
+
+def replace_with_cross_owner_transfer_pair(store: Path) -> None:
+    with sqlite3.connect(store) as connection:
+        connection.executescript("""
+            INSERT INTO Z_PRIMARYKEY VALUES
+              (45, 'TransferDepositTransaction', 36),
+              (46, 'TransferWithdrawTransaction', 36);
+            INSERT INTO ZUSER VALUES (5, 'other-owner@example.test');
+            INSERT INTO ZSYNCOBJECT
+              (Z_PK,Z_ENT,ZOBJECTCREATIONDATE,ZGID,ZDISPLAYORDER,ZGROUPID,ZNAME,
+               ZCURRENCYNAME,ZOPENINGBALANCE,ZUSER,ZARCHIVED,ZBALLANCE)
+            VALUES (20,12,0,'recipient-account',1,0,'Recipient account','EUR',0,5,0,0);
+            ALTER TABLE ZSYNCOBJECT ADD COLUMN ZRECIPIENTACCOUNT1 INTEGER;
+            ALTER TABLE ZSYNCOBJECT ADD COLUMN ZRECIPIENTTRANSACTION INTEGER;
+            ALTER TABLE ZSYNCOBJECT ADD COLUMN ZORIGINALRECIPIENTAMOUNT REAL;
+            ALTER TABLE ZSYNCOBJECT ADD COLUMN ZORIGINALRECIPIENTCURRENCY TEXT;
+            ALTER TABLE ZSYNCOBJECT ADD COLUMN ZORIGINALFEE REAL;
+            ALTER TABLE ZSYNCOBJECT ADD COLUMN ZORIGINALFEECURRENCY TEXT;
+            ALTER TABLE ZSYNCOBJECT ADD COLUMN ZSENDERACCOUNT INTEGER;
+            ALTER TABLE ZSYNCOBJECT ADD COLUMN ZSENDERTRANSACTION INTEGER;
+            ALTER TABLE ZSYNCOBJECT ADD COLUMN ZORIGINALSENDERAMOUNT REAL;
+            ALTER TABLE ZSYNCOBJECT ADD COLUMN ZORIGINALSENDERCURRENCY TEXT;
+            DELETE FROM ZSYNCOBJECT WHERE Z_PK = 11;
+            INSERT INTO ZSYNCOBJECT
+              (Z_PK,Z_ENT,ZOBJECTCREATIONDATE,ZGID,ZRECONCILED,ZAMOUNT1,ZDESC2,
+               ZDATE1,ZACCOUNT2,ZRECIPIENTACCOUNT1,ZRECIPIENTTRANSACTION,
+               ZORIGINALAMOUNT,ZORIGINALCURRENCY,ZORIGINALRECIPIENTAMOUNT,
+               ZORIGINALRECIPIENTCURRENCY,ZORIGINALEXCHANGERATE,ZSTATUS1,ZFLAGS1)
+            VALUES (11,46,0,'synthetic-withdrawal',1,-10,'Synthetic transfer',100,
+                    10,20,12,-10,'EUR',10,'EUR',1,1,0);
+            INSERT INTO ZSYNCOBJECT
+              (Z_PK,Z_ENT,ZOBJECTCREATIONDATE,ZGID,ZRECONCILED,ZAMOUNT1,ZDESC2,
+               ZDATE1,ZACCOUNT2,ZSENDERACCOUNT,ZSENDERTRANSACTION,ZORIGINALAMOUNT,
+               ZORIGINALCURRENCY,ZORIGINALSENDERAMOUNT,ZORIGINALSENDERCURRENCY,
+               ZORIGINALEXCHANGERATE,ZSTATUS1,ZFLAGS1)
+            VALUES (12,45,0,'synthetic-deposit',1,10,'Synthetic transfer',100,
+                    20,10,11,10,'EUR',-10,'EUR',1,1,0);
+        """)
+
+
 def test_installed_bundle_read_contract(
     installed_bundle: tuple[Path, Path, Path], synthetic_store: Path, tmp_path: Path
 ) -> None:
@@ -130,6 +205,51 @@ def test_installed_bundle_read_contract(
         "message": "Read failed; check database, schema and command arguments",
     }
     assert "Traceback" not in bounded_error.stderr
+
+    invalid_balance_store = tmp_path / "invalid-balance.sqlite"
+    shutil.copy2(synthetic_store, invalid_balance_store)
+    with sqlite3.connect(invalid_balance_store) as connection:
+        connection.execute(
+            "UPDATE ZSYNCOBJECT SET ZBALLANCE = 'private-balance' WHERE Z_PK = 10"
+        )
+    invalid_balance = run("--db", str(invalid_balance_store), "snapshot")
+    assert_bounded_read_error(invalid_balance)
+    assert "private-balance" not in invalid_balance.stderr
+
+    invalid_transaction_store = tmp_path / "invalid-transaction-amount.sqlite"
+    shutil.copy2(synthetic_store, invalid_transaction_store)
+    with sqlite3.connect(invalid_transaction_store) as connection:
+        connection.execute(
+            "UPDATE ZSYNCOBJECT SET ZAMOUNT1 = ?, ZORIGINALAMOUNT = ? WHERE Z_PK = 11",
+            (float("inf"), float("inf")),
+        )
+    invalid_transaction = run(
+        "--db", str(invalid_transaction_store), "transactions", "--format", "json"
+    )
+    assert_bounded_read_error(invalid_transaction)
+
+    invalid_holding_store = tmp_path / "invalid-holding-quantity.sqlite"
+    shutil.copy2(synthetic_store, invalid_holding_store)
+    add_nonfinite_holding(invalid_holding_store)
+    invalid_holding = run(
+        "--db",
+        str(invalid_holding_store),
+        "holdings",
+        "--account",
+        "10",
+        "--format",
+        "json",
+    )
+    assert_bounded_read_error(invalid_holding)
+
+    pair_store = tmp_path / "cross-owner-pair.sqlite"
+    shutil.copy2(synthetic_store, pair_store)
+    replace_with_cross_owner_transfer_pair(pair_store)
+    pair = run("--db", str(pair_store), "snapshot", "--account", "20")
+    assert pair.returncode == 0, pair.stderr
+    pair_payload = json.loads(pair.stdout)
+    assert [row["id"] for row in pair_payload["transactions"]] == [12]
+    assert pair_payload["audit"] == [{"kind": "cross_owner_transfer", "ids": [11, 12]}]
 
 
 def test_installed_native_host_missing_model_is_bounded(

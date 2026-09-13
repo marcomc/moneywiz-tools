@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 
 from moneywiz_api.moneywiz_api import MoneywizApi
 from read_support import (
+    cached_balance_value,
     cutoff,
     json_value,
     run_read_command,
@@ -99,6 +100,9 @@ def audit_graph(accounts: list[dict], transactions: list[dict]) -> list[dict]:
             findings.append(
                 {"kind": "nonreciprocal_transfer", "ids": [record_id, paired_id]}
             )
+            continue
+        if not send:
+            continue
         paired_account = account_map.get(paired_account_id)
         if (
             account
@@ -109,7 +113,7 @@ def audit_graph(accounts: list[dict], transactions: list[dict]) -> list[dict]:
                 {"kind": "cross_owner_transfer", "ids": [record_id, paired_id]}
             )
         paired_datetime = _audit_scalar(paired, "datetime", required=False)
-        if send and key[2] != paired_datetime:
+        if key[2] != paired_datetime:
             findings.append(
                 {
                     "kind": "different_transfer_dates",
@@ -119,7 +123,7 @@ def audit_graph(accounts: list[dict], transactions: list[dict]) -> list[dict]:
             )
         reconciled = _audit_scalar(row, "reconciled", required=False)
         paired_reconciled = _audit_scalar(paired, "reconciled", required=False)
-        if send and not (reconciled and paired_reconciled):
+        if not (reconciled and paired_reconciled):
             findings.append(
                 {
                     "kind": "unreconciled_transfer_legs",
@@ -161,7 +165,7 @@ def build_snapshot(api, account: int | None, until: str | None, zone: str) -> di
             transaction_time(record).astimezone(ZoneInfo(zone)).isoformat()
         )
         row["categories"] = [
-            {"category_id": category, "amount": str(amount)}
+            {"category_id": category, "amount": json_value(amount)}
             for category, amount in api.transaction_manager.category_for_transaction(
                 record.id
             )
@@ -189,7 +193,7 @@ def build_snapshot(api, account: int | None, until: str | None, zone: str) -> di
     for row in accounts:
         raw = api.account_manager.get(row["id"])._raw
         value = raw.get("ZBALLANCE")
-        row["recorded_balance"] = str(value) if value is not None else None
+        row["recorded_balance"] = cached_balance_value(value)
         row["balance_basis"] = "native_cached_value_not_source_verified"
         row["archived"] = raw.get("ZARCHIVED")
     holdings = [

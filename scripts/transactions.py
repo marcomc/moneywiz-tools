@@ -99,7 +99,7 @@ def main() -> int:
             .astimezone(ZoneInfo(args.timezone))
             .isoformat(timespec="seconds"),
             "account": getattr(t, "account", None),
-            "amount": str(t.amount),
+            "amount": json_value(t.amount),
             "description": t.description,
         }
         # Add human-friendly account name
@@ -167,7 +167,7 @@ def main() -> int:
         if args.with_categories:
             cats = api.transaction_manager.category_for_transaction(t.id) or []
             item["categories"] = [
-                {"category_id": cid, "amount": str(amt)} for cid, amt in cats
+                {"category_id": cid, "amount": json_value(amt)} for cid, amt in cats
             ]
         if args.with_tags:
             tags = api.transaction_manager.tags_for_transaction(t.id) or []
