@@ -31,10 +31,14 @@ BUNDLE_RUNTIME_SCRIPT_PAYLOAD := \
 	scripts/compatibility.py \
 	scripts/compatibility_matrix.json \
 	scripts/holdings.py \
+	scripts/identity.py \
 	scripts/introspect_db.py \
 	scripts/merge_duplicate_payees.py \
 	scripts/payees.py \
 	scripts/reassign_payees_by_id.py \
+	scripts/read_support.py \
+	scripts/runtime_identity.py \
+	scripts/snapshot.py \
 	scripts/record.py \
 	scripts/run_moneywiz_cli.py \
 	scripts/stats.py \
@@ -84,7 +88,7 @@ _build-bundle:
 	@mkdir -p "$(APP_RUNTIME)/python" "$(APP_RUNTIME)/bin"
 	@mkdir -p "$(APP_RUNTIME)/scripts" "$(APP_RUNTIME)/doc"
 	@cp -f "$(HOST_PLIST)" "$(APP_CONTENTS)/Info.plist"
-	@swiftc -parse-as-library "$(HOST_SOURCE)" -o "$(APP_HOST)"
+	@cd "$(CURDIR)" && swiftc -parse-as-library "scripts/moneywiz_tools_host.swift" -o "$(APP_HOST)"
 	@set -eu; \
 		for payload_path in $(BUNDLE_RUNTIME_ROOTS) $(BUNDLE_RUNTIME_SCRIPT_PAYLOAD); do \
 			cp -f "$(CURDIR)/$$payload_path" "$(APP_RUNTIME)/$$payload_path"; \
@@ -111,7 +115,7 @@ _build-bundle:
 			exit 1; \
 		fi; \
 		ln -sfn "../../$$managed_python" "$(APP_VENV)/bin/python"
-	@uv export --project "$(CURDIR)" --frozen --no-dev --format requirements-txt --output-file "$(APP_RUNTIME)/requirements.txt"
+	@uv export --project "$(CURDIR)" --frozen --no-dev --no-header --format requirements-txt --output-file "$(APP_RUNTIME)/requirements.txt"
 	@uv pip install --python "$(APP_PY)" --quiet --requirement "$(APP_RUNTIME)/requirements.txt"
 	@chmod +x "$(APP_RUNTIME)/moneywiz.sh"
 

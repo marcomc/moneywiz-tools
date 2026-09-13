@@ -204,6 +204,14 @@ Reads (support --format table|json; default: table):
                [--fields f1,f2,...] [--list-fields] [--all-fields]
   holdings --account ID
 
+Reconciliation reads (JSON):
+  identity [--app PATH] [--model PATH] [--owner ID]
+                                      Discover exact app/store/model identity read-only.
+  snapshot [--account ID] [--until DATE] [--timezone IANA]
+                                      Complete read graph and bounded audit findings.
+  accounts|holdings|transactions --format json --diagnostics
+                                      Include read completeness; partial reads exit 3.
+
 Writes (dry-run by default; add --apply to commit):
   reassign-payees-by-id [--from-payee-id ID] [--from-empty-payee]
                         [--empty-desc-target-payee-id ID]
@@ -283,7 +291,7 @@ if [[ "${IS_BUNDLED}" -eq 1 ]]; then
 fi
 
 BASE_DB_ARG=(--db "${GLOBAL_DB:-${DB_PATH}}")
-if [[ "${HELP_REQUESTED}" -eq 0 && "${SUBCMD}" != "shell" && "${SUBCMD}" != "create-test-db" && "${SUBCMD}" != "sanitize-test-db" ]]; then
+if [[ "${HELP_REQUESTED}" -eq 0 && "${SUBCMD}" != "shell" && "${SUBCMD}" != "identity" && "${SUBCMD}" != "snapshot" && "${SUBCMD}" != "create-test-db" && "${SUBCMD}" != "sanitize-test-db" ]]; then
   DB_TO_USE="${GLOBAL_DB:-${DB_PATH}}"
   if [[ ! -f "${DB_TO_USE}" ]]; then
     echo "Error: Database file not found: ${DB_TO_USE}" >&2
@@ -293,6 +301,13 @@ if [[ "${HELP_REQUESTED}" -eq 0 && "${SUBCMD}" != "shell" && "${SUBCMD}" != "cre
 fi
 
 case "${SUBCMD}" in
+  identity)
+    identity_arguments=()
+    if [[ -n "${GLOBAL_DB:-${CONFIG_DB_PATH}}" ]]; then
+      identity_arguments=(--db "${GLOBAL_DB:-${CONFIG_DB_PATH}}")
+    fi
+    run_python_script "${SCRIPT_DIR}/scripts/identity.py" "${identity_arguments[@]}" "$@"
+    ;;
   shell)
     shell_arguments=("$@")
     if [[ "${HELP_REQUESTED}" -eq 1 ]]; then
@@ -304,7 +319,7 @@ case "${SUBCMD}" in
     fi
     run_python_script "${SCRIPT_DIR}/scripts/run_moneywiz_cli.py" "${GLOBAL_DB:-${DB_PATH}}" "${shell_arguments[@]}"
     ;;
-  users|accounts|categories|payees|tags|transactions|holdings|record|stats|summary)
+  users|accounts|categories|payees|tags|transactions|holdings|record|stats|summary|snapshot)
     run_python_script "${SCRIPT_DIR}/scripts/${SUBCMD}.py" "${BASE_DB_ARG[@]}" "$@"
     ;;
   reassign-payees-by-id|merge-duplicate-payees)

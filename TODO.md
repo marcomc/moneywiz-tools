@@ -2,6 +2,21 @@
 
 - [ ] Extend the sanitization pipeline to spot-check new columns (attachments, free-form notes) so `--sanitize-test-db` keeps pace with future MoneyWiz schema updates.
 
+## Active release 0.3.0 tasks
+
+The execution goal authorizes P0/P1F/P1 on `release/0.3.0`. Refine later tasks
+as prerequisites become concrete; preserve the propositions below as requirements.
+
+| ID | Deliverable / owner | Depends on | Acceptance | State |
+| --- | --- | --- | --- | --- |
+| P0-01 | Complete scoped API reads / API worker | Pinned compatibility baseline | Nullable metadata, safe diagnostics, per-consumer aliases, explicit completeness and opt-in DB tests | PR #4 head reviewed and merged API pinned; CI green (run 34761938543) |
+| P0-02 | Runtime identity / identity worker | Existing v1 model resolver | TestFlight/Setapp discovery, explicit overrides, ambiguity and mismatch rejection; v1 regression checks | In progress |
+| P0-03 | CLI snapshots and graph audit / controller | P0-01 interface | Structured completeness, identities/relationships/flags, explicit cutoff/timezone and diagnostic exit status | In progress |
+| P0-04 | API pin, packaging and P0 integration / controller | P0-01–P0-03 | Pre-PR readiness, current-head Codex clean per PR, tested packaged runtime and updated docs | In progress; PR #4 CI green (run 34761938543), merged API pinned |
+
+PR links and evidence are recorded here once created. Runtime and remote
+acceptance remain distinct from implementation and local test completion.
+
 ## Propositions
 
 Delivery sequence and phase preparation:
@@ -62,8 +77,11 @@ records. A failed partial batch must identify the completed and untouched IDs.
   - Regress `ZINFO=NULL` with valid `ZSTATEMENTENDDAY`, then test absent optional
     statement metadata separately. Never serialize incomplete dataclasses in errors.
   - Compare the separate API checkout's nullable-info/post-construction validation
-    against pinned revision `6ea3cdec`; promote a tested dependency and rebuild
-    the bundle rather than patching installed site-packages.
+    against reviewed revision `7cfa1ea9f09263f87e4099c4315bd2cc83c25d5c`;
+    validate the pinned dependency and rebuilt bundle rather than patching
+    installed site-packages. API PR #4 head
+    `3f74a22f327297c708e0ed852e7ed6b5b8268be6` passed CI run `34761938543`
+    and merged as `7cfa1ea9f09263f87e4099c4315bd2cc83c25d5c` into `release/0.3.0`.
   - Make `moneywiz accounts` and account-scoped transaction reads share the
     operation-specific aliases instead of constructing every account subtype
     with fields irrelevant to the requested operation.

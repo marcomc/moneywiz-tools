@@ -1,3 +1,4 @@
+import json
 import os
 import plistlib
 import shutil
@@ -115,6 +116,8 @@ def test_source_dispatcher_help_does_not_require_configured_database(
         "tags",
         "transactions",
         "holdings",
+        "snapshot",
+        "identity",
         "reassign-payees-by-id",
         "merge-duplicate-payees",
         "compatibility",
@@ -163,6 +166,34 @@ def test_source_dispatcher_help_does_not_require_configured_database(
     assert "Database file not found" in result.stderr
 
 
+def test_source_dispatcher_preserves_bounded_missing_snapshot_error(
+    tmp_path: Path,
+) -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    missing_database = tmp_path / "missing.sqlite"
+
+    result = subprocess.run(
+        [
+            str(repo_root / "moneywiz.sh"),
+            "--db",
+            str(missing_database),
+            "snapshot",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 2
+    assert result.stdout == ""
+    assert json.loads(result.stderr.splitlines()[-1]) == {
+        "status": "error",
+        "error": "DatabasePathError",
+        "message": "Read failed; check database, schema and command arguments",
+    }
+    assert not missing_database.exists()
+
+
 def test_readme_categories_example_is_executable() -> None:
     repo_root = Path(__file__).resolve().parents[2]
     documented_command = next(
@@ -200,7 +231,7 @@ def test_concepts_links_to_pinned_installed_dependency_source() -> None:
     revision = moneywiz_api_dependency.rsplit("@", maxsplit=1)[1]
     pinned_source_url = (
         "https://github.com/marcomc/moneywiz-api/blob/"
-        f"{revision}/src/moneywiz_api/utils.py#L6-L15"
+        f"{revision}/src/moneywiz_api/utils.py"
     )
     concepts = (repo_root / "doc/CONCEPTS.md").read_text()
     dependency_ticket = (

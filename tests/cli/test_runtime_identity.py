@@ -1,0 +1,622 @@
+import json
+import plistlib
+import sqlite3
+import subprocess
+import sys
+from collections.abc import Callable
+from pathlib import Path
+from unittest.mock import MagicMock
+
+import pytest
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
+
+import runtime_identity
+
+MODEL_CHECKSUM = "+6BY8eaTke2jfAd5Bzt5D49JRMZld5o8ZoUW+4G2ElQ="
+STORE_UUID = "D26F993E-2055-4EC9-8BB0-411FCC203048"
+
+
+@pytest.fixture
+def make_app(tmp_path: Path) -> Callable[[str, str], tuple[Path, Path]]:
+    def create(
+        bundle_identifier: str = runtime_identity.TESTFLIGHT_BUNDLE_IDENTIFIER,
+        name: str = "MoneyWiz 2026.app",
+    ) -> tuple[Path, Path]:
+        app = tmp_path / name
+        contents = app / "Contents"
+        model_directory = contents / "Resources/MoneyWizDataModel.momd"
+        model_directory.mkdir(parents=True)
+        with (contents / "Info.plist").open("wb") as info_file:
+            plistlib.dump(
+                {
+                    "CFBundleIdentifier": bundle_identifier,
+                    "CFBundleShortVersionString": "2026.1",
+                    "CFBundleVersion": "4801",
+                },
+                info_file,
+            )
+        with (model_directory / "VersionInfo.plist").open("wb") as version_file:
+            plistlib.dump(
+                {"NSManagedObjectModel_CurrentVersionName": "MoneyWizDataModel 48"},
+                version_file,
+            )
+        model = model_directory / "MoneyWizDataModel 48.mom"
+        model.touch()
+        return app, model
+
+    return create
+
+
+def make_store(
+    path: Path,
+    *,
+    owner_ids: tuple[object, ...] = (1,),
+    store_uuid: str = STORE_UUID,
+    checksum: str = MODEL_CHECKSUM,
+    with_sync_login: bool = True,
+    owner_column: str = "INTEGER PRIMARY KEY",
+) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "CREATE TABLE Z_METADATA "
+            "(Z_VERSION INTEGER PRIMARY KEY, Z_UUID TEXT, Z_PLIST BLOB)"
+        )
+        user_columns = f"Z_PK {owner_column}"
+        if with_sync_login:
+            user_columns += ", ZSYNCLOGIN TEXT"
+        connection.execute(f"CREATE TABLE ZUSER ({user_columns})")
+        metadata = plistlib.dumps(
+            {"NSStoreModelVersionChecksumKey": checksum}, fmt=plistlib.FMT_BINARY
+        )
+        connection.execute(
+            "INSERT INTO Z_METADATA (Z_VERSION, Z_UUID, Z_PLIST) VALUES (1, ?, ?)",
+            (store_uuid, metadata),
+        )
+        for owner_id in owner_ids:
+            if with_sync_login:
+                connection.execute(
+                    "INSERT INTO ZUSER (Z_PK, ZSYNCLOGIN) VALUES (?, ?)",
+                    (owner_id, f"owner-{owner_id}"),
+                )
+            else:
+                connection.execute("INSERT INTO ZUSER (Z_PK) VALUES (?)", (owner_id,))
+    return path
+
+
+@pytest.mark.parametrize(
+    ("bundle_identifier", "edition"),
+    [
+        (runtime_identity.TESTFLIGHT_BUNDLE_IDENTIFIER, "testflight"),
+        (runtime_identity.SETAPP_BUNDLE_IDENTIFIER, "setapp"),
+    ],
+)
+def test_supported_apps_resolve_their_manifest_selected_model(
+    make_app: Callable[[str, str], tuple[Path, Path]],
+    bundle_identifier: str,
+    edition: str,
+) -> None:
+    app, model = make_app(bundle_identifier, f"{edition}.app")
+
+    identity = runtime_identity.inspect_app(app)
+
+    assert identity.edition == edition
+    assert identity.bundle_identifier == bundle_identifier
+    assert identity.version == "2026.1"
+    assert identity.build == "4801"
+    assert runtime_identity.resolve_model(app) == model
+
+
+def test_explicit_model_override_retains_v1_precedence(tmp_path: Path) -> None:
+    model = tmp_path / "operator-selected.mom"
+    model.touch()
+
+    assert (
+        runtime_identity.resolve_model(tmp_path / "missing.app", model_path=model)
+        == model
+    )
+
+
+def test_model_default_discovers_testflight_instead_of_defaulting_to_setapp(
+    tmp_path: Path,
+    make_app: Callable[[str, str], tuple[Path, Path]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app, model = make_app()
+    monkeypatch.setattr(runtime_identity, "DEFAULT_TESTFLIGHT_APP", app)
+    monkeypatch.setattr(
+        runtime_identity, "LEGACY_TESTFLIGHT_APP", tmp_path / "missing-testflight.app"
+    )
+    monkeypatch.setattr(
+        runtime_identity, "DEFAULT_MONEYWIZ_APP", tmp_path / "missing-setapp.app"
+    )
+
+    assert runtime_identity.resolve_model(environ={}) == model
+
+
+def test_full_app_identity_requires_version_and_build(
+    make_app: Callable[[str, str], tuple[Path, Path]],
+) -> None:
+    app, model = make_app()
+    with (app / "Contents/Info.plist").open("wb") as info_file:
+        plistlib.dump(
+            {"CFBundleIdentifier": runtime_identity.TESTFLIGHT_BUNDLE_IDENTIFIER},
+            info_file,
+        )
+
+    with pytest.raises(
+        runtime_identity.RuntimeIdentityError, match="incomplete version identity"
+    ):
+        runtime_identity.resolve_app(app, environ={})
+    assert runtime_identity.resolve_model(app, environ={}) == model
+
+
+def test_app_discovery_rejects_parallel_supported_editions(
+    make_app: Callable[[str, str], tuple[Path, Path]],
+) -> None:
+    testflight, _model = make_app(
+        runtime_identity.TESTFLIGHT_BUNDLE_IDENTIFIER, "testflight.app"
+    )
+    setapp, _model = make_app(runtime_identity.SETAPP_BUNDLE_IDENTIFIER, "setapp.app")
+
+    with pytest.raises(
+        runtime_identity.RuntimeIdentityError, match="Multiple supported"
+    ):
+        runtime_identity.resolve_app(candidates=(testflight, setapp), environ={})
+
+    assert (
+        runtime_identity.resolve_app(
+            setapp, candidates=(testflight,), environ={}
+        ).edition
+        == "setapp"
+    )
+
+
+def test_app_discovery_rejects_an_unsupported_bundle(
+    make_app: Callable[[str, str], tuple[Path, Path]],
+) -> None:
+    app, _model = make_app("example.invalid", "invalid.app")
+
+    with pytest.raises(
+        runtime_identity.RuntimeIdentityError,
+        match="No valid supported MoneyWiz app bundle",
+    ):
+        runtime_identity.resolve_app(candidates=(app,), environ={})
+
+
+def test_store_identity_reads_exact_metadata_and_local_owner(tmp_path: Path) -> None:
+    store = make_store(tmp_path / "store.sqlite")
+
+    identity = runtime_identity.inspect_store(store)
+
+    assert identity.path == store
+    assert identity.uuid == STORE_UUID
+    assert identity.model_checksum == MODEL_CHECKSUM
+    assert identity.owner_local_id == 1
+    assert identity.owner_id == 1
+    assert identity.owner_sync_login == "owner-1"
+
+
+def test_store_identity_accepts_schema_without_optional_sync_login(
+    tmp_path: Path,
+) -> None:
+    store = make_store(tmp_path / "store.sqlite", with_sync_login=False)
+
+    identity = runtime_identity.inspect_store(store)
+
+    assert identity.owner_local_id == 1
+    assert identity.owner_sync_login is None
+
+
+@pytest.mark.parametrize(
+    "owner",
+    ["private-owner", 1.5, sqlite3.Binary(b"private-owner")],
+    ids=["text", "real", "blob"],
+)
+def test_store_identity_rejects_noninteger_raw_owner_without_value_leak(
+    tmp_path: Path, owner
+) -> None:
+    store = make_store(tmp_path / "store.sqlite", owner_ids=(owner,), owner_column="")
+
+    with pytest.raises(
+        runtime_identity.RuntimeIdentityError, match="integer User local identity"
+    ) as raised:
+        runtime_identity.inspect_store(store)
+
+    assert "private-owner" not in str(raised.value)
+
+
+@pytest.mark.parametrize("owner_id", [None, 1])
+def test_store_identity_rejects_null_owner_before_selection(
+    tmp_path: Path, owner_id: int | None
+) -> None:
+    store = make_store(
+        tmp_path / "store.sqlite",
+        owner_ids=(None, 1),
+        owner_column="",
+    )
+
+    with pytest.raises(
+        runtime_identity.RuntimeIdentityError, match="non-integer User local identity"
+    ):
+        runtime_identity.inspect_store(store, owner_id=owner_id)
+
+
+def test_owner_resolution_rejects_boolean_raw_identity() -> None:
+    connection = MagicMock()
+    connection.execute.side_effect = [
+        MagicMock(fetchall=lambda: [(0, "Z_PK"), (1, "ZSYNCLOGIN")]),
+        MagicMock(fetchall=lambda: [(True, None)]),
+    ]
+
+    with pytest.raises(
+        runtime_identity.RuntimeIdentityError, match="integer User local identity"
+    ):
+        runtime_identity._resolve_owner(connection, None)
+
+
+@pytest.mark.parametrize(
+    "owner,owner_column,private_value",
+    [
+        ("private-owner", "", "private-owner"),
+        (None, "", None),
+    ],
+)
+def test_identity_cli_bounds_invalid_raw_owner_without_traceback_or_value_leak(
+    tmp_path: Path,
+    make_app: Callable[[str, str], tuple[Path, Path]],
+    owner: object,
+    owner_column: str,
+    private_value: str | None,
+) -> None:
+    app, _model = make_app()
+    store = make_store(
+        tmp_path / "store.sqlite",
+        owner_ids=(owner,),
+        owner_column=owner_column,
+    )
+    script = REPO_ROOT / "scripts/identity.py"
+
+    result = subprocess.run(
+        [sys.executable, str(script), "--db", str(store), "--app", str(app)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 2
+    assert result.stdout == ""
+    assert json.loads(result.stderr) == {
+        "status": "error",
+        "message": "MoneyWiz store has a non-integer User local identity",
+    }
+    if private_value is not None:
+        assert private_value not in result.stderr
+    assert "Traceback" not in result.stderr
+
+
+def test_store_identity_uses_read_only_sqlite_mode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = make_store(tmp_path / "store.sqlite")
+    original_connect = sqlite3.connect
+    calls: list[tuple[str, bool]] = []
+
+    def capture_connect(database: str, *, uri: bool) -> sqlite3.Connection:
+        calls.append((database, uri))
+        return original_connect(database, uri=uri)
+
+    monkeypatch.setattr(runtime_identity.sqlite3, "connect", capture_connect)
+
+    runtime_identity.inspect_store(store)
+
+    assert calls == [(store.resolve().as_uri() + "?mode=ro", True)]
+
+
+def test_multiple_store_owners_require_an_explicit_match(tmp_path: Path) -> None:
+    store = make_store(tmp_path / "store.sqlite", owner_ids=(1, 2))
+
+    with pytest.raises(
+        runtime_identity.RuntimeIdentityError, match="unambiguous owner"
+    ):
+        runtime_identity.inspect_store(store)
+
+    assert runtime_identity.inspect_store(store, owner_id=2).owner_local_id == 2
+    with pytest.raises(runtime_identity.RuntimeIdentityError, match="does not exist"):
+        runtime_identity.inspect_store(store, owner_id=3)
+
+
+@pytest.mark.parametrize(
+    "owner_ids,owner_id,different_logins",
+    [
+        ((1, 1), None, False),
+        ((1, 1), 1, True),
+        ((1, 1, 2), 2, False),
+    ],
+)
+def test_store_identity_rejects_duplicate_local_owner_before_map_collapse(
+    tmp_path: Path,
+    owner_ids: tuple[int, ...],
+    owner_id: int | None,
+    different_logins: bool,
+) -> None:
+    store = make_store(
+        tmp_path / "store.sqlite",
+        owner_ids=owner_ids,
+        owner_column="INTEGER",
+    )
+    if different_logins:
+        with sqlite3.connect(store) as connection:
+            connection.execute(
+                "UPDATE ZUSER SET ZSYNCLOGIN = ? WHERE rowid = (SELECT MAX(rowid) FROM ZUSER)",
+                ("private-duplicate-login",),
+            )
+
+    with pytest.raises(
+        runtime_identity.RuntimeIdentityError, match="duplicate User local identities"
+    ) as raised:
+        runtime_identity.inspect_store(store, owner_id=owner_id)
+
+    assert "owner-1" not in str(raised.value)
+    assert "private-duplicate-login" not in str(raised.value)
+
+
+@pytest.mark.parametrize(
+    ("store_uuid", "checksum", "message"),
+    [
+        ("not-a-uuid", MODEL_CHECKSUM, "valid store UUID"),
+        (STORE_UUID, "not-a-checksum", "valid model checksum"),
+    ],
+)
+def test_invalid_store_metadata_fails_closed(
+    tmp_path: Path, store_uuid: str, checksum: str, message: str
+) -> None:
+    store = make_store(
+        tmp_path / "store.sqlite", store_uuid=store_uuid, checksum=checksum
+    )
+
+    with pytest.raises(runtime_identity.RuntimeIdentityError, match=message):
+        runtime_identity.inspect_store(store)
+
+
+def test_store_discovery_rejects_multiple_valid_candidates(tmp_path: Path) -> None:
+    current = make_store(tmp_path / "current.sqlite")
+    legacy = make_store(
+        tmp_path / "legacy.sqlite",
+        store_uuid="4A1A2D66-BD6C-4CC6-811F-9B6920BCB04A",
+    )
+
+    with pytest.raises(
+        runtime_identity.RuntimeIdentityError, match="Multiple valid MoneyWiz stores"
+    ):
+        runtime_identity.resolve_store(candidates=(current, legacy))
+
+    assert runtime_identity.resolve_store(current, candidates=(legacy,)).path == current
+
+
+@pytest.mark.parametrize(
+    "first_owners,second_owners,owner_id",
+    [
+        ((1,), (2,), 1),
+        ((1,), (1, 2), None),
+        ((1,), (1, 2), 2),
+    ],
+)
+def test_store_discovery_resolves_store_before_store_local_owner(
+    tmp_path: Path,
+    first_owners: tuple[int, ...],
+    second_owners: tuple[int, ...],
+    owner_id: int | None,
+) -> None:
+    first = make_store(tmp_path / "first.sqlite", owner_ids=first_owners)
+    second = make_store(
+        tmp_path / "second.sqlite",
+        owner_ids=second_owners,
+        store_uuid="4A1A2D66-BD6C-4CC6-811F-9B6920BCB04A",
+    )
+
+    with pytest.raises(
+        runtime_identity.RuntimeIdentityError, match="Multiple valid MoneyWiz stores"
+    ):
+        runtime_identity.resolve_store(candidates=(first, second), owner_id=owner_id)
+
+
+def test_store_discovery_applies_owner_after_unique_store_selection(
+    tmp_path: Path,
+) -> None:
+    store = make_store(tmp_path / "store.sqlite", owner_ids=(1, 2))
+
+    identity = runtime_identity.resolve_store(candidates=(store,), owner_id=2)
+
+    assert identity.path == store
+    assert identity.owner_local_id == 2
+
+
+@pytest.mark.parametrize("owner_id", [None, 1])
+@pytest.mark.parametrize("ownerless_first", [False, True])
+def test_store_discovery_ignores_ownerless_candidate_that_cannot_bind(
+    tmp_path: Path, owner_id: int | None, ownerless_first: bool
+) -> None:
+    normal = make_store(tmp_path / "normal.sqlite")
+    ownerless = make_store(
+        tmp_path / "ownerless.sqlite",
+        owner_ids=(),
+        store_uuid="4A1A2D66-BD6C-4CC6-811F-9B6920BCB04A",
+    )
+    candidates = (ownerless, normal) if ownerless_first else (normal, ownerless)
+
+    identity = runtime_identity.resolve_store(candidates=candidates, owner_id=owner_id)
+
+    assert identity.path == normal
+    assert identity.owner_local_id == 1
+
+
+@pytest.mark.parametrize("explicit", [False, True])
+def test_ownerless_store_is_a_bounded_invalid_candidate(
+    tmp_path: Path, explicit: bool
+) -> None:
+    ownerless = make_store(tmp_path / "ownerless.sqlite", owner_ids=())
+
+    with pytest.raises(
+        runtime_identity.RuntimeIdentityError, match="no User local identities"
+    ):
+        if explicit:
+            runtime_identity.inspect_store(ownerless)
+        else:
+            runtime_identity.resolve_store(candidates=(ownerless,))
+
+
+def test_store_discovery_deduplicates_canonical_aliases_before_owner_selection(
+    tmp_path: Path,
+) -> None:
+    store = make_store(tmp_path / "store.sqlite", owner_ids=(1, 2))
+    alias = tmp_path / "store-alias.sqlite"
+    alias.symlink_to(store)
+
+    identity = runtime_identity.resolve_store(candidates=(store, alias), owner_id=2)
+
+    assert identity.path == store
+    assert identity.owner_local_id == 2
+
+
+def test_runtime_identity_store_discovery_precedes_owner_and_model_overrides(
+    tmp_path: Path,
+    make_app: Callable[[str, str], tuple[Path, Path]],
+) -> None:
+    app, _model = make_app()
+    first = make_store(tmp_path / "first.sqlite", owner_ids=(1,))
+    second = make_store(
+        tmp_path / "second.sqlite",
+        owner_ids=(2,),
+        store_uuid="4A1A2D66-BD6C-4CC6-811F-9B6920BCB04A",
+    )
+    checksum_calls = []
+
+    def model_checksum(_path: Path) -> str:
+        checksum_calls.append(_path)
+        return MODEL_CHECKSUM
+
+    with pytest.raises(
+        runtime_identity.RuntimeIdentityError, match="Multiple valid MoneyWiz stores"
+    ):
+        runtime_identity.resolve_runtime_identity(
+            owner_id=1,
+            app_path=app,
+            store_candidates=(first, second),
+            model_checksum_reader=model_checksum,
+            environ={},
+        )
+
+    assert checksum_calls == []
+
+
+def test_default_discovery_does_not_guess_an_arbitrary_store(tmp_path: Path) -> None:
+    arbitrary_store = make_store(tmp_path / "somewhere/store.sqlite")
+
+    with pytest.raises(
+        runtime_identity.RuntimeIdentityError, match="No MoneyWiz store"
+    ):
+        runtime_identity.resolve_store(home=tmp_path)
+
+    assert runtime_identity.resolve_store(arbitrary_store).path == arbitrary_store
+
+
+def test_runtime_identity_binds_app_store_model_and_owner(
+    tmp_path: Path,
+    make_app: Callable[[str, str], tuple[Path, Path]],
+) -> None:
+    app, model = make_app(
+        runtime_identity.TESTFLIGHT_BUNDLE_IDENTIFIER, "testflight.app"
+    )
+    store = make_store(tmp_path / "testflight.sqlite", owner_ids=(1, 2))
+
+    identity = runtime_identity.resolve_runtime_identity(
+        store,
+        owner_id=2,
+        app_path=app,
+        environ={},
+        model_checksum_reader=lambda _model: MODEL_CHECKSUM,
+    )
+
+    assert identity.model_path == model
+    assert identity.plan_binding() == {
+        "app_bundle_identifier": runtime_identity.TESTFLIGHT_BUNDLE_IDENTIFIER,
+        "app_edition": "testflight",
+        "app_version": "2026.1",
+        "app_build": "4801",
+        "app_path": str(app),
+        "store_path": str(store),
+        "store_uuid": STORE_UUID,
+        "owner_local_id": 2,
+        "owner_sync_login": "owner-2",
+        "model_path": str(model),
+        "model_checksum": MODEL_CHECKSUM,
+    }
+
+
+def test_runtime_identity_rejects_model_store_checksum_drift(
+    tmp_path: Path,
+    make_app: Callable[[str, str], tuple[Path, Path]],
+) -> None:
+    app, _model = make_app()
+    store = make_store(tmp_path / "store.sqlite")
+    different_checksum = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+
+    with pytest.raises(
+        runtime_identity.RuntimeIdentityError, match="does not match the store"
+    ):
+        runtime_identity.resolve_runtime_identity(
+            store,
+            app_path=app,
+            environ={},
+            model_checksum_reader=lambda _model: different_checksum,
+        )
+
+
+def test_native_model_checksum_inspection_uses_explicit_host(
+    tmp_path: Path,
+) -> None:
+    model = tmp_path / "model.mom"
+    model.touch()
+    calls: list[list[str]] = []
+
+    def run(
+        arguments: list[str], **_kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append(arguments)
+        return subprocess.CompletedProcess(arguments, 0, stdout=f"{MODEL_CHECKSUM}\n")
+
+    checksum = runtime_identity.inspect_model_checksum(
+        model,
+        host_path=Path(sys.executable),
+        environ={},
+        runner=run,
+    )
+
+    assert checksum == MODEL_CHECKSUM
+    assert calls == [
+        [str(Path(sys.executable).resolve()), "--model-checksum", str(model.resolve())]
+    ]
+
+
+def test_default_store_candidates_are_edition_scoped(tmp_path: Path) -> None:
+    candidates = runtime_identity.default_store_candidates(
+        home=tmp_path,
+        bundle_identifier=runtime_identity.TESTFLIGHT_BUNDLE_IDENTIFIER,
+    )
+
+    assert candidates == (
+        tmp_path
+        / "Library/Containers/com.moneywiz.personalfinance/Data/Library"
+        / "Application Support"
+        / "MoneyWiz_iCloud.sqlite",
+        tmp_path
+        / "Library/Containers/com.moneywiz.personalfinance/Data/Documents/.AppData"
+        / "ipadMoneyWiz.sqlite",
+    )
+
+
+def test_default_app_candidates_include_current_testflight_bundle() -> None:
+    assert runtime_identity.DEFAULT_TESTFLIGHT_APP == Path("/Applications/MoneyWiz.app")

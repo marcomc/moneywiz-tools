@@ -774,9 +774,33 @@ func testWritePlanRejectsMixedMergePayloadWithoutMutation() throws {
     )
 }
 
+func testReadOnlyModelChecksumWithoutStore() throws {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("moneywiz-model-inspection-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let model = makeModel()
+    let modelURL = directory.appendingPathComponent("synthetic.mom")
+    let archived = try NSKeyedArchiver.archivedData(withRootObject: model, requiringSecureCoding: false)
+    try archived.write(to: modelURL)
+    let coordinator = NSPersistentStoreCoordinator(managedObjectModel: model)
+    let observed = try readModelChecksum(at: modelURL)
+    try require(observed == coordinator.managedObjectModel.versionChecksum, "model inspection checksum differs")
+    try require(coordinator.persistentStores.isEmpty, "inspection opened a persistent store")
+    let contents = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+    try require(contents == ["synthetic.mom"], "inspection created unexpected artifacts")
+    do {
+        _ = try readModelChecksum(at: directory.appendingPathComponent("missing.mom"))
+        throw OwnershipTestError.failure("missing model was accepted")
+    } catch is HostError {
+        // Missing models must fail without creating anything.
+    }
+}
+
 @main
 struct MoneyWizToolsHostOwnershipTests {
     static func main() throws {
+        try testReadOnlyModelChecksumWithoutStore()
         try testWriterContractRequiresExactProfileAndChecksum()
         try testWriterPolicyAcceptsExactlyTenTransactionEntities()
         try testWriterContractRejectsPartialMixedAndAmbiguousOperations()
