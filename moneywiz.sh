@@ -291,7 +291,7 @@ if [[ "${IS_BUNDLED}" -eq 1 ]]; then
 fi
 
 BASE_DB_ARG=(--db "${GLOBAL_DB:-${DB_PATH}}")
-if [[ "${HELP_REQUESTED}" -eq 0 && "${SUBCMD}" != "shell" && "${SUBCMD}" != "identity" && "${SUBCMD}" != "create-test-db" && "${SUBCMD}" != "sanitize-test-db" ]]; then
+if [[ "${HELP_REQUESTED}" -eq 0 && "${SUBCMD}" != "shell" && "${SUBCMD}" != "identity" && "${SUBCMD}" != "snapshot" && "${SUBCMD}" != "create-test-db" && "${SUBCMD}" != "sanitize-test-db" ]]; then
   DB_TO_USE="${GLOBAL_DB:-${DB_PATH}}"
   if [[ ! -f "${DB_TO_USE}" ]]; then
     echo "Error: Database file not found: ${DB_TO_USE}" >&2

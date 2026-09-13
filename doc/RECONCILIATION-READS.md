@@ -73,9 +73,13 @@ business semantics still need verification before write planning.
 Financial amounts and quantities must be finite before public output. A selected
 cached balance must also retain its native numeric type; malformed or non-finite
 values fail the operation with status `2` rather than being stringified.
-Core transaction descriptions must be native text. Snapshot status and flag
-fields must be present as native integers; their numeric meanings remain
-uninterpreted. Malformed values fail with the same bounded status `2` response.
+Core transaction descriptions preserve the native text-or-null shape; binary or
+other non-text values are rejected during API admission, leaving the record
+unreadable with structured partial diagnostics and status `3`. The root
+description guard retains a bounded status `2` fallback for unsupported values
+that reach it. Snapshot status and flag fields must be present as native
+integers; their numeric meanings remain uninterpreted, and malformed values fail
+the direct export guard with status `2`.
 
 ## Existing list commands
 

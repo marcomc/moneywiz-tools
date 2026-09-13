@@ -40,7 +40,7 @@ wheels = [
 [[package]]
 name = "moneywiz-api"
 version = "1.0.8"
-source = { git = "https://github.com/marcomc/moneywiz-api.git?rev=cf3f68a1ce1a76e0c7398a76f1bb347fdc9bc275#cf3f68a1ce1a76e0c7398a76f1bb347fdc9bc275" }
+source = { git = "https://github.com/marcomc/moneywiz-api.git?rev=7cfa1ea9f09263f87e4099c4315bd2cc83c25d5c#7cfa1ea9f09263f87e4099c4315bd2cc83c25d5c" }
 dependencies = [
     { name = "click" },
     { name = "pandas" },
@@ -60,7 +60,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "click", specifier = ">=8" },
-    { name = "moneywiz-api", git = "https://github.com/marcomc/moneywiz-api.git?rev=cf3f68a1ce1a76e0c7398a76f1bb347fdc9bc275" },
+    { name = "moneywiz-api", git = "https://github.com/marcomc/moneywiz-api.git?rev=7cfa1ea9f09263f87e4099c4315bd2cc83c25d5c" },
     { name = "pandas", specifier = ">=2" },
 ]
 

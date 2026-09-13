@@ -42,13 +42,15 @@ def cached_balance_value(value):
     return str(value)
 
 
-def transaction_description(record) -> str:
-    """Require the model's core transaction description to remain native text."""
+def transaction_description(record) -> str | None:
+    """Preserve a nullable native description while rejecting other raw types."""
     try:
         raw_description = record._raw["ZDESC2"]
         description = record.description
     except (AttributeError, KeyError, TypeError) as exc:
         raise TypeError("transaction description is not native text") from exc
+    if raw_description is None and description is None:
+        return None
     if type(raw_description) is not str or type(description) is not str:
         raise TypeError("transaction description is not native text")
     return description

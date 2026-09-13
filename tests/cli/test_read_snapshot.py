@@ -749,7 +749,7 @@ def test_accounts_unfiltered_preserves_parsed_row_with_missing_user(
         ("transactions", ("--format", "json")),
     ],
 )
-def test_binary_transaction_description_is_a_bounded_read_error(
+def test_binary_transaction_description_is_a_safe_partial_read(
     reads, synthetic_store, command, args
 ):
     with sqlite3.connect(synthetic_store) as connection:
@@ -759,17 +759,68 @@ def test_binary_transaction_description_is_a_bounded_read_error(
         )
     result = run_read_script(synthetic_store, command, *args)
 
-    assert result.returncode == 2
-    assert result.stdout == ""
-    error = json.loads(result.stderr)
-    assert error == {
-        "status": "error",
-        "error": "TypeError",
-        "message": "Read failed; check database, schema and command arguments",
+    assert result.returncode == 3
+    if command == "snapshot":
+        payload = json.loads(result.stdout)
+        assert payload["transactions"] == []
+        report = payload["completeness"]["managers"]["transactions"]
+    else:
+        if args:
+            assert json.loads(result.stdout) == []
+        report = json.loads(result.stderr)["read_completeness"]["managers"][
+            "transactions"
+        ]
+    assert report["source_count"] == 1
+    assert report["parsed_count"] == 0
+    assert report["skipped"][0] == {
+        "record_id": 11,
+        "entity": "DepositTransaction",
+        "error": "validation",
+        "exception_type": "AssertionError",
     }
     assert "Traceback" not in result.stderr
     assert "binary_bytes" not in result.stderr
     assert "b'" not in result.stderr
+
+
+def test_transaction_description_preserves_native_null(reads):
+    record = SimpleNamespace(_raw={"ZDESC2": None}, description=None)
+
+    assert reads.transaction_description(record) is None
+
+
+def test_transaction_description_rejects_binary_model_value(reads):
+    record = SimpleNamespace(_raw={"ZDESC2": b"private"}, description=b"private")
+
+    with pytest.raises(TypeError, match="not native text"):
+        reads.transaction_description(record)
+
+
+@pytest.mark.parametrize(
+    "command,args",
+    [
+        ("snapshot", ()),
+        ("transactions", ("--format", "json")),
+        ("transactions", ()),
+    ],
+    ids=["snapshot", "transactions-json", "transactions-table"],
+)
+def test_nullable_transaction_description_is_preserved(
+    reads, synthetic_store, command, args
+):
+    with sqlite3.connect(synthetic_store) as connection:
+        connection.execute("UPDATE ZSYNCOBJECT SET ZDESC2 = NULL WHERE Z_PK = 11")
+
+    result = run_read_script(synthetic_store, command, *args)
+
+    assert result.returncode == 0, result.stderr
+    if command == "snapshot":
+        assert json.loads(result.stdout)["transactions"][0]["description"] is None
+    elif args:
+        assert json.loads(result.stdout)[0]["description"] is None
+    else:
+        assert "None" not in result.stdout
+        assert "Synthetic income" not in result.stdout
 
 
 @pytest.mark.parametrize("command", ["snapshot", "transactions"])

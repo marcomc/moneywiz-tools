@@ -160,6 +160,33 @@ def test_installed_bundle_read_contract(
     assert complete_payload["completeness"]["complete"] is True
     assert [row["id"] for row in complete_payload["transactions"]] == [11]
 
+    missing_database = tmp_path / "missing.sqlite"
+    missing_snapshot = run("--db", str(missing_database), "snapshot")
+    assert_bounded_read_error(missing_snapshot)
+    assert not missing_database.exists()
+
+    nullable_description_store = tmp_path / "nullable-description.sqlite"
+    shutil.copy2(synthetic_store, nullable_description_store)
+    with sqlite3.connect(nullable_description_store) as connection:
+        connection.execute("UPDATE ZSYNCOBJECT SET ZDESC2 = NULL WHERE Z_PK = 11")
+    nullable_snapshot = run("--db", str(nullable_description_store), "snapshot")
+    assert nullable_snapshot.returncode == 0, nullable_snapshot.stderr
+    assert (
+        json.loads(nullable_snapshot.stdout)["transactions"][0]["description"] is None
+    )
+    nullable_transactions_json = run(
+        "--db", str(nullable_description_store), "transactions", "--format", "json"
+    )
+    assert nullable_transactions_json.returncode == 0, nullable_transactions_json.stderr
+    assert json.loads(nullable_transactions_json.stdout)[0]["description"] is None
+    nullable_transactions_table = run(
+        "--db", str(nullable_description_store), "transactions"
+    )
+    assert nullable_transactions_table.returncode == 0, (
+        nullable_transactions_table.stderr
+    )
+    assert "None" not in nullable_transactions_table.stdout
+
     diagnostic_commands = (
         ("accounts",),
         ("holdings", "--account", "10"),
@@ -342,7 +369,16 @@ def test_installed_bundle_read_contract(
             "--format",
             output_format,
         )
-        assert_bounded_read_error(binary_description)
+        assert binary_description.returncode == 3
+        if output_format == "json":
+            assert json.loads(binary_description.stdout) == []
+        binary_report = json.loads(binary_description.stderr)["read_completeness"][
+            "managers"
+        ]["transactions"]
+        assert binary_report["source_count"] == 1
+        assert binary_report["parsed_count"] == 0
+        assert binary_report["skipped"][0]["record_id"] == 11
+        assert binary_report["skipped"][0]["error"] == "validation"
         assert "private-description" not in binary_description.stderr
 
     malformed_flags_store = tmp_path / "malformed-native-flags.sqlite"

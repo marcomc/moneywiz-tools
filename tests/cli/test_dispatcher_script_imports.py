@@ -1,3 +1,4 @@
+import json
 import os
 import plistlib
 import shutil
@@ -163,6 +164,34 @@ def test_source_dispatcher_help_does_not_require_configured_database(
     )
     assert result.returncode == 1
     assert "Database file not found" in result.stderr
+
+
+def test_source_dispatcher_preserves_bounded_missing_snapshot_error(
+    tmp_path: Path,
+) -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    missing_database = tmp_path / "missing.sqlite"
+
+    result = subprocess.run(
+        [
+            str(repo_root / "moneywiz.sh"),
+            "--db",
+            str(missing_database),
+            "snapshot",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 2
+    assert result.stdout == ""
+    assert json.loads(result.stderr.splitlines()[-1]) == {
+        "status": "error",
+        "error": "DatabasePathError",
+        "message": "Read failed; check database, schema and command arguments",
+    }
+    assert not missing_database.exists()
 
 
 def test_readme_categories_example_is_executable() -> None:
