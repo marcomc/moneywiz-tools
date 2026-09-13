@@ -57,7 +57,9 @@ parsing, the audit reports `unreadable_transfer_leg`; `missing_transfer_leg` is
 reserved for a reference absent from the observed transaction source.
 Reciprocal transfer FX checks compare the sender/recipient amounts and currencies
 recorded by both legs, account for the deposit-side fee in its validated native
-amount equation, and require both native exchange rates to use the same direction.
+amount equation only when that fee uses the recipient-side currency, and require
+both native exchange rates to use the same direction. A fee in another currency
+is reported as a mismatched transfer rather than combined with unlike amounts.
 Duplicated cross-leg values are compared exactly; the model tolerance for each
 leg's internal equation does not hide a disagreement between legs. A mismatch
 emits only transaction IDs, not financial field values.
@@ -105,6 +107,9 @@ epoch. Output includes the UTC offset.
 | `3` | Some requested records or enrichment could not be read | Keep usable rows for diagnosis; block dependent write planning |
 | `2` | Invalid arguments, missing identity or failed read | Correct the reported input/schema/runtime issue |
 
-An empty transaction list with status `3` is not an empty account. Likewise,
-status `0` and no graph findings do not prove bank reconciliation or live-write
-compatibility. Use the per-operation capability gate and source evidence.
+An empty transaction list with status `3` is not an empty account. An explicitly
+selected account that is source-observed but unreadable returns status `3` with
+its manager diagnostics; an ID absent from source evidence is an invalid
+selection and returns status `2`. Likewise, status `0` and no graph findings do
+not prove bank reconciliation or live-write compatibility. Use the per-operation
+capability gate and source evidence.

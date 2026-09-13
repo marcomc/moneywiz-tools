@@ -199,6 +199,18 @@ def _audit_optional_decimal(row: dict, key: str) -> Decimal:
 
 
 def _transfer_fx_matches(withdrawal: dict, deposit: dict) -> bool:
+    withdrawal_recipient_currency = _audit_scalar(withdrawal, "recipient_currency")
+    deposit_recipient_currency = _audit_scalar(deposit, "original_currency")
+    deposit_fee = _audit_scalar(deposit, "original_fee", required=False)
+    if deposit_fee is not None:
+        deposit_fee_currency = _audit_scalar(
+            deposit, "original_fee_currency", required=False
+        )
+        if (
+            deposit_fee_currency != withdrawal_recipient_currency
+            or deposit_fee_currency != deposit_recipient_currency
+        ):
+            return False
     deposit_recipient_amount = _audit_decimal(
         deposit, "original_amount"
     ) + _audit_optional_decimal(deposit, "original_fee")
@@ -208,8 +220,7 @@ def _transfer_fx_matches(withdrawal: dict, deposit: dict) -> bool:
         and _audit_scalar(withdrawal, "original_currency")
         == _audit_scalar(deposit, "sender_currency")
         and _audit_decimal(withdrawal, "recipient_amount") == deposit_recipient_amount
-        and _audit_scalar(withdrawal, "recipient_currency")
-        == _audit_scalar(deposit, "original_currency")
+        and withdrawal_recipient_currency == deposit_recipient_currency
         and _audit_decimal(withdrawal, "original_exchange_rate")
         == _audit_decimal(deposit, "original_exchange_rate")
     )
@@ -218,11 +229,22 @@ def _transfer_fx_matches(withdrawal: dict, deposit: dict) -> bool:
 def build_snapshot(api, account: int | None, until: str | None, zone: str) -> dict:
     boundary, exclusive = cutoff(until, zone)
     completeness = api.completeness().as_dict()
-    all_accounts = [
-        record_view(record) for record in api.account_manager.records().values()
-    ]
-    if account is not None and account not in api.account_manager.records():
-        raise ValueError("requested account is missing or unreadable")
+    account_records = api.account_manager.records()
+    all_accounts = [record_view(record) for record in account_records.values()]
+    if account is not None and account not in account_records:
+        account_report = completeness["managers"]["accounts"]
+        observed_account_ids = {
+            record_id
+            for record_id in account_report.get("source_ids", [])
+            if type(record_id) is int
+        }
+        observed_account_ids.update(
+            skipped.get("record_id")
+            for skipped in account_report.get("skipped", [])
+            if type(skipped.get("record_id")) is int
+        )
+        if account not in observed_account_ids:
+            raise ValueError("requested account does not exist")
     # Audit the loaded graph before cutoff/account filtering, so an out-of-scope
     # counterpart is not incorrectly described as an orphan.
     all_transactions = []

@@ -194,6 +194,25 @@ def test_installed_bundle_read_contract(
     assert transaction_report["source_count"] == 1
     assert transaction_report["parsed_count"] == 0
 
+    unreadable_account_store = tmp_path / "unreadable-account.sqlite"
+    shutil.copy2(synthetic_store, unreadable_account_store)
+    with sqlite3.connect(unreadable_account_store) as connection:
+        connection.execute("UPDATE ZSYNCOBJECT SET ZNAME = NULL WHERE Z_PK = 10")
+    unreadable_account = run(
+        "--db", str(unreadable_account_store), "snapshot", "--account", "10"
+    )
+    assert unreadable_account.returncode == 3, unreadable_account.stderr
+    unreadable_account_payload = json.loads(unreadable_account.stdout)
+    assert unreadable_account_payload["accounts"] == []
+    assert [row["id"] for row in unreadable_account_payload["transactions"]] == [11]
+    account_report = unreadable_account_payload["completeness"]["managers"]["accounts"]
+    assert account_report["source_ids"] == [10]
+    assert account_report["parsed_ids"] == []
+    assert account_report["skipped"][0]["record_id"] == 10
+
+    absent_account = run("--db", str(synthetic_store), "snapshot", "--account", "999")
+    assert_bounded_read_error(absent_account)
+
     bounded_error = run(
         "--db", str(synthetic_store), "snapshot", "--until", "9999-12-31"
     )
@@ -267,6 +286,16 @@ def test_installed_bundle_read_contract(
     assert json.loads(fee_adjusted_pair.stdout)["audit"] == [
         {"kind": "cross_owner_transfer", "ids": [11, 12]}
     ]
+
+    with sqlite3.connect(pair_store) as connection:
+        connection.execute(
+            "UPDATE ZSYNCOBJECT SET ZORIGINALFEECURRENCY = 'GBP' WHERE Z_PK = 12"
+        )
+    mismatched_fee_currency = run("--db", str(pair_store), "snapshot")
+    assert mismatched_fee_currency.returncode == 0, mismatched_fee_currency.stderr
+    assert [
+        item["kind"] for item in json.loads(mismatched_fee_currency.stdout)["audit"]
+    ] == ["cross_owner_transfer", "mismatched_transfer_fx"]
 
     with sqlite3.connect(pair_store) as connection:
         connection.executescript(

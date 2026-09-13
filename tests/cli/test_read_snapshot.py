@@ -156,6 +156,7 @@ def transfer_rows():
             "sender_amount": "-10",
             "sender_currency": "EUR",
             "original_fee": None,
+            "original_fee_currency": None,
             "original_exchange_rate": "1.2",
         },
     ]
@@ -248,19 +249,40 @@ def test_graph_accepts_consistent_same_currency_transfer_fx(snapshots):
 
 
 @pytest.mark.parametrize(
-    "fee,deposit_original_amount",
-    [(None, "12"), ("0", "12"), ("1", "11"), ("-1", "13")],
+    "fee,fee_currency,deposit_original_amount",
+    [
+        (None, None, "12"),
+        ("0", "USD", "12"),
+        ("1", "USD", "11"),
+        ("-1", "USD", "13"),
+    ],
     ids=["absent", "zero", "positive", "negative"],
 )
 def test_graph_accepts_deposit_fee_adjusted_recipient_amount(
-    snapshots, fee, deposit_original_amount
+    snapshots, fee, fee_currency, deposit_original_amount
 ):
     accounts = [{"id": 10, "user": 4}, {"id": 20, "user": 4}]
     rows = transfer_rows()
     rows[1]["original_amount"] = deposit_original_amount
     rows[1]["original_fee"] = fee
+    rows[1]["original_fee_currency"] = fee_currency
 
     assert snapshots.audit_graph(accounts, rows) == []
+
+
+@pytest.mark.parametrize("fee_currency", [None, "GBP"], ids=["missing", "different"])
+def test_graph_rejects_deposit_fee_outside_recipient_currency(snapshots, fee_currency):
+    accounts = [{"id": 10, "user": 4}, {"id": 20, "user": 4}]
+    rows = transfer_rows()
+    rows[1].update(
+        original_amount="11",
+        original_fee="1",
+        original_fee_currency=fee_currency,
+    )
+
+    assert snapshots.audit_graph(accounts, rows) == [
+        {"kind": "mismatched_transfer_fx", "ids": [1, 2]}
+    ]
 
 
 def test_graph_does_not_apply_withdrawal_fee_to_recipient_amount(snapshots):
@@ -531,6 +553,33 @@ def test_snapshot_entrypoint_complete_and_partial(reads, synthetic_store):
     assert report["source_count"] == 1
     assert report["parsed_count"] == 0
     assert report["skipped"][0]["record_id"] == 11
+
+
+def test_snapshot_selected_unreadable_account_is_partial_not_missing(
+    reads, synthetic_store
+):
+    with sqlite3.connect(synthetic_store) as connection:
+        connection.execute("UPDATE ZSYNCOBJECT SET ZNAME = NULL WHERE Z_PK = 10")
+
+    result = run_read_script(synthetic_store, "snapshot", "--account", "10")
+
+    assert result.returncode == 3, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["accounts"] == []
+    assert [row["id"] for row in payload["transactions"]] == [11]
+    account_report = payload["completeness"]["managers"]["accounts"]
+    assert account_report["source_ids"] == [10]
+    assert account_report["parsed_ids"] == []
+    assert account_report["skipped"][0]["record_id"] == 10
+    assert "Traceback" not in result.stderr
+
+
+def test_snapshot_selected_genuinely_absent_account_is_bounded_error(
+    reads, synthetic_store
+):
+    result = run_read_script(synthetic_store, "snapshot", "--account", "999")
+
+    assert_bounded_read_error(result, "ValueError")
 
 
 @pytest.mark.parametrize(
@@ -1026,6 +1075,37 @@ def test_snapshot_accepts_valid_deposit_fee_adjusted_transfer_pair(
     payload = json.loads(result.stdout)
     assert payload["completeness"]["complete"] is True
     assert payload["audit"] == [{"kind": "cross_owner_transfer", "ids": [11, 12]}]
+
+
+def test_snapshot_rejects_deposit_fee_in_different_recipient_currency(
+    reads, synthetic_store
+):
+    replace_transaction_with_transfer_pair(synthetic_store)
+    with sqlite3.connect(synthetic_store) as connection:
+        connection.execute(
+            """
+            UPDATE ZSYNCOBJECT
+            SET ZAMOUNT1 = 9,
+                ZORIGINALAMOUNT = 9,
+                ZORIGINALFEE = 1,
+                ZORIGINALFEECURRENCY = 'GBP'
+            WHERE Z_PK = 12
+            """
+        )
+
+    result = run_read_script(synthetic_store, "snapshot")
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["completeness"]["complete"] is True
+    assert finding_kinds(payload["audit"]) == [
+        "cross_owner_transfer",
+        "mismatched_transfer_fx",
+    ]
+    assert payload["audit"][1] == {
+        "kind": "mismatched_transfer_fx",
+        "ids": [11, 12],
+    }
 
 
 @pytest.mark.parametrize("mismatch", ["btc-amount", "exchange-rate"])
