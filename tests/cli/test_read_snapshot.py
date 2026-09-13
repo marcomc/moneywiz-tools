@@ -1474,6 +1474,67 @@ def test_holding_quantity_output_rejects_nonfinite_decimal(
     assert_bounded_read_error(result, "ValueError")
 
 
+def test_holdings_valid_account_with_no_holdings_is_complete(reads, synthetic_store):
+    result = run_read_script(
+        synthetic_store,
+        "holdings",
+        "--account",
+        "10",
+        "--format",
+        "json",
+        "--diagnostics",
+    )
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["rows"] == []
+    assert payload["completeness"]["complete"] is True
+    assert payload["completeness"]["managers"]["accounts"]["parsed_ids"] == [10]
+
+
+def test_holdings_absent_account_is_bounded_error(reads, synthetic_store):
+    add_holding(synthetic_store, 2)
+    with sqlite3.connect(synthetic_store) as connection:
+        connection.execute(
+            "UPDATE ZSYNCOBJECT SET ZINVESTMENTACCOUNT = 999 WHERE Z_PK = 12"
+        )
+
+    result = run_read_script(synthetic_store, "holdings", "--account", "999")
+
+    assert_bounded_read_error(result, "ValueError")
+
+
+def test_holdings_unreadable_account_is_partial(reads, synthetic_store):
+    add_holding(synthetic_store, 2)
+    with sqlite3.connect(synthetic_store) as connection:
+        connection.execute("UPDATE ZSYNCOBJECT SET ZNAME = NULL WHERE Z_PK = 10")
+
+    result = run_read_script(
+        synthetic_store,
+        "holdings",
+        "--account",
+        "10",
+        "--format",
+        "json",
+        "--diagnostics",
+    )
+
+    assert result.returncode == 3, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["rows"] == [
+        {
+            "account": 10,
+            "symbol": "SYN",
+            "number_of_shares": "2.0",
+            "description": "Synthetic holding",
+        }
+    ]
+    account_report = payload["completeness"]["managers"]["accounts"]
+    assert account_report["source_ids"] == [10]
+    assert account_report["parsed_ids"] == []
+    assert account_report["skipped"][0]["record_id"] == 10
+
+
 @pytest.mark.parametrize(
     "kind,value,expected",
     [

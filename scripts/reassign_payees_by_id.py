@@ -515,6 +515,10 @@ def _configured_bundle_directory() -> Path:
 
 def _resolve_model() -> Path:
     try:
+        if not os.environ.get("MONEYWIZ_APP") and not os.environ.get(
+            "MONEYWIZ_MODEL_PATH"
+        ):
+            return resolve_model(app_path=DEFAULT_MONEYWIZ_APP)
         return resolve_model()
     except RuntimeIdentityError as exc:
         raise ReassignmentError(str(exc)) from exc
