@@ -16,11 +16,13 @@ from read_support import (
     cached_balance_value,
     cutoff,
     json_value,
+    native_account_integer,
     native_transaction_integer,
     run_read_command,
     selected_snapshot_transactions,
     transaction_description,
     transaction_time,
+    validate_selected_account,
 )
 
 ACCOUNTLESS_TRANSACTION_ENTITIES = frozenset({"TransferBudgetTransaction"})
@@ -36,6 +38,7 @@ def audit_graph(
     accounts: list[dict],
     transactions: list[dict],
     transaction_report: dict | None = None,
+    account_report: dict | None = None,
 ) -> list[dict]:
     """Find structural defects and non-authoritative duplicate candidates."""
     findings = []
@@ -56,6 +59,25 @@ def audit_graph(
         if type(skipped.get("record_id")) is int
     }
     unreadable_ids = (source_ids - parsed_ids) | skipped_ids
+    account_report = account_report or {}
+    account_source_ids = {
+        record_id
+        for record_id in account_report.get("source_ids", [])
+        if type(record_id) is int
+    }
+    account_parsed_ids = {
+        record_id
+        for record_id in account_report.get("parsed_ids", [])
+        if type(record_id) is int
+    }
+    account_skipped_ids = {
+        skipped.get("record_id")
+        for skipped in account_report.get("skipped", [])
+        if type(skipped.get("record_id")) is int
+    }
+    unreadable_account_ids = (
+        account_source_ids - account_parsed_ids
+    ) | account_skipped_ids
     account_map = {}
     for row in accounts:
         account_id = _audit_scalar(row, "id")
@@ -72,7 +94,17 @@ def audit_graph(
             if entity not in ACCOUNTLESS_TRANSACTION_ENTITIES:
                 findings.append({"kind": "missing_account", "ids": [record_id]})
         elif account is None:
-            findings.append({"kind": "missing_account", "ids": [record_id]})
+            findings.append(
+                {
+                    "kind": (
+                        "unreadable_account"
+                        if account_id in unreadable_account_ids
+                        else "missing_account"
+                    ),
+                    "ids": [record_id],
+                    "related_id": account_id,
+                }
+            )
         key = (
             account_id,
             _audit_scalar(row, "amount", required=False),
@@ -229,22 +261,10 @@ def _transfer_fx_matches(withdrawal: dict, deposit: dict) -> bool:
 def build_snapshot(api, account: int | None, until: str | None, zone: str) -> dict:
     boundary, exclusive = cutoff(until, zone)
     completeness = api.completeness().as_dict()
-    account_records = api.account_manager.records()
-    all_accounts = [record_view(record) for record in account_records.values()]
-    if account is not None and account not in account_records:
-        account_report = completeness["managers"]["accounts"]
-        observed_account_ids = {
-            record_id
-            for record_id in account_report.get("source_ids", [])
-            if type(record_id) is int
-        }
-        observed_account_ids.update(
-            skipped.get("record_id")
-            for skipped in account_report.get("skipped", [])
-            if type(skipped.get("record_id")) is int
-        )
-        if account not in observed_account_ids:
-            raise ValueError("requested account does not exist")
+    all_accounts = [
+        record_view(record) for record in api.account_manager.records().values()
+    ]
+    validate_selected_account(api, account, completeness)
     # Audit the loaded graph before cutoff/account filtering, so an out-of-scope
     # counterpart is not incorrectly described as an orphan.
     all_transactions = []
@@ -286,7 +306,9 @@ def build_snapshot(api, account: int | None, until: str | None, zone: str) -> di
         value = raw.get("ZBALLANCE")
         row["recorded_balance"] = cached_balance_value(value)
         row["balance_basis"] = "native_cached_value_not_source_verified"
-        row["archived"] = raw.get("ZARCHIVED")
+        row["archived"] = native_account_integer(
+            api.account_manager.get(row["id"]), "ZARCHIVED"
+        )
     holdings = [
         record_view(record)
         for record in api.investment_holding_manager.records().values()
@@ -298,6 +320,7 @@ def build_snapshot(api, account: int | None, until: str | None, zone: str) -> di
             all_accounts,
             all_transactions,
             completeness["managers"]["transactions"],
+            completeness["managers"]["accounts"],
         )
         if account is None or any(record_id in selected for record_id in finding["ids"])
     ]

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -14,6 +13,7 @@ from read_support import (
     selected_transactions,
     transaction_description,
     transaction_time,
+    validate_selected_account,
 )
 
 
@@ -82,6 +82,7 @@ def main() -> int:
         ap.error("--diagnostics requires --format json without --list-fields")
 
     api = MoneywizApi(args.db, managers=("accounts", "transactions", "payees"))
+    validate_selected_account(api, args.account)
     txs = selected_transactions(api, args.account, args.until, args.timezone)
     # Sort newest first and apply optional limit (0 or negative means no limit)
     txs = list(reversed(txs))
@@ -175,13 +176,8 @@ def main() -> int:
             item["tags"] = tags
         rows.append(item)
 
-    report, status = report_completeness(api)
+    report, status = report_completeness(api, enrichment_errors=enrichment_errors)
     api.close()
-    if enrichment_errors:
-        report["complete"] = False
-        report["enrichment_errors"] = enrichment_errors
-        print(json.dumps({"enrichment_errors": enrichment_errors}), file=os.sys.stderr)
-        status = 3
 
     # If only listing columns, print union of keys and exit
     if args.list_fields:

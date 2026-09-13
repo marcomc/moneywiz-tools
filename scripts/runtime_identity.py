@@ -408,6 +408,8 @@ def _resolve_owner(
         raise RuntimeIdentityError(
             "MoneyWiz store has a non-integer User local identity"
         )
+    if len({row[0] for row in rows}) != len(rows):
+        raise RuntimeIdentityError("MoneyWiz store has duplicate User local identities")
     owners = {row[0]: row[1] for row in rows}
     if owner_id is not None:
         if owner_id not in owners:

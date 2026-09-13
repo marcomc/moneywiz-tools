@@ -67,6 +67,17 @@ def native_transaction_integer(record, column: str) -> int:
     return value
 
 
+def native_account_integer(record, column: str) -> int:
+    """Require an exported raw account field to retain SQLite integer type."""
+    try:
+        value = record._raw[column]
+    except (AttributeError, KeyError, TypeError) as exc:
+        raise TypeError("native account metadata is not an integer") from exc
+    if type(value) is not int:
+        raise TypeError("native account metadata is not an integer")
+    return value
+
+
 def transaction_time(record) -> datetime:
     """Read Core Data absolute seconds; do not inherit legacy local epoch offsets."""
     seconds = record._raw.get("ZDATE1")
@@ -156,8 +167,32 @@ def selected_snapshot_transactions(
     )
 
 
-def report_completeness(api) -> tuple[dict, int]:
+def validate_selected_account(api, account_id: int | None, report: dict | None = None):
+    """Reject an absent account while retaining observed unreadable diagnostics."""
+    if account_id is None or account_id in api.account_manager.records():
+        return
+    completeness = report or api.completeness().as_dict()
+    account_report = completeness["managers"]["accounts"]
+    observed_ids = {
+        record_id
+        for record_id in account_report.get("source_ids", [])
+        if type(record_id) is int
+    }
+    observed_ids.update(
+        skipped.get("record_id")
+        for skipped in account_report.get("skipped", [])
+        if type(skipped.get("record_id")) is int
+    )
+    if account_id not in observed_ids:
+        raise ValueError("requested account does not exist")
+
+
+def report_completeness(api, *, enrichment_errors: list[dict] | None = None):
     report = api.completeness().as_dict()
+    if enrichment_errors:
+        report["complete"] = False
+        report["status"] = "partial"
+        report["enrichment_errors"] = enrichment_errors
     if not report["complete"]:
         summary = {
             **report,

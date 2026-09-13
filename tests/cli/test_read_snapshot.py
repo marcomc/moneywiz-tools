@@ -108,6 +108,34 @@ def test_partial_read_emits_explicit_diagnostic(reads, capsys):
     assert json.loads(capsys.readouterr().err)["read_completeness"] == report
 
 
+def test_partial_read_merges_enrichment_errors_into_one_diagnostic(reads, capsys):
+    report = {
+        "complete": True,
+        "status": "complete",
+        "managers": {
+            "accounts": {
+                "source_count": 1,
+                "parsed_count": 1,
+                "skipped": [],
+            }
+        },
+    }
+    api = SimpleNamespace(
+        completeness=lambda: SimpleNamespace(as_dict=lambda: deepcopy(report))
+    )
+    errors = [{"id": 11, "field": "raw_all", "error": "ValueError"}]
+
+    actual, code = reads.report_completeness(api, enrichment_errors=errors)
+
+    assert code == 3
+    assert actual["complete"] is False
+    assert actual["status"] == "partial"
+    assert actual["enrichment_errors"] == errors
+    rendered = capsys.readouterr().err
+    assert len(rendered.splitlines()) == 1
+    assert json.loads(rendered)["read_completeness"]["enrichment_errors"] == errors
+
+
 def test_read_failure_does_not_leak_row_values(reads, capsys):
     def failed():
         raise ValueError("private financial payload")
@@ -506,6 +534,32 @@ def test_accountless_budget_transaction_is_not_a_missing_account(snapshots):
     assert snapshots.audit_graph([], rows) == []
 
 
+@pytest.mark.parametrize(
+    "account_report,expected_kind",
+    [
+        ({"source_ids": [10], "parsed_ids": [], "skipped": []}, "unreadable_account"),
+        ({"source_ids": [], "parsed_ids": [], "skipped": []}, "missing_account"),
+    ],
+)
+def test_graph_audit_distinguishes_unreadable_and_absent_accounts(
+    snapshots, account_report, expected_kind
+):
+    rows = [
+        {
+            "id": 1,
+            "account": 10,
+            "entity": "DepositTransaction",
+            "amount": "1",
+            "datetime": "2026-09-12T00:00:00Z",
+            "description": "Synthetic deposit",
+        }
+    ]
+
+    assert snapshots.audit_graph([], rows, account_report=account_report) == [
+        {"kind": expected_kind, "ids": [1], "related_id": 10}
+    ]
+
+
 def test_graph_audit_rejects_non_scalar_candidate_values(snapshots):
     rows = [
         {
@@ -571,6 +625,9 @@ def test_snapshot_selected_unreadable_account_is_partial_not_missing(
     assert account_report["source_ids"] == [10]
     assert account_report["parsed_ids"] == []
     assert account_report["skipped"][0]["record_id"] == 10
+    assert payload["audit"] == [
+        {"kind": "unreadable_account", "ids": [11], "related_id": 10}
+    ]
     assert "Traceback" not in result.stderr
 
 
@@ -580,6 +637,142 @@ def test_snapshot_selected_genuinely_absent_account_is_bounded_error(
     result = run_read_script(synthetic_store, "snapshot", "--account", "999")
 
     assert_bounded_read_error(result, "ValueError")
+
+
+def test_snapshot_unfiltered_distinguishes_unreadable_account(reads, synthetic_store):
+    with sqlite3.connect(synthetic_store) as connection:
+        connection.execute("UPDATE ZSYNCOBJECT SET ZNAME = NULL WHERE Z_PK = 10")
+
+    result = run_read_script(synthetic_store, "snapshot")
+
+    assert result.returncode == 3, result.stderr
+    assert json.loads(result.stdout)["audit"] == [
+        {"kind": "unreadable_account", "ids": [11], "related_id": 10}
+    ]
+
+
+@pytest.mark.parametrize("value", [None, "not-an-integer", 0.5])
+def test_snapshot_rejects_nonnative_selected_archived_flag(
+    reads, synthetic_store, value
+):
+    with sqlite3.connect(synthetic_store) as connection:
+        connection.execute(
+            "UPDATE ZSYNCOBJECT SET ZARCHIVED = ? WHERE Z_PK = 10", (value,)
+        )
+
+    result = run_read_script(synthetic_store, "snapshot", "--account", "10")
+
+    assert_bounded_read_error(result, "TypeError")
+
+
+def test_snapshot_preserves_native_integer_archived_flag(reads, synthetic_store):
+    result = run_read_script(synthetic_store, "snapshot", "--account", "10")
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["accounts"][0]["archived"] == 0
+
+
+@pytest.mark.parametrize("value", [None, "0", 0.5, True, sqlite3.Binary(b"0")])
+def test_native_account_integer_rejects_noninteger_runtime_types(reads, value):
+    with pytest.raises(TypeError, match="not an integer"):
+        reads.native_account_integer(
+            SimpleNamespace(_raw={"ZARCHIVED": value}), "ZARCHIVED"
+        )
+
+
+def test_native_account_integer_rejects_missing_field(reads):
+    with pytest.raises(TypeError, match="not an integer"):
+        reads.native_account_integer(SimpleNamespace(_raw={}), "ZARCHIVED")
+
+
+@pytest.mark.parametrize(
+    "account_state,expected_status",
+    [("valid-empty", 0), ("unreadable", 3), ("absent", 2)],
+)
+def test_transactions_selected_account_states(
+    reads, synthetic_store, account_state, expected_status
+):
+    with sqlite3.connect(synthetic_store) as connection:
+        if account_state == "valid-empty":
+            connection.execute(
+                """
+                INSERT INTO ZSYNCOBJECT
+                  (Z_PK,Z_ENT,ZOBJECTCREATIONDATE,ZGID,ZDISPLAYORDER,ZGROUPID,ZNAME,
+                   ZCURRENCYNAME,ZOPENINGBALANCE,ZUSER,ZARCHIVED,ZBALLANCE)
+                VALUES (12,12,0,'empty-account',1,0,'Empty account','EUR',0,4,0,0)
+                """
+            )
+        elif account_state == "unreadable":
+            connection.execute("UPDATE ZSYNCOBJECT SET ZNAME = NULL WHERE Z_PK = 10")
+    account_id = {
+        "absent": "999",
+        "valid-empty": "12",
+        "unreadable": "10",
+    }[account_state]
+
+    result = run_read_script(
+        synthetic_store,
+        "transactions",
+        "--account",
+        account_id,
+        "--format",
+        "json",
+        "--diagnostics",
+    )
+
+    assert result.returncode == expected_status, result.stderr
+    if account_state == "absent":
+        assert result.stdout == ""
+        assert json.loads(result.stderr)["error"] == "ValueError"
+        return
+    payload = json.loads(result.stdout)
+    if account_state == "valid-empty":
+        assert payload["rows"] == []
+        assert payload["completeness"]["complete"] is True
+    else:
+        assert [row["id"] for row in payload["rows"]] == [11]
+        assert (
+            payload["completeness"]["managers"]["accounts"]["skipped"][0]["record_id"]
+            == 10
+        )
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ("--all-fields", "--format", "json", "--diagnostics"),
+        ("--fields", "id,amount"),
+        ("--list-fields",),
+    ],
+)
+def test_transactions_partial_enrichment_emits_one_structured_diagnostic(
+    reads, synthetic_store, args
+):
+    with sqlite3.connect(synthetic_store) as connection:
+        connection.execute("UPDATE ZSYNCOBJECT SET ZNAME = NULL WHERE Z_PK = 10")
+        connection.execute(
+            "UPDATE ZSYNCOBJECT SET ZPRICEPERSHARE = ? WHERE Z_PK = 11",
+            (float("inf"),),
+        )
+
+    result = run_read_script(
+        synthetic_store,
+        "transactions",
+        "--account",
+        "10",
+        *args,
+    )
+
+    assert result.returncode == 3, result.stderr
+    assert len(result.stderr.splitlines()) == 1
+    diagnostic = json.loads(result.stderr)["read_completeness"]
+    assert diagnostic["complete"] is False
+    assert diagnostic["status"] == "partial"
+    assert diagnostic["managers"]["accounts"]["skipped"][0]["record_id"] == 10
+    assert diagnostic["enrichment_errors"] == [
+        {"id": 11, "field": "raw", "error": "ValueError"},
+        {"id": 11, "field": "raw_all", "error": "ValueError"},
+    ]
 
 
 @pytest.mark.parametrize(
@@ -1320,7 +1513,9 @@ def test_transactions_all_fields_never_emits_nonstandard_json_float(
     assert "NaN" not in result.stdout
     assert "Infinity" not in result.stdout
     if expected_status == 3:
-        assert "enrichment_errors" in result.stderr
+        diagnostic = json.loads(result.stderr)["read_completeness"]
+        assert diagnostic["status"] == "partial"
+        assert diagnostic["enrichment_errors"]
 
 
 @pytest.mark.parametrize(

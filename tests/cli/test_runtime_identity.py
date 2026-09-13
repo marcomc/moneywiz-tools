@@ -302,6 +302,41 @@ def test_multiple_store_owners_require_an_explicit_match(tmp_path: Path) -> None
 
 
 @pytest.mark.parametrize(
+    "owner_ids,owner_id,different_logins",
+    [
+        ((1, 1), None, False),
+        ((1, 1), 1, True),
+        ((1, 1, 2), 2, False),
+    ],
+)
+def test_store_identity_rejects_duplicate_local_owner_before_map_collapse(
+    tmp_path: Path,
+    owner_ids: tuple[int, ...],
+    owner_id: int | None,
+    different_logins: bool,
+) -> None:
+    store = make_store(
+        tmp_path / "store.sqlite",
+        owner_ids=owner_ids,
+        owner_column="INTEGER",
+    )
+    if different_logins:
+        with sqlite3.connect(store) as connection:
+            connection.execute(
+                "UPDATE ZUSER SET ZSYNCLOGIN = ? WHERE rowid = (SELECT MAX(rowid) FROM ZUSER)",
+                ("private-duplicate-login",),
+            )
+
+    with pytest.raises(
+        runtime_identity.RuntimeIdentityError, match="duplicate User local identities"
+    ) as raised:
+        runtime_identity.inspect_store(store, owner_id=owner_id)
+
+    assert "owner-1" not in str(raised.value)
+    assert "private-duplicate-login" not in str(raised.value)
+
+
+@pytest.mark.parametrize(
     ("store_uuid", "checksum", "message"),
     [
         ("not-a-uuid", MODEL_CHECKSUM, "valid store UUID"),

@@ -55,6 +55,9 @@ withdrawal/deposit ID ordering, even when selection displays only one leg.
 If a referenced leg exists in transaction source IDs but was skipped during
 parsing, the audit reports `unreadable_transfer_leg`; `missing_transfer_leg` is
 reserved for a reference absent from the observed transaction source.
+Account relationships use the same distinction: `unreadable_account` means the
+account was source-observed but skipped, while `missing_account` means its ID was
+not present in account source evidence.
 Reciprocal transfer FX checks compare the sender/recipient amounts and currencies
 recorded by both legs, account for the deposit-side fee in its validated native
 amount equation only when that fee uses the recipient-side currency, and require
@@ -79,7 +82,8 @@ unreadable with structured partial diagnostics and status `3`. The root
 description guard retains a bounded status `2` fallback for unsupported values
 that reach it. Snapshot status and flag fields must be present as native
 integers; their numeric meanings remain uninterpreted, and malformed values fail
-the direct export guard with status `2`.
+the direct export guard with status `2`. The selected account's native archived
+flag follows the same integer-only export rule.
 
 ## Existing list commands
 
@@ -93,6 +97,8 @@ moneywiz transactions --account 10 --format json --diagnostics \
 Without `--diagnostics`, list JSON remains an array. With it, output is an object
 containing `rows` and `completeness`. Table output remains available without the
 diagnostic envelope. Partial reads also emit structured diagnostics on stderr.
+When row enrichment and manager parsing are both partial, stderr contains one
+combined `read_completeness` document rather than separate diagnostics.
 Accounts and holdings load their relevant managers; transactions additionally
 load account and payee information for enrichment. The snapshot loads all managers.
 

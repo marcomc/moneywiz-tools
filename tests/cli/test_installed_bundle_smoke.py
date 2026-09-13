@@ -236,9 +236,31 @@ def test_installed_bundle_read_contract(
     assert account_report["source_ids"] == [10]
     assert account_report["parsed_ids"] == []
     assert account_report["skipped"][0]["record_id"] == 10
+    assert unreadable_account_payload["audit"] == [
+        {"kind": "unreadable_account", "ids": [11], "related_id": 10}
+    ]
+
+    unreadable_account_transactions = run(
+        "--db",
+        str(unreadable_account_store),
+        "transactions",
+        "--account",
+        "10",
+        "--format",
+        "json",
+        "--diagnostics",
+    )
+    assert unreadable_account_transactions.returncode == 3
+    assert [
+        row["id"] for row in json.loads(unreadable_account_transactions.stdout)["rows"]
+    ] == [11]
 
     absent_account = run("--db", str(synthetic_store), "snapshot", "--account", "999")
     assert_bounded_read_error(absent_account)
+    absent_transaction_account = run(
+        "--db", str(synthetic_store), "transactions", "--account", "999"
+    )
+    assert_bounded_read_error(absent_transaction_account)
 
     bounded_error = run(
         "--db", str(synthetic_store), "snapshot", "--until", "9999-12-31"
@@ -390,6 +412,38 @@ def test_installed_bundle_read_contract(
     malformed_flags = run("--db", str(malformed_flags_store), "snapshot")
     assert_bounded_read_error(malformed_flags)
     assert "private-flags" not in malformed_flags.stderr
+
+    malformed_archived_store = tmp_path / "malformed-native-archived.sqlite"
+    shutil.copy2(synthetic_store, malformed_archived_store)
+    with sqlite3.connect(malformed_archived_store) as connection:
+        connection.execute(
+            "UPDATE ZSYNCOBJECT SET ZARCHIVED = 'private-archived' WHERE Z_PK = 10"
+        )
+    malformed_archived = run("--db", str(malformed_archived_store), "snapshot")
+    assert_bounded_read_error(malformed_archived)
+    assert "private-archived" not in malformed_archived.stderr
+
+    with sqlite3.connect(unreadable_account_store) as connection:
+        connection.execute(
+            "UPDATE ZSYNCOBJECT SET ZPRICEPERSHARE = ? WHERE Z_PK = 11",
+            (float("inf"),),
+        )
+    overlapping_partial = run(
+        "--db",
+        str(unreadable_account_store),
+        "transactions",
+        "--account",
+        "10",
+        "--all-fields",
+        "--format",
+        "json",
+        "--diagnostics",
+    )
+    assert overlapping_partial.returncode == 3
+    assert len(overlapping_partial.stderr.splitlines()) == 1
+    overlapping_diagnostic = json.loads(overlapping_partial.stderr)["read_completeness"]
+    assert overlapping_diagnostic["status"] == "partial"
+    assert overlapping_diagnostic["enrichment_errors"]
 
 
 def test_installed_native_host_missing_model_is_bounded(
