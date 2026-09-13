@@ -213,6 +213,7 @@ Reconciliation reads (JSON):
                                       Include read completeness; partial reads exit 3.
 
 Writes (dry-run by default; add --apply to commit):
+  transaction create --help            Build a strict W01 creation plan.
   write validate|apply|recover --plan FILE
                                       Inspect or execute a reviewed versioned plan.
   write locations|journal|cleanup [--apply]
@@ -295,7 +296,7 @@ if [[ "${IS_BUNDLED}" -eq 1 ]]; then
 fi
 
 BASE_DB_ARG=(--db "${GLOBAL_DB:-${DB_PATH}}")
-if [[ "${HELP_REQUESTED}" -eq 0 && "${SUBCMD}" != "shell" && "${SUBCMD}" != "identity" && "${SUBCMD}" != "snapshot" && "${SUBCMD}" != "write" && "${SUBCMD}" != "create-test-db" && "${SUBCMD}" != "sanitize-test-db" ]]; then
+if [[ "${HELP_REQUESTED}" -eq 0 && "${SUBCMD}" != "shell" && "${SUBCMD}" != "identity" && "${SUBCMD}" != "snapshot" && "${SUBCMD}" != "write" && "${SUBCMD}" != "transaction" && "${SUBCMD}" != "create-test-db" && "${SUBCMD}" != "sanitize-test-db" ]]; then
   DB_TO_USE="${GLOBAL_DB:-${DB_PATH}}"
   if [[ ! -f "${DB_TO_USE}" ]]; then
     echo "Error: Database file not found: ${DB_TO_USE}" >&2
@@ -305,6 +306,13 @@ if [[ "${HELP_REQUESTED}" -eq 0 && "${SUBCMD}" != "shell" && "${SUBCMD}" != "ide
 fi
 
 case "${SUBCMD}" in
+  transaction)
+    transaction_arguments=()
+    if [[ -n "${GLOBAL_DB:-${CONFIG_DB_PATH}}" ]]; then
+      transaction_arguments=(--db "${GLOBAL_DB:-${CONFIG_DB_PATH}}")
+    fi
+    run_python_script "${SCRIPT_DIR}/scripts/write_transactions.py" "${transaction_arguments[@]}" "$@"
+    ;;
   write)
     write_arguments=()
     if [[ -n "${GLOBAL_DB:-${CONFIG_DB_PATH}}" ]]; then

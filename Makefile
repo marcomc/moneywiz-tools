@@ -51,7 +51,8 @@ BUNDLE_RUNTIME_SCRIPT_PAYLOAD += \
 	scripts/write_plan.py \
 	scripts/write_journal.py \
 	scripts/writer_client.py \
-	scripts/write.py
+	scripts/write.py \
+	scripts/write_transactions.py
 
 .DEFAULT_GOAL := help
 

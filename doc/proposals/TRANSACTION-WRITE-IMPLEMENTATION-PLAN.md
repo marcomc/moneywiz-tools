@@ -1,8 +1,9 @@
 # Transaction write implementation plan
 
-Status: P0 merged on `release/0.3.0`; P1F implemented and locally validated
-on 13 September 2026 in `feat/p1f-writer-foundation`; independent GitHub review
-and release integration remain pending.
+Status: P0 and P1F integrated on `release/0.3.0`, through merge `1020c40`.
+W01 is implemented in `feat/p1-w01-transaction-create`; validation uses invented
+disposable stores. Independent review evidence accompanies its PR handoff.
+Application acceptance remains separate.
 The first delivery scope is confirmed. Later phases describe intended scope and
 require phase preparation before executable tasks are added.
 
@@ -173,6 +174,12 @@ present in a relocatable bundle tested independently of the development checkout
 | W02 | Edit a supported transaction by ID | Expected-old-value guard; identity and unrelated fields preserved |
 | W03 | Assign payee and category splits to explicit transaction IDs | Owner and split-total validation; deliberate relationship replacement; final read-back |
 | W04 | Reconcile and unreconcile selected transactions | Complete verified source scope and balance guard; cleared/pending preserved; final flags correct |
+
+W01 tasks are activated as `P1-W01-01` through `P1-W01-07` in TODO. Their
+implementation scope is creation only; application and remote sync acceptance
+are not authorized by the synthetic validation task. Live capabilities remain
+blocked until those gates are directly evidenced. The operation contract is
+recorded in [Transaction Creation](../TRANSACTION-CREATION.md).
 
 Suggested order is W01, W02, W03, then W04; phase preparation may adjust it based
 on fixture evidence. Reconcile and unreconcile require separate capability evidence.
