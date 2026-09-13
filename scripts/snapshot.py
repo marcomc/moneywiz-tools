@@ -7,6 +7,7 @@ import json
 from collections import defaultdict
 from dataclasses import asdict
 from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -15,8 +16,10 @@ from read_support import (
     cached_balance_value,
     cutoff,
     json_value,
+    native_transaction_integer,
     run_read_command,
     selected_snapshot_transactions,
+    transaction_description,
     transaction_time,
 )
 
@@ -137,6 +140,10 @@ def audit_graph(
             findings.append(
                 {"kind": "cross_owner_transfer", "ids": [record_id, paired_id]}
             )
+        if not _transfer_fx_matches(row, paired):
+            findings.append(
+                {"kind": "mismatched_transfer_fx", "ids": [record_id, paired_id]}
+            )
         paired_datetime = _audit_scalar(paired, "datetime", required=False)
         if key[2] != paired_datetime:
             findings.append(
@@ -173,6 +180,41 @@ def _audit_scalar(row: dict, key: str, *, required: bool = True):
     return value
 
 
+def _audit_decimal(row: dict, key: str) -> Decimal:
+    value = _audit_scalar(row, key)
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, ValueError) as exc:
+        raise ValueError("graph audit input contains an invalid numeric field") from exc
+
+
+def _audit_optional_decimal(row: dict, key: str) -> Decimal:
+    value = _audit_scalar(row, key, required=False)
+    if value is None:
+        return Decimal(0)
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, ValueError) as exc:
+        raise ValueError("graph audit input contains an invalid numeric field") from exc
+
+
+def _transfer_fx_matches(withdrawal: dict, deposit: dict) -> bool:
+    deposit_recipient_amount = _audit_decimal(
+        deposit, "original_amount"
+    ) + _audit_optional_decimal(deposit, "original_fee")
+    return (
+        _audit_decimal(withdrawal, "original_amount")
+        == _audit_decimal(deposit, "sender_amount")
+        and _audit_scalar(withdrawal, "original_currency")
+        == _audit_scalar(deposit, "sender_currency")
+        and _audit_decimal(withdrawal, "recipient_amount") == deposit_recipient_amount
+        and _audit_scalar(withdrawal, "recipient_currency")
+        == _audit_scalar(deposit, "original_currency")
+        and _audit_decimal(withdrawal, "original_exchange_rate")
+        == _audit_decimal(deposit, "original_exchange_rate")
+    )
+
+
 def build_snapshot(api, account: int | None, until: str | None, zone: str) -> dict:
     boundary, exclusive = cutoff(until, zone)
     completeness = api.completeness().as_dict()
@@ -185,7 +227,9 @@ def build_snapshot(api, account: int | None, until: str | None, zone: str) -> di
     # counterpart is not incorrectly described as an orphan.
     all_transactions = []
     for record in api.transaction_manager.records().values():
+        description = transaction_description(record)
         row = record_view(record)
+        row["description"] = description
         row["datetime"] = (
             transaction_time(record).astimezone(ZoneInfo(zone)).isoformat()
         )
@@ -204,8 +248,8 @@ def build_snapshot(api, account: int | None, until: str | None, zone: str) -> di
         )
         # Preserve raw native status; interpreting cleared/pending requires a
         # separately established entity/version contract.
-        row["native_status"] = record._raw.get("ZSTATUS1")
-        row["native_flags"] = record._raw.get("ZFLAGS1")
+        row["native_status"] = native_transaction_integer(record, "ZSTATUS1")
+        row["native_flags"] = native_transaction_integer(record, "ZFLAGS1")
         all_transactions.append(row)
     selected = {
         record.id

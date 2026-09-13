@@ -135,6 +135,12 @@ def transfer_rows():
             "reconciled": True,
             "datetime": "2026-09-12T00:00:00+00:00",
             "amount": "-10",
+            "original_amount": "-10",
+            "original_currency": "EUR",
+            "recipient_amount": "12",
+            "recipient_currency": "USD",
+            "original_fee": None,
+            "original_exchange_rate": "1.2",
         },
         {
             "id": 2,
@@ -145,6 +151,12 @@ def transfer_rows():
             "reconciled": True,
             "datetime": "2026-09-12T00:00:00+00:00",
             "amount": "12",
+            "original_amount": "12",
+            "original_currency": "USD",
+            "sender_amount": "-10",
+            "sender_currency": "EUR",
+            "original_fee": None,
+            "original_exchange_rate": "1.2",
         },
     ]
 
@@ -152,6 +164,7 @@ def transfer_rows():
 PAIR_FINDINGS = {
     "cross_owner_transfer",
     "different_transfer_dates",
+    "mismatched_transfer_fx",
     "unreconciled_transfer_legs",
 }
 
@@ -189,6 +202,100 @@ def test_graph_checks_reciprocal_accounts_and_owners(snapshots):
     accounts[1]["user"] = 5
     assert snapshots.audit_graph(accounts, rows) == [
         {"kind": "cross_owner_transfer", "ids": [1, 2]}
+    ]
+
+
+@pytest.mark.parametrize(
+    "row_index,field,value",
+    [
+        (1, "sender_amount", "-11"),
+        (1, "sender_currency", "GBP"),
+        (1, "original_amount", "13"),
+        (1, "original_currency", "GBP"),
+        (1, "original_exchange_rate", "0.833333"),
+    ],
+    ids=[
+        "sender-amount",
+        "sender-currency",
+        "recipient-amount",
+        "recipient-currency",
+        "exchange-rate-direction",
+    ],
+)
+def test_graph_reports_one_bounded_mismatched_transfer_fx(
+    snapshots, row_index, field, value
+):
+    accounts = [{"id": 10, "user": 4}, {"id": 20, "user": 4}]
+    rows = transfer_rows()
+    rows[row_index][field] = value
+
+    assert snapshots.audit_graph(accounts, rows) == [
+        {"kind": "mismatched_transfer_fx", "ids": [1, 2]}
+    ]
+
+
+def test_graph_accepts_consistent_same_currency_transfer_fx(snapshots):
+    accounts = [{"id": 10, "user": 4}, {"id": 20, "user": 4}]
+    rows = transfer_rows()
+    rows[0].update(
+        recipient_amount="10", recipient_currency="EUR", original_exchange_rate="1"
+    )
+    rows[1].update(
+        original_amount="10", original_currency="EUR", original_exchange_rate="1"
+    )
+
+    assert snapshots.audit_graph(accounts, rows) == []
+
+
+@pytest.mark.parametrize(
+    "fee,deposit_original_amount",
+    [(None, "12"), ("0", "12"), ("1", "11"), ("-1", "13")],
+    ids=["absent", "zero", "positive", "negative"],
+)
+def test_graph_accepts_deposit_fee_adjusted_recipient_amount(
+    snapshots, fee, deposit_original_amount
+):
+    accounts = [{"id": 10, "user": 4}, {"id": 20, "user": 4}]
+    rows = transfer_rows()
+    rows[1]["original_amount"] = deposit_original_amount
+    rows[1]["original_fee"] = fee
+
+    assert snapshots.audit_graph(accounts, rows) == []
+
+
+def test_graph_does_not_apply_withdrawal_fee_to_recipient_amount(snapshots):
+    accounts = [{"id": 10, "user": 4}, {"id": 20, "user": 4}]
+    rows = transfer_rows()
+    rows[0]["original_fee"] = "1"
+
+    assert snapshots.audit_graph(accounts, rows) == []
+
+
+def test_graph_reports_recipient_amount_mismatch_after_deposit_fee(snapshots):
+    accounts = [{"id": 10, "user": 4}, {"id": 20, "user": 4}]
+    rows = transfer_rows()
+    rows[1]["original_amount"] = "10"
+    rows[1]["original_fee"] = "1"
+
+    assert snapshots.audit_graph(accounts, rows) == [
+        {"kind": "mismatched_transfer_fx", "ids": [1, 2]}
+    ]
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [("sender_amount", "-10.0009"), ("original_exchange_rate", "1.2009")],
+    ids=["duplicated-amount", "duplicated-rate"],
+)
+def test_graph_does_not_apply_model_tolerance_across_transfer_legs(
+    snapshots, field, value
+):
+    accounts = [{"id": 10, "user": 4}, {"id": 20, "user": 4}]
+    rows = transfer_rows()
+    rows[1][field] = value
+
+    assert snapshots.audit_graph(accounts, rows) == [
+        {"kind": "mismatched_transfer_fx", "ids": [1, 2]}
     ]
 
 
@@ -585,19 +692,23 @@ def test_accounts_unfiltered_preserves_parsed_row_with_missing_user(
     assert [row["id"] for row in json.loads(other_filtered.stdout)["rows"]] == [10]
 
 
-def test_snapshot_blob_description_is_a_bounded_read_error(reads, synthetic_store):
+@pytest.mark.parametrize(
+    "command,args",
+    [
+        ("snapshot", ()),
+        ("transactions", ()),
+        ("transactions", ("--format", "json")),
+    ],
+)
+def test_binary_transaction_description_is_a_bounded_read_error(
+    reads, synthetic_store, command, args
+):
     with sqlite3.connect(synthetic_store) as connection:
         connection.execute(
             "UPDATE ZSYNCOBJECT SET ZDESC2 = ? WHERE Z_PK = 11",
             (sqlite3.Binary(b"\x01\x02"),),
         )
-    script = Path(__file__).resolve().parents[2] / "scripts/snapshot.py"
-    result = subprocess.run(
-        [sys.executable, str(script), "--db", str(synthetic_store)],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = run_read_script(synthetic_store, command, *args)
 
     assert result.returncode == 2
     assert result.stdout == ""
@@ -609,6 +720,7 @@ def test_snapshot_blob_description_is_a_bounded_read_error(reads, synthetic_stor
     }
     assert "Traceback" not in result.stderr
     assert "binary_bytes" not in result.stderr
+    assert "b'" not in result.stderr
 
 
 @pytest.mark.parametrize("command", ["snapshot", "transactions"])
@@ -859,6 +971,167 @@ def test_snapshot_cutoff_hidden_counterpart_is_not_missing_or_duplicated(
     ]
     assert all(finding["ids"] == [11, 12] for finding in payload["audit"])
     assert "missing_transfer_leg" not in finding_kinds(payload["audit"])
+
+
+def test_snapshot_reports_mismatched_transfer_fx_from_native_pair_fields(
+    reads, synthetic_store
+):
+    replace_transaction_with_transfer_pair(synthetic_store)
+    with sqlite3.connect(synthetic_store) as connection:
+        connection.execute(
+            """
+            UPDATE ZSYNCOBJECT
+            SET ZAMOUNT1 = 12,
+                ZORIGINALAMOUNT = 12,
+                ZORIGINALCURRENCY = 'USD',
+                ZORIGINALEXCHANGERATE = 1.2
+            WHERE Z_PK = 12
+            """
+        )
+
+    result = run_read_script(synthetic_store, "snapshot")
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["completeness"]["complete"] is True
+    assert finding_kinds(payload["audit"]) == [
+        "cross_owner_transfer",
+        "mismatched_transfer_fx",
+    ]
+    assert payload["audit"][1] == {
+        "kind": "mismatched_transfer_fx",
+        "ids": [11, 12],
+    }
+
+
+def test_snapshot_accepts_valid_deposit_fee_adjusted_transfer_pair(
+    reads, synthetic_store
+):
+    replace_transaction_with_transfer_pair(synthetic_store)
+    with sqlite3.connect(synthetic_store) as connection:
+        connection.execute(
+            """
+            UPDATE ZSYNCOBJECT
+            SET ZAMOUNT1 = 9,
+                ZORIGINALAMOUNT = 9,
+                ZORIGINALFEE = 1,
+                ZORIGINALFEECURRENCY = 'EUR'
+            WHERE Z_PK = 12
+            """
+        )
+
+    result = run_read_script(synthetic_store, "snapshot")
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["completeness"]["complete"] is True
+    assert payload["audit"] == [{"kind": "cross_owner_transfer", "ids": [11, 12]}]
+
+
+@pytest.mark.parametrize("mismatch", ["btc-amount", "exchange-rate"])
+def test_snapshot_detects_exact_cross_leg_mismatch_with_valid_models(
+    reads, synthetic_store, mismatch
+):
+    replace_transaction_with_transfer_pair(synthetic_store)
+    deposit_amount = 1.0009 if mismatch == "btc-amount" else 1
+    deposit_sender_amount = -1.0009 if mismatch == "btc-amount" else -1
+    deposit_rate = 1 if mismatch == "btc-amount" else 1.0009
+    with sqlite3.connect(synthetic_store) as connection:
+        connection.execute("UPDATE ZSYNCOBJECT SET ZUSER = 4 WHERE Z_PK = 20")
+        connection.execute(
+            """
+            UPDATE ZSYNCOBJECT
+            SET ZAMOUNT1 = -1,
+                ZORIGINALAMOUNT = -1,
+                ZORIGINALCURRENCY = 'BTC',
+                ZORIGINALRECIPIENTAMOUNT = 1,
+                ZORIGINALRECIPIENTCURRENCY = 'BTC',
+                ZORIGINALEXCHANGERATE = 1
+            WHERE Z_PK = 11
+            """
+        )
+        connection.execute(
+            """
+            UPDATE ZSYNCOBJECT
+            SET ZAMOUNT1 = ?,
+                ZORIGINALAMOUNT = ?,
+                ZORIGINALCURRENCY = 'BTC',
+                ZORIGINALSENDERAMOUNT = ?,
+                ZORIGINALSENDERCURRENCY = 'BTC',
+                ZORIGINALFEE = NULL,
+                ZORIGINALFEECURRENCY = NULL,
+                ZORIGINALEXCHANGERATE = ?
+            WHERE Z_PK = 12
+            """,
+            (
+                deposit_amount,
+                deposit_amount,
+                deposit_sender_amount,
+                deposit_rate,
+            ),
+        )
+
+    result = run_read_script(synthetic_store, "snapshot")
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["completeness"]["complete"] is True
+    assert payload["audit"] == [{"kind": "mismatched_transfer_fx", "ids": [11, 12]}]
+
+
+@pytest.mark.parametrize("column", ["ZSTATUS1", "ZFLAGS1"])
+@pytest.mark.parametrize(
+    "value",
+    [None, "private-native-state", 1.5, sqlite3.Binary(b"private-native-state")],
+    ids=["null", "text", "real", "blob"],
+)
+def test_snapshot_rejects_malformed_native_status_and_flags(
+    reads, synthetic_store, column, value
+):
+    with sqlite3.connect(synthetic_store) as connection:
+        connection.execute(
+            f"UPDATE ZSYNCOBJECT SET {column} = ? WHERE Z_PK = 11", (value,)
+        )
+
+    result = run_read_script(synthetic_store, "snapshot")
+
+    assert_bounded_read_error(result, "TypeError")
+    assert "private-native-state" not in result.stderr
+
+
+@pytest.mark.parametrize("column", ["ZSTATUS1", "ZFLAGS1"])
+def test_snapshot_rejects_missing_native_status_and_flag_columns(
+    reads, synthetic_store, column
+):
+    with sqlite3.connect(synthetic_store) as connection:
+        connection.execute(f"ALTER TABLE ZSYNCOBJECT DROP COLUMN {column}")
+
+    result = run_read_script(synthetic_store, "snapshot")
+
+    assert_bounded_read_error(result, "TypeError")
+
+
+def test_snapshot_preserves_uninterpreted_native_integer_status_and_flags(
+    reads, synthetic_store
+):
+    with sqlite3.connect(synthetic_store) as connection:
+        connection.execute(
+            "UPDATE ZSYNCOBJECT SET ZSTATUS1 = 7, ZFLAGS1 = -3 WHERE Z_PK = 11"
+        )
+
+    result = run_read_script(synthetic_store, "snapshot")
+
+    assert result.returncode == 0, result.stderr
+    transaction = json.loads(result.stdout)["transactions"][0]
+    assert transaction["native_status"] == 7
+    assert transaction["native_flags"] == -3
+
+
+def test_native_transaction_integer_rejects_boolean(reads):
+    record = SimpleNamespace(_raw={"ZSTATUS1": True})
+
+    with pytest.raises(TypeError, match="not an integer"):
+        reads.native_transaction_integer(record, "ZSTATUS1")
 
 
 @pytest.mark.parametrize(

@@ -42,6 +42,29 @@ def cached_balance_value(value):
     return str(value)
 
 
+def transaction_description(record) -> str:
+    """Require the model's core transaction description to remain native text."""
+    try:
+        raw_description = record._raw["ZDESC2"]
+        description = record.description
+    except (AttributeError, KeyError, TypeError) as exc:
+        raise TypeError("transaction description is not native text") from exc
+    if type(raw_description) is not str or type(description) is not str:
+        raise TypeError("transaction description is not native text")
+    return description
+
+
+def native_transaction_integer(record, column: str) -> int:
+    """Require an exported raw transaction field to retain SQLite integer type."""
+    try:
+        value = record._raw[column]
+    except (AttributeError, KeyError, TypeError) as exc:
+        raise TypeError("native transaction metadata is not an integer") from exc
+    if type(value) is not int:
+        raise TypeError("native transaction metadata is not an integer")
+    return value
+
+
 def transaction_time(record) -> datetime:
     """Read Core Data absolute seconds; do not inherit legacy local epoch offsets."""
     seconds = record._raw.get("ZDATE1")

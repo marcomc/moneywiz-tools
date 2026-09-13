@@ -39,8 +39,9 @@ The JSON snapshot includes:
 - Per-manager source and parsed counts/IDs, skipped identities and typed errors.
 - Native status/flag values, reconciliation flags, account archival status and
   native cached balance, explicitly labelled as not source-verified.
-- Structural transfer checks and candidate findings for differing dates,
-  unreconciled paired legs and coincident transactions.
+- Structural transfer checks for mismatched reciprocal native FX fields, plus
+  candidate findings for differing dates, unreconciled paired legs and
+  coincident transactions.
 
 Account/cutoff selection controls displayed transactions. Graph checks use the
 whole loaded graph, including counterparts outside the selected account/interval.
@@ -54,6 +55,12 @@ withdrawal/deposit ID ordering, even when selection displays only one leg.
 If a referenced leg exists in transaction source IDs but was skipped during
 parsing, the audit reports `unreadable_transfer_leg`; `missing_transfer_leg` is
 reserved for a reference absent from the observed transaction source.
+Reciprocal transfer FX checks compare the sender/recipient amounts and currencies
+recorded by both legs, account for the deposit-side fee in its validated native
+amount equation, and require both native exchange rates to use the same direction.
+Duplicated cross-leg values are compared exactly; the model tolerance for each
+leg's internal equation does not hide a disagreement between legs. A mismatch
+emits only transaction IDs, not financial field values.
 
 Amount/date coincidence is a review candidate, never authority to merge or delete.
 Different transfer dates can be legitimate. The cached account balance is not an
@@ -64,6 +71,9 @@ business semantics still need verification before write planning.
 Financial amounts and quantities must be finite before public output. A selected
 cached balance must also retain its native numeric type; malformed or non-finite
 values fail the operation with status `2` rather than being stringified.
+Core transaction descriptions must be native text. Snapshot status and flag
+fields must be present as native integers; their numeric meanings remain
+uninterpreted. Malformed values fail with the same bounded status `2` response.
 
 ## Existing list commands
 

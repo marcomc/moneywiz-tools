@@ -1,9 +1,11 @@
+import json
 import plistlib
 import sqlite3
 import subprocess
 import sys
 from collections.abc import Callable
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -50,10 +52,11 @@ def make_app(tmp_path: Path) -> Callable[[str, str], tuple[Path, Path]]:
 def make_store(
     path: Path,
     *,
-    owner_ids: tuple[int, ...] = (1,),
+    owner_ids: tuple[object, ...] = (1,),
     store_uuid: str = STORE_UUID,
     checksum: str = MODEL_CHECKSUM,
     with_sync_login: bool = True,
+    owner_column: str = "INTEGER PRIMARY KEY",
 ) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(path) as connection:
@@ -61,7 +64,7 @@ def make_store(
             "CREATE TABLE Z_METADATA "
             "(Z_VERSION INTEGER PRIMARY KEY, Z_UUID TEXT, Z_PLIST BLOB)"
         )
-        user_columns = "Z_PK INTEGER PRIMARY KEY"
+        user_columns = f"Z_PK {owner_column}"
         if with_sync_login:
             user_columns += ", ZSYNCLOGIN TEXT"
         connection.execute(f"CREATE TABLE ZUSER ({user_columns})")
@@ -205,6 +208,66 @@ def test_store_identity_accepts_schema_without_optional_sync_login(
 
     assert identity.owner_local_id == 1
     assert identity.owner_sync_login is None
+
+
+@pytest.mark.parametrize(
+    "owner",
+    ["private-owner", 1.5, sqlite3.Binary(b"private-owner")],
+    ids=["text", "real", "blob"],
+)
+def test_store_identity_rejects_noninteger_raw_owner_without_value_leak(
+    tmp_path: Path, owner
+) -> None:
+    store = make_store(tmp_path / "store.sqlite", owner_ids=(owner,), owner_column="")
+
+    with pytest.raises(
+        runtime_identity.RuntimeIdentityError, match="integer User local identity"
+    ) as raised:
+        runtime_identity.inspect_store(store)
+
+    assert "private-owner" not in str(raised.value)
+
+
+def test_owner_resolution_rejects_boolean_raw_identity() -> None:
+    connection = MagicMock()
+    connection.execute.side_effect = [
+        MagicMock(fetchall=lambda: [(0, "Z_PK"), (1, "ZSYNCLOGIN")]),
+        MagicMock(fetchall=lambda: [(True, None)]),
+    ]
+
+    with pytest.raises(
+        runtime_identity.RuntimeIdentityError, match="integer User local identity"
+    ):
+        runtime_identity._resolve_owner(connection, None)
+
+
+def test_identity_cli_bounds_invalid_raw_owner_without_traceback_or_value_leak(
+    tmp_path: Path,
+    make_app: Callable[[str, str], tuple[Path, Path]],
+) -> None:
+    app, _model = make_app()
+    store = make_store(
+        tmp_path / "store.sqlite",
+        owner_ids=("private-owner",),
+        owner_column="",
+    )
+    script = REPO_ROOT / "scripts/identity.py"
+
+    result = subprocess.run(
+        [sys.executable, str(script), "--db", str(store), "--app", str(app)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 2
+    assert result.stdout == ""
+    assert json.loads(result.stderr) == {
+        "status": "error",
+        "message": "MoneyWiz store has a non-integer User local identity",
+    }
+    assert "private-owner" not in result.stderr
+    assert "Traceback" not in result.stderr
 
 
 def test_store_identity_uses_read_only_sqlite_mode(

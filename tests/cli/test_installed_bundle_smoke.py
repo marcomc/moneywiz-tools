@@ -251,6 +251,81 @@ def test_installed_bundle_read_contract(
     assert [row["id"] for row in pair_payload["transactions"]] == [12]
     assert pair_payload["audit"] == [{"kind": "cross_owner_transfer", "ids": [11, 12]}]
 
+    with sqlite3.connect(pair_store) as connection:
+        connection.execute(
+            """
+            UPDATE ZSYNCOBJECT
+            SET ZAMOUNT1 = 9,
+                ZORIGINALAMOUNT = 9,
+                ZORIGINALFEE = 1,
+                ZORIGINALFEECURRENCY = 'EUR'
+            WHERE Z_PK = 12
+            """
+        )
+    fee_adjusted_pair = run("--db", str(pair_store), "snapshot")
+    assert fee_adjusted_pair.returncode == 0, fee_adjusted_pair.stderr
+    assert json.loads(fee_adjusted_pair.stdout)["audit"] == [
+        {"kind": "cross_owner_transfer", "ids": [11, 12]}
+    ]
+
+    with sqlite3.connect(pair_store) as connection:
+        connection.executescript(
+            """
+            UPDATE ZSYNCOBJECT
+            SET ZAMOUNT1 = -1,
+                ZORIGINALAMOUNT = -1,
+                ZORIGINALCURRENCY = 'BTC',
+                ZORIGINALRECIPIENTAMOUNT = 1,
+                ZORIGINALRECIPIENTCURRENCY = 'BTC',
+                ZORIGINALEXCHANGERATE = 1
+            WHERE Z_PK = 11;
+            UPDATE ZSYNCOBJECT
+            SET ZAMOUNT1 = 1.0009,
+                ZORIGINALAMOUNT = 1.0009,
+                ZORIGINALCURRENCY = 'BTC',
+                ZORIGINALSENDERAMOUNT = -1.0009,
+                ZORIGINALSENDERCURRENCY = 'BTC',
+                ZORIGINALFEE = NULL,
+                ZORIGINALFEECURRENCY = NULL,
+                ZORIGINALEXCHANGERATE = 1
+            WHERE Z_PK = 12;
+            """
+        )
+    mismatched_pair = run("--db", str(pair_store), "snapshot")
+    assert mismatched_pair.returncode == 0, mismatched_pair.stderr
+    assert [item["kind"] for item in json.loads(mismatched_pair.stdout)["audit"]] == [
+        "cross_owner_transfer",
+        "mismatched_transfer_fx",
+    ]
+
+    binary_description_store = tmp_path / "binary-description.sqlite"
+    shutil.copy2(synthetic_store, binary_description_store)
+    with sqlite3.connect(binary_description_store) as connection:
+        connection.execute(
+            "UPDATE ZSYNCOBJECT SET ZDESC2 = ? WHERE Z_PK = 11",
+            (sqlite3.Binary(b"private-description"),),
+        )
+    for output_format in ("table", "json"):
+        binary_description = run(
+            "--db",
+            str(binary_description_store),
+            "transactions",
+            "--format",
+            output_format,
+        )
+        assert_bounded_read_error(binary_description)
+        assert "private-description" not in binary_description.stderr
+
+    malformed_flags_store = tmp_path / "malformed-native-flags.sqlite"
+    shutil.copy2(synthetic_store, malformed_flags_store)
+    with sqlite3.connect(malformed_flags_store) as connection:
+        connection.execute(
+            "UPDATE ZSYNCOBJECT SET ZFLAGS1 = 'private-flags' WHERE Z_PK = 11"
+        )
+    malformed_flags = run("--db", str(malformed_flags_store), "snapshot")
+    assert_bounded_read_error(malformed_flags)
+    assert "private-flags" not in malformed_flags.stderr
+
 
 def test_installed_native_host_missing_model_is_bounded(
     installed_bundle: tuple[Path, Path, Path], tmp_path: Path

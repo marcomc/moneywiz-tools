@@ -12,6 +12,7 @@ from read_support import (
     report_completeness,
     run_read_command,
     selected_transactions,
+    transaction_description,
     transaction_time,
 )
 
@@ -100,7 +101,7 @@ def main() -> int:
             .isoformat(timespec="seconds"),
             "account": getattr(t, "account", None),
             "amount": json_value(t.amount),
-            "description": t.description,
+            "description": transaction_description(t),
         }
         # Add human-friendly account name
         try:

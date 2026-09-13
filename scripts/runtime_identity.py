@@ -404,7 +404,11 @@ def _resolve_owner(
         f"SELECT Z_PK, {sync_login_expression} FROM ZUSER "
         "WHERE Z_PK IS NOT NULL ORDER BY Z_PK"
     ).fetchall()
-    owners = {int(row[0]): row[1] for row in rows}
+    if any(type(row[0]) is not int for row in rows):
+        raise RuntimeIdentityError(
+            "MoneyWiz store has a non-integer User local identity"
+        )
+    owners = {row[0]: row[1] for row in rows}
     if owner_id is not None:
         if owner_id not in owners:
             raise RuntimeIdentityError(
