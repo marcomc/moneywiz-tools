@@ -214,7 +214,7 @@ fallbacks until independently verified.
 
 | Contract | Deliverable | Evidence needed before implementation/promotion |
 | --- | --- | --- |
-| W05 | Create native Adjust Balance transactions | Target versus delta; cash/total/asset units; native date restrictions; matching-target no-op |
+| W05 | Create native Adjust Balance transactions | Target versus delta; cash/total/asset units; date rules for the installed build; matching-target no-op |
 | W06 | Guarded deletion of supported records | Exact target and dependency inventory; native history/deletion behavior; no unrelated loss |
 | W07 | Convert/link transfer and FX records | Native conversion or replacement rules; reciprocal links; actual amounts, fees, dates and duplicate prevention |
 
@@ -226,6 +226,12 @@ Adjustment rows are distinct from reconciliation flags and opening-balance edits
 Resolve the native balance, backdating, fee, deletion and conversion questions
 during phase preparation and bounded reference research. Include refund/instalment
 repair recipes using verified primitives and the private user policy.
+
+W05 preparation is tracked as `P2-W05-01` through `P2-W05-06` in TODO. The
+[reference contract](../TRANSACTION-ADJUST-BALANCE.md) records installed model
+fields and the native examples still needed before writing an adjustment.
+MoneyWiz 2026 release notes allow past dates; verify their effect in the
+installed build instead of applying the older today-only rule.
 
 Exit evidence: native before/after comparisons, stale-state and interruption tests,
 both FX directions, separate source dates, fee currencies, duplicate/orphan checks,
@@ -372,9 +378,9 @@ promote a whole model or phase based on one operation's success.
 | Phase | Current state | Completion evidence |
 | --- | --- | --- |
 | P0 | Integrated on `release/0.3.0` | PR #3 merged at `374ebd4`; no live write promotion |
-| P1F | Implemented on `feat/p1f-writer-foundation`; TODO tasks P1F-01–05 refined | Synthetic native/crash tests and relocated bundle passed; GitHub review/integration pending |
-| P1 | First-delivery scope confirmed; operation tasks not yet refined | Pending |
-| P2 | Roadmap only; prepare after earlier evidence | Pending |
+| P1F | Integrated on `release/0.3.0` | PR #4 merged; synthetic native/crash and relocated bundle evidence |
+| P1 | W01–W04 code integrated on `release/0.3.0` | PR #9 merged at `1f91151`; app and sync acceptance pending |
+| P2 | W05 reference preparation on `feat/p2-w05-adjust-balance` | App-created native examples, owning release branch and P1 promotion evidence pending |
 | P3 | Roadmap only; prepare after earlier evidence | Pending |
 
 At handoff, record completed task IDs, code/dependency revisions, tests, exact

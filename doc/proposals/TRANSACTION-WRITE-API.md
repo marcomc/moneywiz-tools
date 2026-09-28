@@ -212,7 +212,7 @@ or prune history as part of these commands.
 | W02 | Edit transaction, P1 | ID/entity and expected prior values; field allowlist; preserve identity/unrelated fields; reconciled changes need explicit correction flow; refuse unsupported adjustment/investment types |
 | W03 | Assign payee/category splits, P1 | Explicit IDs; owner checks; replace/add/remove split intent and sum validation; remove obsolete links deliberately; distinguish transaction-only from merchant-wide updates |
 | W04 | Reconcile/unreconcile, P1 | Explicit IDs and expected old flags; verified balance/cutoff and complete source scope; preserve cleared/pending; pair checks; idempotent repeat and final per-ID flags |
-| W05 | Create Adjust Balance, P2 | Target denomination is cash/total/asset units explicitly; native reconcile object and calculated delta; opening balance/history unchanged; matching target no-op; unsupported backdate refused |
+| W05 | Create Adjust Balance, P2 | Target denomination is cash/total/asset units explicitly; native reconcile object and calculated delta; opening balance/history unchanged; matching target no-op; date semantics verified for the installed build |
 | W06 | Guarded deletion, P2 | Exact account/entity/GID/amount/currency/date/reason; preview dependent objects; reject unnamed linked legs, scheduled/investment relationships until verified; verify no unrelated loss |
 | W07 | Convert/link transfer and FX, P2 | Source ID, destination account and optional existing counterpart; both actual amounts/dates, fees and rate; one atomic native pair, reciprocal links, no duplicate import or orphan |
 | W08 | Investment Buy/Sell and cash events, P3 | Asset identity/type, quantity, quote unit, price, commission/currency; verify cash and holdings independently; no invented units; aggregate income-sale method stays W01 |
@@ -313,6 +313,7 @@ verified reassignment. Resolve with recorded native fixtures, not assumed SQL la
 The official [MoneyWiz URL documentation](https://help.wiz.money/en/articles/4525440-automate-transaction-management-with-url-schemas)
 was checked on 9 September 2026: creation uses name-based parameters and asynchronous
 app dispatch; it does not provide the proposed ID-based editing/FX-linking contract.
-The [Adjust Balance guide](https://help.wiz.money/en/articles/4440697-how-to-adjust-account-balance)
-describes a created adjustment that cannot be edited/moved and is dated at creation.
-Verify restrictions against the actual supported app version before enabling W05.
+The older Adjust Balance guide linked in the original proposal is no longer
+available. [MoneyWiz 2026 release notes](https://apps.apple.com/us/app/moneywiz-2026-personal-finance/id1511185140)
+say a past adjustment date can be selected. Verify the native fields and later
+balance effects in the installed build before enabling W05.

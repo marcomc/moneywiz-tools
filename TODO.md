@@ -109,8 +109,26 @@ their native and external-source acceptance is established.
 | P1-W04-02 | Native flag update | Whole-batch preflight, account/owner/variant guards, one save, unchanged native status/flags and unrelated fields | Implemented; disposable model-48 read-back passed |
 | P1-W04-03 | Recovery and negative paths | Final per-ID flags, repeat no-op, stale/partial/mixed refusal, before/after-save recovery | Native interruption and mixed-batch tests passed |
 | P1-W04-04 | Bundle and documentation | Relocated installed CLI, W01–W03 regressions, help, changelog and contract | Relocated W04 bundle passed; 629 CLI tests passed, 2 skipped before final mixed-batch test |
-| P1-W04-05 | Independent review and PR handoff | Local READY and current-head GitHub review; leave PR open for user inspection | Independent local review clean; GitHub PR/review pending |
+| P1-W04-05 | Independent review and PR handoff | Local READY and current-head GitHub review; leave PR open for user inspection | Current-head review clean; PR #9 merged at `1f91151` |
 | P1-W04-06 | Application and sync acceptance | Authorized MoneyWiz reopen/history and remote-client evidence | Not authorized; live capabilities blocked |
+
+## P2 preparation: W05 Adjust Balance
+
+Entry: W04 code merged into `release/0.3.0` by PR #9 at `1f91151`.
+`feat/p2-w05-adjust-balance` starts from that commit. The owning P2 release
+branch will be named when its scope is ready for integration; no P2 version or
+live write capability has been assigned. See
+[W05 reference contract](doc/TRANSACTION-ADJUST-BALANCE.md). P1 application
+and sync acceptance remains a separate promotion gate.
+
+| ID | Deliverable | Acceptance | State |
+| --- | --- | --- | --- |
+| P2-W05-01 | Native reference matrix | App-created isolated examples for account cash, investment cash/total and holdings; before/after fields, date and balance equations | Model/API fields inspected; app-created reference pending |
+| P2-W05-02 | Typed plan and no-op contract | Explicit balance unit, account/holding, target, prior balance, delta, date/timezone, source identity; stale and matching-target behavior | Pending P2-W05-01 |
+| P2-W05-03 | Native creation and recovery | One save, exact `ReconcileTransaction` fields, unchanged opening balance/history, durable ID and interruption recovery | Pending P2-W05-01–02 |
+| P2-W05-04 | Disposable and bundle validation | Positive/negative variants, stale/duplicate/date guards and relocated bundle; no live writes | Pending P2-W05-03 |
+| P2-W05-05 | Independent PR review | Local READY and current-head clean review against the owning P2 release branch; leave PR open for user inspection | Pending P2-W05-04 |
+| P2-W05-06 | Application and sync acceptance | Authorized app reopen/history and remote-client checks per supported variant | Not authorized; live capability blocked |
 
 ## Propositions
 
