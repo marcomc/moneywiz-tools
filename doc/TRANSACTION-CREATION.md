@@ -172,10 +172,7 @@ partial-read diagnostics. W01 native tests create separate fresh Core Data
 stores from the installed current model, with `MONEYWIZ_TEST_MODEL_PATH` as an
 explicit override; the legacy fixture is never sent to the native writer.
 
-The unchanged API pin parses W01 transaction rows but reports P0 snapshots as
-partial on fresh model-48 stores: its tag-table classifier does not recognize
-the model's unrelated `Z_24TAGS` and `Z_32TAGS` shapes. The native writer verifies
-tags through Core Data relationships. Do not interpret that native result as a
-complete P0 snapshot; dependent reconciliation planning remains blocked by the
-partial-read diagnostic. Resolving the API classifier needs a separate reviewed
-pin update.
+The read-completeness API pin recognizes the unrelated model-48 tag tables
+`Z_24TAGS` and `Z_32TAGS` and reports transaction tags from the actual direct
+table `Z_37TAGS`. Native writer capability remains an independent Core Data
+check: a complete read alone does not authorize W01 or any other write.

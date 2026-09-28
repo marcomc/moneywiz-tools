@@ -6,7 +6,7 @@ This document captures important conventions in the MoneyWiz database that help 
 
 - The DB stores many timestamps as floats relative to 2001‑01‑01 00:00:00 UTC (Apple epoch).
 - Conversion is provided by the installed `moneywiz_api` module; see the
-  [`get_datetime` and `get_date` helpers](https://github.com/marcomc/moneywiz-api/blob/7cfa1ea9f09263f87e4099c4315bd2cc83c25d5c/src/moneywiz_api/utils.py).
+  [`get_datetime` and `get_date` helpers](https://github.com/marcomc/moneywiz-api/blob/401c919c954d227a04bceb1bef57126c25721313/src/moneywiz_api/utils.py).
   - `get_datetime(raw)`: preserves the API's naive local `datetime` interface.
   - `get_date(dt)`: converts Python `datetime` to DB float.
 - Reconciliation snapshots decode the absolute UTC epoch and emit explicit

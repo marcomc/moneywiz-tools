@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 from collections import defaultdict
+from contextlib import closing
 from dataclasses import asdict
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
@@ -368,7 +369,7 @@ def main() -> int:
 
     def execute() -> int:
         cutoff(args.until, args.timezone)
-        with MoneywizApi(args.db) as api:
+        with closing(MoneywizApi(args.db)) as api:
             result = build_snapshot(api, args.account, args.until, args.timezone)
         print(json.dumps(result, indent=2, allow_nan=False))
         return 0 if result["completeness"]["complete"] else 3
