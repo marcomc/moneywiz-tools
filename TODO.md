@@ -74,7 +74,7 @@ are excluded. Preserve the exact pinned API revision and existing W01/v1 behavio
 | P1-W02-03 | Native atomic edit and verification / native worker | P1-W02-01–02 | Whole-plan preflight, one save, unchanged identities/relationships/history, expected balance and refund invariants | Native persistence and rollback tests passed on disposable stores |
 | P1-W02-04 | Disposable regressions and recovery / fixture worker and controller | P1-W02-02–03 | Every scalar positive/negative; stale/special/reconciled rejection; atomic rollback, repeat no-op, before/after-save crash and durable journal evidence | Native crash/recovery and full CLI suite passed on disposable stores |
 | P1-W02-05 | Installed bundle and documentation / controller | P1-W02-04 | Full required validation; production bundled host; relocated install after disposable build source unavailable; unchanged API pin | Relocated bundle CLI passed with source reads denied; API pin remains `401c919` |
-| P1-W02-06 | Independent review and PR handoff / controller | P1-W02-05 | One coordinator/ledger; local READY; PR to release/0.3.0; one current-head Codex monitor; do not merge | Local READY after independent review; remote current-head review pending |
+| P1-W02-06 | Independent review and PR handoff / controller | P1-W02-05 | One coordinator/ledger; local READY; PR to release/0.3.0; merge after current-head clean evidence | PR #7 clean on `084eab3`, squash-merged into release at `e0bb1d5` |
 | P1-W02-07 | Application and sync acceptance / future authorized owner | P1-W02-06 | Direct authorized MoneyWiz reopen/history and remote-client evidence for each variant | Not authorized; live edit capability blocked |
 
 ## Propositions
@@ -83,10 +83,13 @@ are excluded. Preserve the exact pinned API revision and existing W01/v1 behavio
   With Tools pinned to `moneywiz-api` commit `401c919`, compare any Tools read
   adapters with the API completeness and schema-profile contracts. Remove only
   proven duplication; retaining every adapter is valid if each serves a distinct
-  consumer or safety check.
+  consumer or safety check. This backlog entry does not authorize a Tools
+  simplification or an API change.
   - Map `scripts/read_support.py`, `scripts/holdings.py` and
-    `scripts/snapshot.py` to API parsing, scoped reads and diagnostics, naming
-    exact callers and tests for each candidate.
+    `scripts/snapshot.py` to the pinned API's `schema_profile.py`,
+    `model/schema_mapped_row.py`, `database_accessor.py` and `read_result.py`.
+    Produce a keep/remove table with exact symbols, callers and tests;
+    distinguish column parsing from operation scope and enrichment diagnostics.
   - Preserve Tools operation-specific completeness checks, runtime identity,
     `scripts/compatibility.py`, the compatibility matrix and native write
     capability gates. Complete reads alone never authorize a write.

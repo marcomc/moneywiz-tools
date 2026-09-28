@@ -19,6 +19,13 @@ These rules do not apply outside of work under `moneywiz-tools/`.
 - Complete phase validation and application acceptance before phase promotion.
   A release branch name alone does not assign a version or enable capabilities.
 
+## Distributable bundle validation
+
+- Inspect generated manifests and native binary bytes for build-path disclosure
+  in addition to runtime self-containment. Test each implicated producer and
+  corroborate the result with a fresh rebuilt artifact. Keep privacy, runtime
+  portability, and application acceptance as separate evidence.
+
 ## Reconciliation skill and private context
 
 - Use `$moneywiz-reconcile` for live account verification and reconciliation.
