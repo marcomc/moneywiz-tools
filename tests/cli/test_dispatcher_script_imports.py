@@ -189,7 +189,7 @@ def test_source_dispatcher_preserves_bounded_missing_snapshot_error(
     assert result.stdout == ""
     assert json.loads(result.stderr.splitlines()[-1]) == {
         "status": "error",
-        "error": "DatabasePathError",
+        "error": "OperationalError",
         "message": "Read failed; check database, schema and command arguments",
     }
     assert not missing_database.exists()

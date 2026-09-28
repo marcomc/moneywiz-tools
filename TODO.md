@@ -37,12 +37,14 @@ P1F. P1F integrated into the release branch at `1020c40`.
 ### P1 W01 transaction creation
 
 Entry: P1F integrated at `1020c400d4740f45f29f1e2c87a11aa0a74f8603`.
-Branch: `feat/p1-w01-transaction-create`; PR target: `release/0.3.0`.
+Former branch: `feat/p1-w01-transaction-create`; PR #5 merged into
+`release/0.3.0`, and the worktree has been retired.
 Scope: [W01](doc/proposals/TRANSACTION-WRITE-API.md#operation-contracts-and-acceptance)
 through the version-2 typed plan and shared native writer. Only invented
 fixtures and disposable stores are authorized for validation. W02 editing,
 W03 post-create assignment/split mutation, W04 flags and all P2/P3 variants
-remain excluded. The API revision remains pinned at `7cfa1ea9f09263f87e4099c4315bd2cc83c25d5c`.
+remain excluded. At W01 integration, the API revision was pinned at
+`7cfa1ea9f09263f87e4099c4315bd2cc83c25d5c`.
 
 | ID | Deliverable / owner | Depends on | Acceptance | State |
 | --- | --- | --- | --- | --- |
@@ -55,6 +57,21 @@ remain excluded. The API revision remains pinned at `7cfa1ea9f09263f87e4099c4315
 | P1-W01-07 | Application and sync acceptance / future authorized acceptance owner | P1-W01-06 | Direct MoneyWiz reopen/history and remote-client evidence for each promoted variant | Not authorized in this synthetic-only task; live capabilities blocked |
 
 ## Propositions
+
+- [ ] **Audit redundant read compatibility after integrating the new API pin.**
+  With Tools pinned to `moneywiz-api` commit `401c919`, compare any Tools read
+  adapters with the API completeness and schema-profile contracts. Remove only
+  proven duplication; retaining every adapter is valid if each serves a distinct
+  consumer or safety check.
+  - Map `scripts/read_support.py`, `scripts/holdings.py` and
+    `scripts/snapshot.py` to API parsing, scoped reads and diagnostics, naming
+    exact callers and tests for each candidate.
+  - Preserve Tools operation-specific completeness checks, runtime identity,
+    `scripts/compatibility.py`, the compatibility matrix and native write
+    capability gates. Complete reads alone never authorize a write.
+  - For a justified removal, test incomplete/nullable reads, mixed schema
+    aliases, model-48 tags, CLI failure behavior, unsupported-write rejection
+    and the rebuilt installed bundle. Use a separate reviewed branch.
 
 Delivery sequence and phase preparation:
 [Transaction write implementation plan](doc/proposals/TRANSACTION-WRITE-IMPLEMENTATION-PLAN.md).

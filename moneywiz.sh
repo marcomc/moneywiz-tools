@@ -325,7 +325,7 @@ case "${SUBCMD}" in
     if [[ -n "${GLOBAL_DB:-${CONFIG_DB_PATH}}" ]]; then
       identity_arguments=(--db "${GLOBAL_DB:-${CONFIG_DB_PATH}}")
     fi
-    run_python_script "${SCRIPT_DIR}/scripts/identity.py" "${identity_arguments[@]}" "$@"
+    run_python_script "${SCRIPT_DIR}/scripts/identity.py" ${identity_arguments[@]+"${identity_arguments[@]}"} "$@"
     ;;
   shell)
     shell_arguments=("$@")

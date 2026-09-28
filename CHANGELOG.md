@@ -21,6 +21,9 @@
 
 ### Changed
 
+- Pin the fork's reviewed MoneyWiz API read-completeness revision for source
+  commands and the bundled app, while keeping native write capability checks
+  independent of read completeness.
 - Defined the 0.3.0 P0/P1F/P1 implementation and acceptance sequence, private
   runtime-journal retention, and CLI-first reconciliation requirements.
 - Required local scoped remediation before each implementation PR and a clean,

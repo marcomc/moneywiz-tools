@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from contextlib import closing
 from pathlib import Path
 
 from moneywiz_api.moneywiz_api import MoneywizApi
@@ -32,7 +33,7 @@ def main() -> int:
     if args.diagnostics and args.format != "json":
         ap.error("--diagnostics requires --format json")
 
-    with MoneywizApi(args.db, managers=("accounts",)) as api:
+    with closing(MoneywizApi(args.db, managers=("accounts",))) as api:
         if args.user is None:
             accounts = api.account_manager.records().values()
         else:
