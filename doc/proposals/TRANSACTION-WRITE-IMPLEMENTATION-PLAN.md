@@ -191,6 +191,12 @@ The [Transaction Assignment](../TRANSACTION-ASSIGNMENT.md) contract defines
 exact prior/target relationships, deliberate replacement and unchanged balance.
 Disposable validation does not authorize live writes.
 
+W04 tasks are activated as `P1-W04-01` through `P1-W04-06` in TODO. Reconcile
+and unreconcile have separate capability gates. The disposable contract binds a
+complete full-account transaction inventory and requires exact old flags,
+unchanged balance/status and independent read-back. Live source/app/sync
+acceptance is separate.
+
 Suggested order is W01, W02, W03, then W04; phase preparation may adjust it based
 on fixture evidence. Reconcile and unreconcile require separate capability evidence.
 Reconciled edits use the explicit correction flow. Unsupported transfer, adjustment,

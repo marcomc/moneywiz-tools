@@ -63,11 +63,12 @@ their command-specific output behavior.
 ## Versioned writer and recovery
 
 The version-2 interface accepts a saved typed plan and defaults to inspection.
-W01 creation, W02 editing and W03 assignment are restricted to marked
-disposable fixtures; live W01–W03 and W04 remain blocked. See
+W01 creation, W02 editing, W03 assignment and W04 reconciliation are restricted
+to marked disposable fixtures; all four live capabilities remain blocked. See
 [Transaction Creation](doc/TRANSACTION-CREATION.md) for creation fields,
 [Transaction Editing](doc/TRANSACTION-EDITING.md) for edit fields,
-[Transaction Assignment](doc/TRANSACTION-ASSIGNMENT.md) for relationships, and
+[Transaction Assignment](doc/TRANSACTION-ASSIGNMENT.md) for relationships,
+[Transaction Reconciliation](doc/TRANSACTION-RECONCILIATION.md) for flags, and
 [Writer Recovery](doc/WRITER-RECOVERY.md) for journals.
 
 | Command | Behavior |
@@ -75,6 +76,8 @@ disposable fixtures; live W01–W03 and W04 remain blocked. See
 | `transaction create --request FILE --plan FILE` | Build a W01 plan from explicit JSON inputs without opening a store |
 | `transaction edit --request FILE --plan FILE` | Build a guarded W02 scalar edit plan without opening a store |
 | `transaction assign --request FILE --plan FILE` | Build a guarded W03 payee/category replacement plan without opening a store |
+| `transaction reconcile --request FILE --plan FILE` | Build a guarded W04 reconciliation plan without opening a store |
+| `transaction unreconcile --request FILE --plan FILE` | Build a guarded W04 correction plan without opening a store |
 | `write validate --plan FILE` | Validate and display the exact plan and canonical digest |
 | `write apply --plan FILE` | Inspect without mutation |
 | `write apply --plan FILE --reviewed-digest SHA --apply` | Apply the reviewed coherent unit with durable recovery evidence |

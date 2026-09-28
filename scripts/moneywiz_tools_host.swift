@@ -504,6 +504,7 @@ struct WriterPlanV2: Decodable {
     let expectedCachedAccountBalance: String
     let currencyUnit: String
     let sourceEventID: String
+    let sourceScope: ReconcileSourceScope?
     let operations: [WriterOperationV2]
 
     enum CodingKeys: String, CodingKey {
@@ -525,6 +526,7 @@ struct WriterPlanV2: Decodable {
         case expectedCachedAccountBalance = "expected_cached_account_balance"
         case currencyUnit = "currency_unit"
         case sourceEventID = "source_event_id"
+        case sourceScope = "source_scope"
         case operations
     }
 }
@@ -552,6 +554,25 @@ struct AppIdentity: Decodable {
 struct SourceInterval: Decodable {
     let start: String
     let end: String
+}
+
+struct ReconcileSourceScope: Decodable {
+    let scope: String
+    let readStatus: String
+    let externalSourceVerified: Bool
+    let accountGID: String
+    let currencyUnit: String
+    let verifiedBalance: String
+    let sourceCount: Int
+    let parsedCount: Int
+    let transactionGIDs: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case scope, accountGID = "account_gid", currencyUnit = "currency_unit"
+        case readStatus = "read_status", externalSourceVerified = "external_source_verified"
+        case verifiedBalance = "verified_balance", sourceCount = "source_count"
+        case parsedCount = "parsed_count", transactionGIDs = "transaction_gids"
+    }
 }
 
 struct WriterOperationV2: Decodable {
@@ -585,6 +606,11 @@ struct WriterOperationV2: Decodable {
     let target: AssignmentState?
     let expectedAssignments: AssignmentState?
     let replacementMode: String?
+    let expectedReconciled: Bool?
+    let targetReconciled: Bool?
+    let expectedNativeStatus: Int?
+    let expectedNativeFlags: Int?
+    let correctionReason: String?
 
     enum CodingKeys: String, CodingKey {
         case operationID = "operation_id"
@@ -615,6 +641,11 @@ struct WriterOperationV2: Decodable {
         case target
         case expectedAssignments = "expected_assignments"
         case replacementMode = "replacement_mode"
+        case expectedReconciled = "expected_reconciled"
+        case targetReconciled = "target_reconciled"
+        case expectedNativeStatus = "expected_native_status"
+        case expectedNativeFlags = "expected_native_flags"
+        case correctionReason = "correction_reason"
     }
 }
 
@@ -670,6 +701,17 @@ struct AssignmentPostcondition: Encodable {
     }
 }
 
+struct ReconcilePostcondition: Encodable {
+    let reconciled: Bool
+    let nativeStatus: Int
+    let nativeFlags: Int
+    let expectedBalanceDelta: String
+    enum CodingKeys: String, CodingKey {
+        case reconciled, nativeStatus = "native_status", nativeFlags = "native_flags"
+        case expectedBalanceDelta = "expected_balance_delta"
+    }
+}
+
 struct RefundReference: Codable, Equatable {
     let originalTransactionEntity: String
     let originalTransactionGID: String
@@ -698,6 +740,7 @@ struct WriterOperationResultV2: Encodable {
     let postcondition: CreateTransactionPostconditionV2?
     var editPostcondition: EditPostcondition? = nil
     var assignmentPostcondition: AssignmentPostcondition? = nil
+    var reconcilePostcondition: ReconcilePostcondition? = nil
 
     enum CodingKeys: String, CodingKey {
         case operationID = "operation_id"
@@ -721,7 +764,8 @@ struct WriterOperationResultV2: Encodable {
         try container.encode(durableNumericID, forKey: .durableNumericID)
         try container.encode(oldPayeeGID, forKey: .oldPayeeGID)
         try container.encode(newPayeeGID, forKey: .newPayeeGID)
-        if let assignmentPostcondition { try container.encode(assignmentPostcondition, forKey: .postcondition) }
+        if let reconcilePostcondition { try container.encode(reconcilePostcondition, forKey: .postcondition) }
+        else if let assignmentPostcondition { try container.encode(assignmentPostcondition, forKey: .postcondition) }
         else if let editPostcondition { try container.encode(editPostcondition, forKey: .postcondition) }
         else { try container.encodeIfPresent(postcondition, forKey: .postcondition) }
     }
@@ -802,12 +846,14 @@ func canonicalV2Digest(_ rawPlan: [String: Any]) throws -> String {
 
 func validateWriterPlanV2(_ plan: WriterPlanV2, rawPlan: [String: Any]) throws {
     let policy = supportedWriterPolicy
-    let requiredKeys: Set<String> = [
+    var requiredKeys: Set<String> = [
         "contract_version", "operation_schema_version", "plan_id", "plan_digest", "profile_id",
         "model_checksum", "store_identity", "owner_uri", "app_identity", "capability", "created_at",
         "timezone", "source_interval", "source_evidence_refs", "expected_account_gid",
         "expected_cached_account_balance", "currency_unit", "source_event_id", "operations",
     ]
+    let w04 = ["write.reconcile", "write.unreconcile"].contains(plan.capability)
+    if w04 { requiredKeys.insert("source_scope") }
     guard Set(rawPlan.keys) == requiredKeys else {
         throw HostError.message("writer v2 plan contains unknown or missing fields")
     }
@@ -839,6 +885,10 @@ func validateWriterPlanV2(_ plan: WriterPlanV2, rawPlan: [String: Any]) throws {
             try validateAssignmentOperationShape(rawOperation, plan: plan)
             continue
         }
+        if kind == "reconcile_transaction" || kind == "unreconcile_transaction" {
+            try validateReconcileOperationShape(rawOperation, plan: plan)
+            continue
+        }
         if kind == "create_income" || kind == "create_expense" || kind == "create_refund" {
             try validateCreationOperationShape(rawOperation, plan: plan)
             continue
@@ -853,7 +903,7 @@ func validateWriterPlanV2(_ plan: WriterPlanV2, rawPlan: [String: Any]) throws {
           plan.operationSchemaVersion == 1,
           plan.profileID == policy.profileID,
           plan.modelChecksum == policy.modelChecksum,
-          (plan.capability == policy.capability || ["write.create-income", "write.create-expense", "write.create-refund", "write.edit-transaction", "write.assign-payee-categories"].contains(plan.capability)),
+          (plan.capability == policy.capability || ["write.create-income", "write.create-expense", "write.create-refund", "write.edit-transaction", "write.assign-payee-categories", "write.reconcile", "write.unreconcile"].contains(plan.capability)),
           moneyWizBundleIdentifiers.contains(plan.appIdentity.bundleID),
           !isBlank(plan.appIdentity.version),
           !isBlank(plan.appIdentity.path),
@@ -880,6 +930,7 @@ func validateWriterPlanV2(_ plan: WriterPlanV2, rawPlan: [String: Any]) throws {
     guard start <= end, TimeZone(identifier: plan.timezone) != nil else {
         throw HostError.message("writer v2 timestamps, timezone, or decimal guard is invalid")
     }
+    if w04 { try validateReconcileSourceScope(plan.sourceScope, raw: rawPlan["source_scope"], plan: plan) }
     let calculatedDigest = try canonicalV2Digest(rawPlan)
     guard plan.planDigest == calculatedDigest else {
         throw HostError.message("writer v2 plan digest does not match reviewed payload")
@@ -899,8 +950,13 @@ func validateWriterPlanV2(_ plan: WriterPlanV2, rawPlan: [String: Any]) throws {
        !plan.operations.allSatisfy({ $0.kind == "assign_payee_categories" }) {
         throw HostError.message("W03 plans must contain homogeneous assignment operations")
     }
+    if w04 && !plan.operations.allSatisfy({ $0.capability == plan.capability &&
+        $0.kind == (plan.capability == "write.reconcile" ? "reconcile_transaction" : "unreconcile_transaction") }) {
+        throw HostError.message("W04 plans must contain homogeneous flag transitions")
+    }
     for operation in plan.operations {
-        if operation.kind == "edit_transaction" || operation.kind == "assign_payee_categories" {
+        if operation.kind == "edit_transaction" || operation.kind == "assign_payee_categories" ||
+           operation.kind == "reconcile_transaction" || operation.kind == "unreconcile_transaction" {
             guard operationIDs.insert(operation.operationID).inserted,
                   transactionGIDs.insert(operation.transactionGID).inserted else {
                 throw HostError.message("writer v2 operation identifiers and transaction GIDs must be unique")
@@ -1080,6 +1136,79 @@ private let editFieldNames: [String: [String]] = [
     "amount": ["amount", "originalAmount"], "occurred_at": ["date"],
     "note": ["notes"], "description": ["desc"], "checkbook_number": ["checkbookNumber"],
 ]
+
+func validateReconcileSourceScope(_ scope: ReconcileSourceScope?, raw: Any?, plan: WriterPlanV2) throws {
+    guard let scope, let raw = raw as? [String: Any],
+          Set(raw.keys) == ["scope", "read_status", "external_source_verified", "account_gid",
+                            "currency_unit", "verified_balance", "source_count", "parsed_count", "transaction_gids"],
+          scope.scope == "entire_account", scope.readStatus == "complete", scope.externalSourceVerified,
+          scope.accountGID == plan.expectedAccountGID, scope.currencyUnit == plan.currencyUnit,
+          scope.sourceCount == scope.transactionGIDs.count,
+          scope.parsedCount == scope.transactionGIDs.count,
+          !scope.transactionGIDs.isEmpty,
+          scope.transactionGIDs == Array(Set(scope.transactionGIDs)).sorted(),
+          scope.transactionGIDs.allSatisfy({ !isBlank($0) && $0 == $0.trimmingCharacters(in: .whitespacesAndNewlines) }),
+          try decimalValue(scope.verifiedBalance, field: "W04 verified balance") ==
+            decimalValue(plan.expectedCachedAccountBalance, field: "W04 cached balance") else {
+        throw HostError.message("W04 requires a complete, reviewed full-account source scope")
+    }
+    guard NSDecimalNumber(decimal: try decimalValue(scope.verifiedBalance, field: "W04 balance")).stringValue ==
+            scope.verifiedBalance else {
+        throw HostError.message("W04 verified balance must be canonical Decimal text")
+    }
+}
+
+func validateReconcileOperationShape(_ raw: [String: Any], plan: WriterPlanV2) throws {
+    let required: Set<String> = [
+        "operation_id", "kind", "capability", "transaction_entity", "transaction_gid",
+        "account_gid", "owner_uri", "source_event_id", "expected_reconciled", "target_reconciled",
+        "expected_native_status", "expected_native_flags", "correction_reason", "expected_balance_delta",
+        "expected_postcondition", "allowed_changed_fields",
+    ]
+    let reconcile = plan.capability == "write.reconcile"
+    let expectedKind = reconcile ? "reconcile_transaction" : "unreconcile_transaction"
+    guard Set(raw.keys) == required,
+          raw["kind"] as? String == expectedKind,
+          raw["capability"] as? String == plan.capability,
+          let entity = raw["transaction_entity"] as? String,
+          ["DepositTransaction", "WithdrawTransaction", "RefundTransaction"].contains(entity),
+          raw["account_gid"] as? String == plan.expectedAccountGID,
+          raw["owner_uri"] as? String == plan.ownerURI,
+          raw["source_event_id"] as? String == plan.sourceEventID,
+          raw["expected_reconciled"] as? Bool == !reconcile,
+          raw["target_reconciled"] as? Bool == reconcile,
+          let status = raw["expected_native_status"] as? Int, status == 1,
+          let flags = raw["expected_native_flags"] as? Int, (0...32767).contains(flags),
+          raw["expected_balance_delta"] as? String == "0",
+          raw["allowed_changed_fields"] as? [String] == ["reconciled"],
+          let post = raw["expected_postcondition"] as? [String: Any],
+          Set(post.keys) == ["reconciled", "native_status", "native_flags", "expected_balance_delta"],
+          post["reconciled"] as? Bool == reconcile,
+          post["native_status"] as? Int == status,
+          post["native_flags"] as? Int == flags,
+          post["expected_balance_delta"] as? String == "0" else {
+        throw HostError.message("W04 flag transition contains unsupported or unreviewed fields")
+    }
+    for key in ["operation_id", "transaction_gid", "account_gid", "owner_uri", "source_event_id"] {
+        guard let value = raw[key] as? String, !isBlank(value),
+              value == value.trimmingCharacters(in: .whitespacesAndNewlines) else {
+            throw HostError.message("W04 identity text must be trimmed and nonblank")
+        }
+    }
+    if reconcile {
+        guard raw["correction_reason"] is NSNull else {
+            throw HostError.message("W04 reconcile does not accept a correction reason")
+        }
+    } else {
+        guard let reason = raw["correction_reason"] as? String,
+              !isBlank(reason), reason == reason.trimmingCharacters(in: .whitespacesAndNewlines) else {
+            throw HostError.message("W04 unreconcile requires a correction reason")
+        }
+    }
+    guard plan.sourceScope?.transactionGIDs.contains(raw["transaction_gid"] as! String) == true else {
+        throw HostError.message("W04 target is outside the verified account scope")
+    }
+}
 
 func validateAssignmentOperationShape(_ raw: [String: Any], plan: WriterPlanV2) throws {
     let required: Set<String> = [
@@ -1449,6 +1578,136 @@ func editTransactionsV2(_ plan: WriterPlanV2, context: NSManagedObjectContext,
         result = Result {
             let persisted = try inspectEdits(plan, context: readback, saved: true)
             guard persisted.receipt.classification == "applied" else { throw HostError.message("W02 independent read-back differs") }
+            try verifyCreationPreimages(preimages, context: readback)
+            return persisted.receipt
+        }
+    }
+    return try result.get()
+}
+
+struct ReconcileInspection {
+    let receipt: WriterResultV2
+    let transactions: [NSManagedObject]
+}
+
+func inspectReconciliation(_ plan: WriterPlanV2, context: NSManagedObjectContext,
+                           saved: Bool = false) throws -> ReconcileInspection {
+    guard let coordinator = context.persistentStoreCoordinator, let scope = plan.sourceScope else {
+        throw HostError.message("W04 missing coordinator or source scope")
+    }
+    try requireCreationFixture(coordinator)
+    let account = try fetchExactObject(entityName: "CashAccount", gid: plan.expectedAccountGID, context: context)
+    guard let owner = account.value(forKey: "user") as? NSManagedObject,
+          owner.objectID.uriRepresentation().absoluteString == plan.ownerURI,
+          owner.value(forKey: "syncLogin") as? String == "w01-fixture@example.invalid",
+          account.value(forKey: "name") as? String == "W01",
+          account.value(forKey: "currencyName") as? String == plan.currencyUnit,
+          (account.value(forKey: "archived") as? NSNumber)?.boolValue == false,
+          account.value(forKey: "onlineBankAccount") == nil,
+          try nativeDecimal(account, "ballance") == decimalValue(plan.expectedCachedAccountBalance, field: "W04 balance") else {
+        throw HostError.message("W04 account identity, currency, or balance differs from reviewed scope")
+    }
+    // The root entity includes every transaction subtype, including transfers and
+    // special records.  A matching subset is insufficient for a reconciliation.
+    let accountTransactions = try context.fetch(NSFetchRequest<NSManagedObject>(entityName: "Transaction"))
+        .filter { ($0.value(forKey: "account") as? NSManagedObject)?.objectID == account.objectID }
+    let actualGIDs = accountTransactions.compactMap { $0.value(forKey: "GID") as? String }.sorted()
+    guard actualGIDs.count == accountTransactions.count, actualGIDs == scope.transactionGIDs else {
+        throw HostError.message("W04 account transaction inventory is incomplete or stale")
+    }
+    var transactions: [NSManagedObject] = []
+    var allOld = true, allNew = true
+    for operation in plan.operations {
+        let transaction = try fetchExactObject(entityName: operation.transactionEntity,
+                                               gid: operation.transactionGID, context: context)
+        guard (transaction.value(forKey: "account") as? NSManagedObject)?.objectID == account.objectID,
+              transaction.entity.name == operation.transactionEntity,
+              transaction.value(forKey: "originalCurrency") as? String == plan.currencyUnit,
+              (transaction.value(forKey: "status") as? NSNumber)?.intValue == operation.expectedNativeStatus,
+              (transaction.value(forKey: "flags") as? NSNumber)?.intValue == operation.expectedNativeFlags,
+              (transaction.value(forKey: "voidCheque") as? NSNumber)?.intValue == 0,
+              transaction.value(forKey: "investmentHolding") == nil,
+              transaction.value(forKey: "autoSkipLinkedScheduledTransactionGID") == nil,
+              transaction.value(forKey: "investmentSymbol") == nil,
+              transaction.value(forKey: "symbol") == nil,
+              transaction.value(forKey: "originalFeeCurrency") == nil,
+              try nativeDecimal(transaction, "originalExchangeRate") == 1 else {
+            throw HostError.message("W04 target has an unsupported native state or stale flags")
+        }
+        for key in ["fee", "originalFee", "numberOfShares", "pricePerShare", "currencyExchangeRate"] {
+            guard try nativeDecimal(transaction, key) == 0 else {
+                throw HostError.message("W04 investment, fee, or FX transaction is unsupported")
+            }
+        }
+        let amount = try nativeDecimal(transaction, "amount")
+        guard try nativeDecimal(transaction, "originalAmount") == amount,
+              transaction.entity.name == "WithdrawTransaction" ? amount < 0 : amount > 0 else {
+            throw HostError.message("W04 target amount or sign is invalid")
+        }
+        let reconciled = (transaction.value(forKey: "reconciled") as? NSNumber)?.boolValue
+        guard let reconciled else { throw HostError.message("W04 target lacks native reconciled state") }
+        allOld = allOld && reconciled == operation.expectedReconciled
+        allNew = allNew && reconciled == operation.targetReconciled
+        transactions.append(transaction)
+    }
+    let classification = allNew ? (saved ? "applied" : "noop") : allOld && !saved ? "retry_safe" : "unknown"
+    let success = classification == "noop" || classification == "applied"
+    let results = zip(plan.operations, transactions).map { operation, transaction in
+        var result = WriterOperationResultV2(operationID: operation.operationID,
+            status: success ? classification : "unknown", transactionEntity: operation.transactionEntity,
+            transactionGID: operation.transactionGID,
+            durableURI: transaction.objectID.uriRepresentation().absoluteString,
+            durableNumericID: durableNumericID(transaction.objectID), oldPayeeGID: nil,
+            newPayeeGID: nil, postcondition: nil)
+        if success {
+            result.reconcilePostcondition = ReconcilePostcondition(reconciled: operation.targetReconciled!,
+                nativeStatus: operation.expectedNativeStatus!, nativeFlags: operation.expectedNativeFlags!,
+                expectedBalanceDelta: "0")
+        }
+        return result
+    }
+    return ReconcileInspection(receipt: WriterResultV2(contractVersion: 2, planID: plan.planID,
+        planDigest: plan.planDigest, classification: classification, verified: success, operations: results),
+        transactions: transactions)
+}
+
+func reconcileTransactionsV2(_ plan: WriterPlanV2, context: NSManagedObjectContext,
+                             requireStopped: () throws -> Void) throws -> WriterResultV2 {
+    let prior = try inspectReconciliation(plan, context: context)
+    if prior.receipt.classification == "noop" { return prior.receipt }
+    guard prior.receipt.classification == "retry_safe" else {
+        throw HostError.message("W04 stale or mixed reconciliation state; refusing replay")
+    }
+    let allowed = Dictionary(uniqueKeysWithValues: prior.transactions.map { ($0.objectID, Set(["attribute:reconciled"])) })
+    var preimages: [CreationPreimage] = []
+    for entity in context.persistentStoreCoordinator!.managedObjectModel.entities where entity.superentity == nil {
+        for object in try context.fetch(NSFetchRequest<NSManagedObject>(entityName: entity.name!)) {
+            let keys = allowed[object.objectID] ?? []
+            preimages.append(CreationPreimage(objectID: object.objectID,
+                fingerprint: try editFingerprint(object).filter { !keys.contains($0.key) }, allowedKeys: keys))
+        }
+    }
+    for (operation, transaction) in zip(plan.operations, prior.transactions) {
+        transaction.setValue(operation.targetReconciled!, forKey: "reconciled")
+    }
+    try verifyCreationPreimages(preimages, context: context)
+    try requireStopped()
+#if MONEYWIZ_TOOLS_TESTING
+    if writerTestCrashPoint == .beforeSave { _exit(86) }
+#endif
+    try context.save()
+#if MONEYWIZ_TOOLS_TESTING
+    if writerTestCrashPoint == .afterSave { _exit(87) }
+#endif
+    let readback = NSManagedObjectContext(concurrencyType: .privateQueueConcurrencyType)
+    readback.persistentStoreCoordinator = context.persistentStoreCoordinator
+    var result: Result<WriterResultV2, Error> = .failure(HostError.message("W04 read-back did not run"))
+    readback.performAndWait {
+        result = Result {
+            let persisted = try inspectReconciliation(plan, context: readback, saved: true)
+            guard persisted.receipt.classification == "applied" else {
+                throw HostError.message("W04 independent read-back differs")
+            }
             try verifyCreationPreimages(preimages, context: readback)
             return persisted.receipt
         }
@@ -1826,6 +2085,10 @@ func recoverPlanV2(_ plan: WriterPlanV2, container: NSPersistentContainer) throw
                 result = .success(try inspectAssignments(plan, context: context).receipt)
                 return
             }
+            if ["write.reconcile", "write.unreconcile"].contains(plan.capability) {
+                result = .success(try inspectReconciliation(plan, context: context).receipt)
+                return
+            }
             if let creation = plan.operations.first, creation.kind.hasPrefix("create_") {
                 result = .success(try inspectCreation(creation, plan: plan, context: context))
                 return
@@ -1874,6 +2137,10 @@ func writePlanV2(
             }
             if plan.capability == "write.assign-payee-categories" {
                 result = .success(try assignTransactionRelationshipsV2(plan, context: context, requireStopped: requireStopped))
+                return
+            }
+            if ["write.reconcile", "write.unreconcile"].contains(plan.capability) {
+                result = .success(try reconcileTransactionsV2(plan, context: context, requireStopped: requireStopped))
                 return
             }
             if let creation = plan.operations.first,
@@ -2422,7 +2689,8 @@ func run() throws {
             throw HostError.message("writer v2 runtime store or model identity does not match reviewed plan")
         }
         if plan.capability.hasPrefix("write.create-") || plan.capability == "write.edit-transaction" ||
-           plan.capability == "write.assign-payee-categories" {
+           plan.capability == "write.assign-payee-categories" ||
+           plan.capability == "write.reconcile" || plan.capability == "write.unreconcile" {
             guard moneyWizApp.bundleIdentifier == "com.moneywiz.personalfinance",
                   installedVersion == "2026.37.1",
                   moneyWizApp.object(forInfoDictionaryKey: "CFBundleVersion") as? String == "449" else {

@@ -216,6 +216,8 @@ Writes (dry-run by default; add --apply to commit):
   transaction create --help            Build a strict W01 creation plan.
   transaction edit --help              Build a guarded W02 scalar edit plan.
   transaction assign --help            Build a guarded W03 relationship replacement plan.
+  transaction reconcile --help         Build a guarded W04 reconciliation plan.
+  transaction unreconcile --help       Build a guarded W04 correction plan.
   write validate|apply|recover --plan FILE
                                       Inspect or execute a reviewed versioned plan.
   write locations|journal|cleanup [--apply]

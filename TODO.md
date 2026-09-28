@@ -92,8 +92,25 @@ capability stays blocked pending application and sync acceptance. See
 | P1-W03-02 | Native preflight and atomic replacement | Owner/category type and stale-state guards; deliberate obsolete-link deletion; unchanged balance and unrelated fields | Implemented on invented disposable stores |
 | P1-W03-03 | Read-back and recovery | Durable IDs, exact final relationships, repeat no-op and before/after-save classification | Native fixture tests passed |
 | P1-W03-04 | Bundle and regression validation | Relocated installed bundle plus unchanged W01/W02/P1F behavior | 606 CLI tests passed; relocated W01/W02/W03 bundle checks passed |
-| P1-W03-05 | Independent review and release handoff | Local readiness, current-head independent GitHub review, PR into release branch | Local independent review clean; GitHub PR/review pending |
+| P1-W03-05 | Independent review and release handoff | Local readiness, current-head independent GitHub review, PR into release branch | PR #8 merged into release at `ab719ea` |
 | P1-W03-06 | Application and sync acceptance | Authorized MoneyWiz reopen/history and remote-client evidence | Not authorized; live capability blocked |
+
+### P1 W04 reconciliation flags
+
+Entry: W03 integrated at `ab719ea`. Branch: `feat/p1-w04-reconciliation`;
+PR target: `release/0.3.0`. Reconcile and unreconcile use separate capabilities.
+Only invented disposable model-48 stores are authorized. Transfer pairs,
+adjustments, scheduled/investment variants and live writes remain blocked until
+their native and external-source acceptance is established.
+
+| ID | Deliverable | Acceptance | State |
+| --- | --- | --- | --- |
+| P1-W04-01 | Exact scope and typed plans | Complete full-account read inventory, explicit target IDs, expected flags and verified account balance; separate correction reason for unreconcile | Implemented; strict Python tests passed |
+| P1-W04-02 | Native flag update | Whole-batch preflight, account/owner/variant guards, one save, unchanged native status/flags and unrelated fields | Implemented; disposable model-48 read-back passed |
+| P1-W04-03 | Recovery and negative paths | Final per-ID flags, repeat no-op, stale/partial/mixed refusal, before/after-save recovery | Native interruption and mixed-batch tests passed |
+| P1-W04-04 | Bundle and documentation | Relocated installed CLI, W01–W03 regressions, help, changelog and contract | Relocated W04 bundle passed; 629 CLI tests passed, 2 skipped before final mixed-batch test |
+| P1-W04-05 | Independent review and PR handoff | Local READY and current-head GitHub review; leave PR open for user inspection | Independent local review clean; GitHub PR/review pending |
+| P1-W04-06 | Application and sync acceptance | Authorized MoneyWiz reopen/history and remote-client evidence | Not authorized; live capabilities blocked |
 
 ## Propositions
 

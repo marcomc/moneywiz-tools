@@ -277,7 +277,15 @@ func runFixtureWriter() throws {
             _ = try fixtureAccount("InvestmentAccount", gid: "w01-investment-account", name: "Investment", opening: 0, balance: 0, user: user, context: c)
             try c.save()
             let finalMetadata = try NSPersistentStoreCoordinator.metadataForPersistentStore(ofType: NSSQLiteStoreType, at: store, options: nil)
-            let result: [String:String] = ["store_uuid": finalMetadata[NSStoreUUIDKey] as! String, "owner_uri": user.objectID.uriRepresentation().absoluteString]
+            let allTransactions = try c.fetch(NSFetchRequest<NSManagedObject>(entityName: "Transaction"))
+                .filter { ($0.value(forKey: "account") as? NSManagedObject)?.objectID == account.objectID }
+            let accountGIDs = allTransactions.compactMap { $0.value(forKey: "GID") as? String }.sorted()
+            guard accountGIDs.count == allTransactions.count else { throw HostError.message("fixture transaction lacks GID") }
+            let result: [String: Any] = [
+                "store_uuid": finalMetadata[NSStoreUUIDKey] as! String,
+                "owner_uri": user.objectID.uriRepresentation().absoluteString,
+                "transaction_gids": accountGIDs,
+            ]
             let data = try JSONSerialization.data(withJSONObject: result, options: [.sortedKeys]); FileHandle.standardOutput.write(data); FileHandle.standardOutput.write(Data([10]))
         } catch { FileHandle.standardError.write(Data("error: \(error.localizedDescription)\n".utf8)); exit(2) }
     }

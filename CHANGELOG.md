@@ -9,13 +9,17 @@
 - W01 typed income, expense and refund creation experiments through the native
   host on marked disposable stores, with deterministic source-event identities,
   relationship validation and persisted read-back. Live creation remains blocked.
-- W03 exact-ID payee and category split replacement on disposable model-48
-  stores, with prior-state guards, owner/type/total validation, deliberate
-  removal of obsolete assignments and independent read-back. Live assignment,
-  W04 and P2/P3 remain disabled pending separate acceptance.
 - W02 guarded scalar transaction edits on disposable model-48 stores, preserving
   identity and relationships with expected-prior checks, atomic balance/refund
   validation and interruption recovery. Live editing remains blocked.
+- W03 exact-ID payee and category split replacement on disposable model-48
+  stores, with prior-state guards, owner/type/total validation, deliberate
+  removal of obsolete assignments and independent read-back. Live assignment
+  remains blocked.
+- W04 exact-ID reconcile and unreconcile plans on disposable model-48 stores,
+  with a complete-account inventory and balance guard, preserved native
+  status/flags, atomic save and interruption recovery. Live reconciliation and
+  P2/P3 remain blocked pending separate acceptance.
 - Private recovery journals, consistent pre-write snapshots, durable results,
   source-event retry guards and explicit retention cleanup.
 - Read-only runtime identity discovery binding the application edition/build,

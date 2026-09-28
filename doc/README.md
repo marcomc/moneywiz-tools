@@ -22,6 +22,7 @@ design documents explain implementation constraints after the task is clear.
 | W01 creation contract and disposable validation | [Transaction Creation](TRANSACTION-CREATION.md) |
 | W02 guarded scalar edits and disposable validation | [Transaction Editing](TRANSACTION-EDITING.md) |
 | W03 payee/category replacement and disposable validation | [Transaction Assignment](TRANSACTION-ASSIGNMENT.md) |
+| W04 reconciliation flags and disposable validation | [Transaction Reconciliation](TRANSACTION-RECONCILIATION.md) |
 | Versioned plans, interrupted writes and private journal retention | [Writer Recovery](WRITER-RECOVERY.md) |
 | Exact duplicate consolidation and fuzzy-map review | [Payee Consolidation](PAYEE-CONSOLIDATION.md) |
 | Verified MoneyWiz 2026 payee and transaction mapping | [Live Payee Structure](LIVE-PAYEE-STRUCTURE.md) |
