@@ -102,7 +102,7 @@ def test_w05_matching_target_noop_has_no_transaction() -> None:
     assert validate_result(plan, receipt(plan, "noop", durable=False))
 
 
-def test_w05_client_keeps_live_capability_blocked(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_w05_client_respects_capability_gate(monkeypatch: pytest.MonkeyPatch) -> None:
     plan = build_adjust_balance_plan(request())
     checked: list[str] = []
 

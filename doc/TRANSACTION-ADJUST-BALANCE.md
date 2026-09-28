@@ -29,7 +29,9 @@ no-op. Dates before the latest account transaction are rejected.
 The native writer was exercised on a private copy of the observed database:
 the inserted row matched the app-created row's relevant fields, the balance
 equation held, and recovery found the same durable row. This validates the
-stored shape and local recovery. The live capability remains blocked until an
-authorized tool-written row is reopened in MoneyWiz and sync acceptance is
-observed. Ordinary account balance, investment cash and holding quantity have
-separate native semantics and no W05 writer capability here.
+stored shape and local recovery. An authorized live replacement was reopened in
+MoneyWiz with the expected balance and transaction history. The app reported
+iCloud up to date after completed uploads, and Core Data CloudKit metadata for
+the new row recorded export with no pending upload. The model-48 capability is
+verified for this variant. Ordinary account balance, investment cash and holding
+quantity have separate native semantics and no W05 writer capability here.

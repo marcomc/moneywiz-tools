@@ -3,7 +3,7 @@
 Status (2026-09-28): P0, P1F and P1/W01–W04 implementation is integrated on
 `release/0.3.0` through W04 PR #9 at `1f91151`. W05 implementation of the
 observed GBP investment-total variant is active on `feat/p2-w05-adjust-balance`;
-app and sync acceptance remain separate.
+its app and iCloud export acceptance is complete.
 The user has confirmed that the complete P0/P1F/P1/P2/P3 roadmap, including
 W01–W09, belongs to release `0.3.0`. W01–W04 are already integrated; keep each
 remaining operation in a separate PR and leave new PRs open for user inspection.
@@ -391,7 +391,7 @@ promote a whole model or phase based on one operation's success.
 | P0 | Integrated on `release/0.3.0` | PR #3 merged at `374ebd4`; no live write promotion |
 | P1F | Integrated on `release/0.3.0` | PR #4 merged; synthetic native/crash and relocated bundle evidence |
 | P1 | W01–W04 code integrated on `release/0.3.0` | PR #9 merged at `1f91151`; app and sync acceptance pending |
-| P2 | W05 observed-variant implementation on `feat/p2-w05-adjust-balance`; W06/W07 follow as separate PRs | All PRs target `release/0.3.0`; other W05 units and live acceptance pending; no live capability promotion |
+| P2 | W05 observed variant verified on `feat/p2-w05-adjust-balance`; W06/W07 follow as separate PRs | All PRs target `release/0.3.0`; other W05 units remain blocked pending their own evidence |
 | P3 | W08/W09 roadmap; prepare each after its prerequisites | Separate PRs target `release/0.3.0`; operation, app and sync evidence pending |
 
 At handoff, record completed task IDs, code/dependency revisions, tests, exact

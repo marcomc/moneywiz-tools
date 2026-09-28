@@ -128,10 +128,10 @@ and sync acceptance remains a separate promotion gate.
 | --- | --- | --- | --- |
 | P2-W05-01 | Native reference | Compare the app-created adjustment with before/after data from the observed account | Complete for GBP investment total without holdings; other units lack native evidence |
 | P2-W05-02 | Typed plan and no-op contract | Bind unit, account, target, prior, delta, date/timezone and source identity; reject stale state | Implemented for the observed variant |
-| P2-W05-03 | Native creation and recovery | One save, app-matching fields, unchanged opening balance, durable ID and replay recovery | Verified on a private copy of the observed database |
+| P2-W05-03 | Native creation and recovery | One save, app-matching fields, unchanged opening balance, durable ID and replay recovery | Verified on a private copy and an authorized live replacement |
 | P2-W05-04 | Store-copy and bundle validation | Positive, stale, duplicate and backdated checks; rebuilt and relocated bundle | Local evidence complete; focused regression gate passed |
-| P2-W05-05 | Independent PR review | Local READY and current-head clean review against `release/0.3.0`; leave PR open for user inspection | [PR #10](https://github.com/marcomc/moneywiz-tools/pull/10) open; local READY, remote review running |
-| P2-W05-06 | Application and sync acceptance | Reopen a tool-written row in MoneyWiz and verify sync for the supported variant | Pending a future source-backed change; live capability blocked |
+| P2-W05-05 | Independent PR review | Local READY and current-head clean review against `release/0.3.0`; leave PR open for user inspection | [PR #10](https://github.com/marcomc/moneywiz-tools/pull/10) open; local READY, new-head remote review pending |
+| P2-W05-06 | Application and sync acceptance | Reopen a tool-written row in MoneyWiz and verify sync for the supported variant | Live app read-back and iCloud export observed; investment-total capability verified |
 
 ## Propositions
 

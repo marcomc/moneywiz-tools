@@ -70,8 +70,8 @@ to marked disposable fixtures; all four live capabilities remain blocked. See
 [Transaction Assignment](doc/TRANSACTION-ASSIGNMENT.md) for relationships,
 [Transaction Reconciliation](doc/TRANSACTION-RECONCILIATION.md) for flags, and
 [Transaction Adjust Balance](doc/TRANSACTION-ADJUST-BALANCE.md) for the observed
-investment-total variant. W05 live writes remain blocked pending app and sync
-acceptance. See
+investment-total variant. Its model-48 live capability is verified for the
+observed no-holdings account shape, with native guards on each plan. See
 [Writer Recovery](doc/WRITER-RECOVERY.md) for journals.
 
 | Command | Behavior |

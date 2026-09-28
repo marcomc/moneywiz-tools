@@ -27,9 +27,9 @@
       },
       "evidence": {
         "moneywiz_application": "MoneyWiz 2026.32.1 (build 431)",
-        "last_observed_application": "MoneyWiz 2026.32.1 (build 433)",
+        "last_observed_application": "MoneyWiz 2026.37.1 (build 449)",
         "managed_object_model": "MoneyWizDataModel 48",
-        "observed_at": "2026-08-13"
+        "observed_at": "2026-09-28"
       },
       "capabilities": {
         "read.core": "supported",
@@ -42,7 +42,7 @@
         "write.assign-payee-categories": "blocked",
         "write.reconcile": "blocked",
         "write.unreconcile": "blocked",
-        "write.adjust-balance-investment-total": "blocked"
+        "write.adjust-balance-investment-total": "verified"
       }
     },
     {
