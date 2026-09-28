@@ -11,8 +11,9 @@ require their own evidence before admission. Linked same-account withdrawal
 refunds are the W01 refund variant; unlinked refunds, card-specific reversals
 and cross-account/FX refunds remain excluded.
 
-W02 editing, W03 post-create assignment/split mutation, W04 reconciliation and
-P2/P3 variants remain disabled.
+W02 scalar editing has a separate disposable-only
+[contract](TRANSACTION-EDITING.md). W03 post-create assignment/split mutation,
+W04 reconciliation and P2/P3 variants remain disabled.
 
 The Python client and production native host independently require Core Data
 store metadata `MoneyWizToolsDisposableFixture` equal to `W01-v1`. The fixture

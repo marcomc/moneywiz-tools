@@ -218,6 +218,10 @@ or prune history as part of these commands.
 | W08 | Investment Buy/Sell and cash events, P3 | Asset identity/type, quantity, quote unit, price, commission/currency; verify cash and holdings independently; no invented units; aggregate income-sale method stays W01 |
 | W09 | Exact and approved fuzzy payee merge, P3 | Consume approved rows only, explicit survivor, owner/evidence and relationship inventory; pending/rejected no-op; migrate current/scheduled/refund/history-relevant relationships using native rules |
 
+W02 scalar implementation and disposable validation are specified in
+[Transaction Editing](../TRANSACTION-EDITING.md). Relationship assignment and
+reconciled correction remain separate, disabled scopes.
+
 Each row gets its own capability and evidence. Separate reconcile and unreconcile,
 exact and fuzzy merge, deletion of ordinary and special entities when semantics differ.
 Do not authorize all variants from one successful happy path.

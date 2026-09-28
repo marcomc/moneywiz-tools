@@ -1,7 +1,7 @@
 # Transaction write implementation plan
 
-Status: P0 and P1F integrated on `release/0.3.0`, through merge `1020c40`.
-W01 is implemented in `feat/p1-w01-transaction-create`; validation uses invented
+Status: P0, P1F and W01 integrated on `release/0.3.0`, through merge `e80b080`.
+W02 is activated in `feat/p1-w02-transaction-edit`; validation uses invented
 disposable stores. Independent review evidence accompanies its PR handoff.
 Application acceptance remains separate.
 The first delivery scope is confirmed. Later phases describe intended scope and
@@ -180,6 +180,11 @@ implementation scope is creation only; application and remote sync acceptance
 are not authorized by the synthetic validation task. Live capabilities remain
 blocked until those gates are directly evidenced. The operation contract is
 recorded in [Transaction Creation](../TRANSACTION-CREATION.md).
+
+W02 tasks are activated as `P1-W02-01` through `P1-W02-07` in TODO.
+The [Transaction Editing](../TRANSACTION-EDITING.md) contract defines scalar
+allowlist, unchanged relationships and reconciled rejection. Implementation and
+synthetic validation do not authorize application acceptance or live writes.
 
 Suggested order is W01, W02, W03, then W04; phase preparation may adjust it based
 on fixture evidence. Reconcile and unreconcile require separate capability evidence.

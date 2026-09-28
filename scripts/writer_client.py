@@ -15,6 +15,7 @@ from compatibility import CompatibilityError, require_disposable_write_capabilit
 from write_journal import JournalError, JournalStore, store_lock
 from write_plan import (
     CREATE_CAPABILITIES,
+    EDIT_CAPABILITY,
     PlanValidationError,
     validate_plan,
     validate_result,
@@ -266,7 +267,7 @@ class WriterClient:
         return record
 
     def _require_operation_capability(self, plan: dict[str, Any]) -> None:
-        if plan["capability"] not in CREATE_CAPABILITIES:
+        if plan["capability"] not in {*CREATE_CAPABILITIES, EDIT_CAPABILITY}:
             return
         try:
             require_disposable_write_capability(self.store, plan["capability"])

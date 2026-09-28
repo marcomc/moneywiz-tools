@@ -31,6 +31,113 @@ func fixtureWithdrawal(_ gid: String, account: NSManagedObject,
     return original
 }
 
+func fixtureTransaction(_ entity: String, gid: String, amount: Double,
+                        account: NSManagedObject, payee: NSManagedObject,
+                        tag: NSManagedObject, context: NSManagedObjectContext) throws -> NSManagedObject {
+    let transaction = try fixtureObject(entity, context)
+    try fixtureSet(transaction, "GID", gid)
+    try fixtureSet(transaction, "amount", amount)
+    try fixtureSet(transaction, "originalAmount", amount)
+    try fixtureSet(transaction, "originalCurrency", "EUR")
+    try fixtureSet(transaction, "originalExchangeRate", 1.0)
+    try fixtureSet(transaction, "objectCreationDate", ISO8601DateFormatter().date(from: "2026-09-09T08:00:00Z")!)
+    try fixtureSet(transaction, "date", ISO8601DateFormatter().date(from: "2026-09-10T09:30:00Z")!)
+    try fixtureSet(transaction, "notes", "W02 original note")
+    try fixtureSet(transaction, "desc", "W02 original description")
+    try fixtureSet(transaction, "checkbookNumber", "W02-001")
+    try fixtureSet(transaction, "reconciled", false)
+    try fixtureSet(transaction, "flags", 0)
+    try fixtureSet(transaction, "status", 1)
+    try fixtureSet(transaction, "voidCheque", 0)
+    try fixtureSet(transaction, "account", account)
+    try fixtureSet(transaction, "payee", payee)
+    try fixtureSet(transaction, "tags", NSSet(object: tag))
+    return transaction
+}
+
+func fixtureCategoryAssignment(_ transaction: NSManagedObject, category: NSManagedObject,
+                               amount: Double, context: NSManagedObjectContext) throws {
+    let assignment = try fixtureObject("CategoryAssigment", context)
+    try fixtureSet(assignment, "amount", amount)
+    try fixtureSet(assignment, "assigmentNumber", 0)
+    try fixtureSet(assignment, "category", category)
+    try fixtureSet(assignment, "transaction", transaction)
+}
+
+func fixtureRefundLink(_ withdrawal: NSManagedObject, refund: NSManagedObject,
+                       context: NSManagedObjectContext) throws {
+    let link = try fixtureObject("WithdrawRefundTransactionLink", context)
+    try fixtureSet(link, "withdrawTransaction", withdrawal)
+    try fixtureSet(link, "refundTransaction", refund)
+}
+
+func fixtureJSONValue(_ value: Any?) -> Any {
+    guard let value else { return NSNull() }
+    if let date = value as? Date {
+        return ISO8601DateFormatter().string(from: date)
+    }
+    if value is String || value is NSNumber || value is NSNull { return value }
+    return String(describing: value)
+}
+
+func fixtureRelationshipIDs(_ transaction: NSManagedObject, _ key: String) throws -> [String] {
+    guard let relationship = transaction.entity.relationshipsByName[key] else {
+        throw HostError.message("W02 fixture lacks relationship \(key)")
+    }
+    if relationship.isToMany {
+        return try relatedObjects(transaction, key).map {
+            $0.objectID.uriRepresentation().absoluteString
+        }.sorted()
+    }
+    return (transaction.value(forKey: key) as? NSManagedObject).map {
+        [$0.objectID.uriRepresentation().absoluteString]
+    } ?? []
+}
+
+func runFixtureInspection(_ args: [String]) throws {
+    guard args.count == 9, args[0] == "--inspect", args[1] == "--store",
+          args[3] == "--model", args[5] == "--entity", args[7] == "--gid" else {
+        throw HostError.message("invalid W02 inspection arguments")
+    }
+    let store = URL(fileURLWithPath: args[2])
+    let modelURL = URL(fileURLWithPath: args[4])
+    guard let model = NSManagedObjectModel(contentsOf: modelURL) else {
+        throw HostError.message("invalid W02 inspection model")
+    }
+    configureTransformers()
+    let container = NSPersistentContainer(name: "W02Inspection", managedObjectModel: model)
+    let description = NSPersistentStoreDescription(url: store)
+    description.isReadOnly = true
+    description.shouldAddStoreAsynchronously = false
+    description.shouldMigrateStoreAutomatically = false
+    description.shouldInferMappingModelAutomatically = false
+    container.persistentStoreDescriptions = [description]
+    var loadError: Error?
+    container.loadPersistentStores { _, value in loadError = value }
+    if let loadError { throw loadError }
+    let context = container.viewContext
+    let transaction = try fetchExactObject(entityName: args[6], gid: args[8], context: context)
+    var attributes: [String: Any] = [:]
+    for key in transaction.entity.attributesByName.keys.sorted() {
+        attributes[key] = fixtureJSONValue(transaction.value(forKey: key))
+    }
+    var relationships: [String: [String]] = [:]
+    for key in transaction.entity.relationshipsByName.keys.sorted() {
+        relationships[key] = try fixtureRelationshipIDs(transaction, key)
+    }
+    let account = transaction.value(forKey: "account") as? NSManagedObject
+    let result: [String: Any] = [
+        "entity": transaction.entity.name ?? "",
+        "object_uri": transaction.objectID.uriRepresentation().absoluteString,
+        "attributes": attributes,
+        "relationships": relationships,
+        "account_balance": fixtureJSONValue(account?.value(forKey: "ballance")),
+    ]
+    let data = try JSONSerialization.data(withJSONObject: result, options: [.sortedKeys])
+    FileHandle.standardOutput.write(data)
+    FileHandle.standardOutput.write(Data([10]))
+}
+
 func runFixtureCrash(_ args: [String]) throws -> Never {
     guard args.count == 7,
           ["--crash-before-save", "--crash-after-save"].contains(args[0]),
@@ -86,6 +193,10 @@ func runFixtureWriter() throws {
                 try runFixtureWriter()
                 return
             }
+            if args.first == "--inspect" {
+                try runFixtureInspection(args)
+                return
+            }
             if args.first?.hasPrefix("--crash-") == true {
                 try runFixtureCrash(args)
             }
@@ -119,6 +230,45 @@ func runFixtureWriter() throws {
             let foreignCategory = try fixtureObject("Category", c); try fixtureSet(foreignCategory,"GID","w01-foreign-category"); try fixtureSet(foreignCategory,"name","Foreign"); try fixtureSet(foreignCategory,"objectCreationDate",Date()); try fixtureSet(foreignCategory,"type",2); try fixtureSet(foreignCategory,"user",foreignUser)
             let foreignTag = try fixtureObject("Tag", c); try fixtureSet(foreignTag,"GID","w01-foreign-tag"); try fixtureSet(foreignTag,"name","Foreign"); try fixtureSet(foreignTag,"objectCreationDate",Date()); try fixtureSet(foreignTag,"user",foreignUser)
             _ = try fixtureWithdrawal("w01-original", account: account, context: c)
+            _ = try fixtureTransaction("DepositTransaction", gid: "w02-deposit", amount: 10,
+                                       account: account, payee: payee, tag: tag, context: c)
+            _ = try fixtureTransaction("WithdrawTransaction", gid: "w02-withdraw", amount: -10,
+                                       account: account, payee: payee, tag: tag, context: c)
+            let refundOriginal = try fixtureTransaction("WithdrawTransaction", gid: "w02-refund-original", amount: -10,
+                                                        account: account, payee: payee, tag: tag, context: c)
+            let refund = try fixtureTransaction("RefundTransaction", gid: "w02-refund", amount: 2,
+                                                account: account, payee: payee, tag: tag, context: c)
+            try fixtureRefundLink(refundOriginal, refund: refund, context: c)
+            let secondRefund = try fixtureTransaction("RefundTransaction", gid: "w02-refund-second", amount: 3,
+                                                      account: account, payee: payee, tag: tag, context: c)
+            try fixtureRefundLink(refundOriginal, refund: secondRefund, context: c)
+            let categorized = try fixtureTransaction("WithdrawTransaction", gid: "w02-categorized", amount: -4,
+                                                     account: account, payee: payee, tag: tag, context: c)
+            try fixtureCategoryAssignment(categorized, category: category, amount: -4, context: c)
+            let reconciled = try fixtureTransaction("WithdrawTransaction", gid: "w02-reconciled", amount: -3,
+                                                    account: account, payee: payee, tag: tag, context: c)
+            try fixtureSet(reconciled, "reconciled", true)
+            let flagged = try fixtureTransaction("WithdrawTransaction", gid: "w02-flagged", amount: -3,
+                                                 account: account, payee: payee, tag: tag, context: c)
+            try fixtureSet(flagged, "flags", 1)
+            let inactive = try fixtureTransaction("WithdrawTransaction", gid: "w02-inactive", amount: -3,
+                                                  account: account, payee: payee, tag: tag, context: c)
+            try fixtureSet(inactive, "status", 2)
+            let voided = try fixtureTransaction("WithdrawTransaction", gid: "w02-void", amount: -3,
+                                                account: account, payee: payee, tag: tag, context: c)
+            try fixtureSet(voided, "voidCheque", 1)
+            let scheduled = try fixtureTransaction("WithdrawTransaction", gid: "w02-scheduled", amount: -3,
+                                                   account: account, payee: payee, tag: tag, context: c)
+            try fixtureSet(scheduled, "autoSkipLinkedScheduledTransactionGID", "w02-schedule")
+            let fee = try fixtureTransaction("WithdrawTransaction", gid: "w02-fee", amount: -3,
+                                             account: account, payee: payee, tag: tag, context: c)
+            try fixtureSet(fee, "fee", 1.0)
+            let investment = try fixtureTransaction("WithdrawTransaction", gid: "w02-investment", amount: -3,
+                                                    account: account, payee: payee, tag: tag, context: c)
+            try fixtureSet(investment, "investmentSymbol", "W02")
+            let fx = try fixtureTransaction("WithdrawTransaction", gid: "w02-fx", amount: -3,
+                                            account: account, payee: payee, tag: tag, context: c)
+            try fixtureSet(fx, "currencyExchangeRate", 1.1)
             let otherAccount = try fixtureAccount("CashAccount", gid: "w01-other-account", name: "Other", opening: 10, balance: 0, user: user, context: c)
             _ = try fixtureWithdrawal("w01-other-original", account: otherAccount, context: c)
             _ = try fixtureAccount("BankChequeAccount", gid: "w01-bank-account", name: "Bank", opening: 0, balance: 0, user: user, context: c)
