@@ -2136,14 +2136,42 @@ func inspectAdjustBalance(_ plan: WriterPlanV2, context: NSManagedObjectContext,
     let transactions = try relatedObjects(account, "transactionsHistory")
     var sum: Decimal = 0
     var latest = Date.distantPast
-    for transaction in transactions {
+    let ordered = transactions.sorted {
+        ($0.value(forKey: "date") as? Date ?? .distantPast) <
+            ($1.value(forKey: "date") as? Date ?? .distantPast)
+    }
+    for transaction in ordered {
+        // Older native rows may be reconciled and retain FX metadata.
         guard transaction.entity.name == "ReconcileTransaction",
               (transaction.value(forKey: "account") as? NSManagedObject)?.objectID == account.objectID,
               transaction.value(forKey: "investmentHolding") == nil,
+              (transaction.value(forKey: "status") as? NSNumber)?.intValue == 2,
+              (transaction.value(forKey: "flags") as? NSNumber)?.intValue == 0,
+              (transaction.value(forKey: "voidCheque") as? NSNumber)?.intValue == 0,
+              transaction.value(forKey: "desc") as? String == "New balance",
+              transaction.value(forKey: "payee") == nil,
+              transaction.value(forKey: "investmentSymbol") == nil,
+              transaction.value(forKey: "symbol") == nil,
+              transaction.value(forKey: "originalFeeCurrency") == nil,
+              try relatedObjects(transaction, "tags").isEmpty,
+              try relatedObjects(transaction, "categoriesAssigments").isEmpty,
+              try relatedObjects(transaction, "images").isEmpty,
+              try nativeDecimal(transaction, "numberOfShares") == 0,
+              try nativeDecimal(transaction, "reconcileNumberOfShares") == 0,
+              try nativeDecimal(transaction, "fee") == 0,
+              try nativeDecimal(transaction, "originalFee") == 0,
+              try nativeDecimal(transaction, "originalExchangeRate") == 0,
+              try nativeDecimal(transaction, "pricePerShare") == 0,
               let date = transaction.value(forKey: "date") as? Date else {
             throw HostError.message("W05 account history contains an unsupported transaction")
         }
         sum += try nativeDecimal(transaction, "amount")
+        var rowBalance = opening + sum
+        var roundedRowBalance = Decimal()
+        NSDecimalRound(&roundedRowBalance, &rowBalance, 2, .plain)
+        guard try nativeDecimal(transaction, "reconcileAmount") == roundedRowBalance else {
+            throw HostError.message("W05 account history has an inconsistent adjustment balance")
+        }
         if date > latest { latest = date }
     }
     var unrounded = opening + sum
