@@ -186,6 +186,11 @@ The [Transaction Editing](../TRANSACTION-EDITING.md) contract defines scalar
 allowlist, unchanged relationships and reconciled rejection. Implementation and
 synthetic validation do not authorize application acceptance or live writes.
 
+W03 tasks are activated as `P1-W03-01` through `P1-W03-06` in TODO.
+The [Transaction Assignment](../TRANSACTION-ASSIGNMENT.md) contract defines
+exact prior/target relationships, deliberate replacement and unchanged balance.
+Disposable validation does not authorize live writes.
+
 Suggested order is W01, W02, W03, then W04; phase preparation may adjust it based
 on fixture evidence. Reconcile and unreconcile require separate capability evidence.
 Reconciled edits use the explicit correction flow. Unsupported transfer, adjustment,

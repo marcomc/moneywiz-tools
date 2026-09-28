@@ -39,8 +39,9 @@ or remove assignments implicitly.
 
 Transfers, adjustments (`ReconcileTransaction`), scheduled transactions,
 investment variants, unknown entities/fields, ownership changes and relationship
-mutations are refused. W03 assignments/splits, W04 reconciliation flags and all
-P2/P3 operations remain disabled. Existing v1 payee reassignment is separate.
+mutations are refused. W03 assignments/splits use their own
+[disposable-only contract](TRANSACTION-ASSIGNMENT.md); W04 reconciliation flags
+and all P2/P3 operations remain disabled. Existing v1 payee reassignment is separate.
 
 ## Request and apply
 

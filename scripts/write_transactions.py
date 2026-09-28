@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build immutable W01 creation and W02 edit plans from explicit JSON requests."""
+"""Build immutable W01-W03 transaction plans from explicit JSON requests."""
 
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ from typing import Any
 
 from write_plan import (
     CONTRACT_VERSION,
+    ASSIGN_CAPABILITY,
     CREATE_OPERATION_POLICIES,
     EDIT_CAPABILITY,
     OPERATION_SCHEMA_VERSION,
@@ -213,6 +214,62 @@ def build_edit_plan(request: Mapping[str, Any]) -> dict[str, Any]:
     )
 
 
+def build_assign_plan(request: Mapping[str, Any]) -> dict[str, Any]:
+    """Build a guarded replacement of one transaction's owned relationships."""
+    raw = _mapping(request, "request")
+    if set(raw) != _ENVELOPE_FIELDS | {"operation"}:
+        raise PlanValidationError("request has unknown or missing fields")
+    operation = _mapping(raw.pop("operation"), "operation")
+    if set(operation) != {
+        "operation_id", "kind", "transaction_entity", "transaction_gid",
+        "account_gid", "amount", "expected_assignments", "target", "replacement_mode",
+    } or operation.get("kind") != "assign_payee_categories":
+        raise PlanValidationError("operation has unknown or missing W03 fields")
+    for name in ("expected_assignments", "target"):
+        state = _mapping(operation[name], name)
+        if set(state) != {"payee_gid", "category_splits"}:
+            raise PlanValidationError(f"{name} has unknown or missing fields")
+        splits = state["category_splits"]
+        if not isinstance(splits, list):
+            raise PlanValidationError(f"{name}.category_splits must be a list")
+        normalized_splits = []
+        for index, split in enumerate(splits):
+            if not isinstance(split, Mapping) or set(split) != {"category_gid", "amount"}:
+                raise PlanValidationError(f"{name}.category_splits[{index}] is incomplete")
+            category_gid = split["category_gid"]
+            if not isinstance(category_gid, str) or not category_gid.strip():
+                raise PlanValidationError(f"{name}.category_splits[{index}].category_gid is invalid")
+            normalized_splits.append({
+                "category_gid": category_gid,
+                "amount": normalize_decimal(
+                    split["amount"], f"{name}.category_splits[{index}].amount"
+                ),
+            })
+        state["category_splits"] = sorted(
+            normalized_splits, key=lambda split: split["category_gid"]
+        )
+        operation[name] = state
+    operation.update(
+        capability=ASSIGN_CAPABILITY,
+        owner_uri=raw["owner_uri"],
+        source_event_id=raw["source_event_id"],
+        currency_unit=raw["currency_unit"],
+        amount=normalize_decimal(operation["amount"], "operation.amount"),
+        expected_balance_delta="0",
+        allowed_changed_fields=["payee", "categoriesAssigments"],
+        expected_postcondition={
+            **deepcopy(operation["target"]), "expected_balance_delta": "0",
+        },
+    )
+    return validate_plan({
+        "contract_version": CONTRACT_VERSION,
+        "operation_schema_version": OPERATION_SCHEMA_VERSION,
+        **raw,
+        "capability": ASSIGN_CAPABILITY,
+        "operations": [operation],
+    })
+
+
 def _load_request(path: Path) -> dict[str, Any]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -253,7 +310,7 @@ def make_parser() -> argparse.ArgumentParser:
         help=argparse.SUPPRESS,
     )
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ("create", "edit"):
+    for name in ("create", "edit", "assign"):
         command = commands.add_parser(name)
         command.add_argument("--request", type=Path, required=True)
         command.add_argument(
@@ -267,7 +324,8 @@ def make_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     args = make_parser().parse_args(argv)
     try:
-        builder = build_edit_plan if args.command == "edit" else build_plan
+        builder = {"create": build_plan, "edit": build_edit_plan,
+                   "assign": build_assign_plan}[args.command]
         plan = builder(_load_request(args.request))
         if args.plan is not None:
             _write_plan(args.plan, plan)

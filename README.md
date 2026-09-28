@@ -167,15 +167,18 @@ documented in
 The exact-duplicate policy and the approval-only fuzzy map are documented in
 [Payee Consolidation](doc/PAYEE-CONSOLIDATION.md).
 
-Version-2 plans support W01 creation and W02 scalar edit experiments on
+Version-2 plans support W01 creation, W02 scalar edits and W03 assignment
+replacement experiments on
 explicitly marked disposable stores. `moneywiz transaction create --help`
 describes plan generation;
 reviewed plans use `moneywiz write apply` and the durable recovery journal.
 Live income, expense and refund creation remain blocked pending application
-acceptance. W02 also remains blocked for live stores; use
-`moneywiz transaction edit --help` for guarded edit planning. See
+acceptance. W02 and W03 remain blocked for live stores; use
+`moneywiz transaction edit --help` or `moneywiz transaction assign --help`
+for guarded planning. See
 [Transaction Creation](doc/TRANSACTION-CREATION.md) and
-[Transaction Editing](doc/TRANSACTION-EDITING.md).
+[Transaction Editing](doc/TRANSACTION-EDITING.md), and
+[Transaction Assignment](doc/TRANSACTION-ASSIGNMENT.md).
 
 ## Check compatibility
 
