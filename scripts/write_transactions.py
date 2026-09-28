@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build immutable W01 transaction-creation plans from explicit JSON requests."""
+"""Build immutable W01 creation and W02 edit plans from explicit JSON requests."""
 
 from __future__ import annotations
 
@@ -9,15 +9,18 @@ import os
 import sys
 from collections.abc import Mapping, Sequence
 from copy import deepcopy
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
 from write_plan import (
     CONTRACT_VERSION,
     CREATE_OPERATION_POLICIES,
+    EDIT_CAPABILITY,
     OPERATION_SCHEMA_VERSION,
     PlanValidationError,
     deterministic_transaction_gid,
+    edit_changed_fields,
     normalize_decimal,
     validate_plan,
 )
@@ -148,6 +151,68 @@ def build_plan(request: Mapping[str, Any]) -> dict[str, Any]:
     )
 
 
+def build_edit_plan(request: Mapping[str, Any]) -> dict[str, Any]:
+    """Build a guarded scalar edit without discovering or opening any store."""
+    raw = _mapping(request, "request")
+    if set(raw) != _ENVELOPE_FIELDS | {"operation"}:
+        raise PlanValidationError("request has unknown or missing fields")
+    operation = _mapping(raw.pop("operation"), "operation")
+    if (
+        set(operation)
+        != {
+            "operation_id",
+            "kind",
+            "transaction_entity",
+            "transaction_gid",
+            "account_gid",
+            "changes",
+            "expected_prior",
+            "correction_mode",
+        }
+        or operation.get("kind") != "edit_transaction"
+    ):
+        raise PlanValidationError("operation has unknown or missing W02 fields")
+    changes = _mapping(operation["changes"], "changes")
+    prior = _mapping(operation["expected_prior"], "expected_prior")
+    allowed = edit_changed_fields(changes)
+    if set(changes) != set(prior):
+        raise PlanValidationError(
+            "expected_prior must cover exactly every changed field"
+        )
+    delta = "0"
+    if "amount" in changes:
+        changes["amount"] = normalize_decimal(changes["amount"], "changes.amount")
+        prior["amount"] = normalize_decimal(prior["amount"], "expected_prior.amount")
+        delta = normalize_decimal(
+            format(Decimal(changes["amount"]) - Decimal(prior["amount"]), "f"),
+            "expected_balance_delta",
+        )
+    operation.update(
+        changes=changes,
+        expected_prior=prior,
+        capability=EDIT_CAPABILITY,
+        owner_uri=raw["owner_uri"],
+        source_event_id=raw["source_event_id"],
+        currency_unit=raw["currency_unit"],
+        timezone=raw["timezone"],
+        allowed_changed_fields=allowed,
+        expected_balance_delta=delta,
+        expected_postcondition={
+            "fields": deepcopy(changes),
+            "expected_balance_delta": delta,
+        },
+    )
+    return validate_plan(
+        {
+            "contract_version": CONTRACT_VERSION,
+            "operation_schema_version": OPERATION_SCHEMA_VERSION,
+            **raw,
+            "capability": EDIT_CAPABILITY,
+            "operations": [operation],
+        }
+    )
+
+
 def _load_request(path: Path) -> dict[str, Any]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -188,20 +253,22 @@ def make_parser() -> argparse.ArgumentParser:
         help=argparse.SUPPRESS,
     )
     commands = parser.add_subparsers(dest="command", required=True)
-    create = commands.add_parser("create")
-    create.add_argument("--request", type=Path, required=True)
-    create.add_argument(
-        "--plan",
-        type=Path,
-        help="Create the immutable plan at this new path; otherwise print it",
-    )
+    for name in ("create", "edit"):
+        command = commands.add_parser(name)
+        command.add_argument("--request", type=Path, required=True)
+        command.add_argument(
+            "--plan",
+            type=Path,
+            help="Create the immutable plan at this new path; otherwise print it",
+        )
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = make_parser().parse_args(argv)
     try:
-        plan = build_plan(_load_request(args.request))
+        builder = build_edit_plan if args.command == "edit" else build_plan
+        plan = builder(_load_request(args.request))
         if args.plan is not None:
             _write_plan(args.plan, plan)
             output = {

@@ -25,6 +25,17 @@ CREATE_OPERATION_POLICIES = {
 CREATE_CAPABILITIES = frozenset(
     capability for capability, _entity, _sign in CREATE_OPERATION_POLICIES.values()
 )
+EDIT_CAPABILITY = "write.edit-transaction"
+EDIT_ENTITIES = frozenset(
+    {"DepositTransaction", "WithdrawTransaction", "RefundTransaction"}
+)
+EDIT_FIELDS = {
+    "amount": ("amount", "originalAmount"),
+    "occurred_at": ("date",),
+    "note": ("notes",),
+    "description": ("desc",),
+    "checkbook_number": ("checkbookNumber",),
+}
 _HEX_DIGEST = re.compile(r"^[0-9a-f]{64}$")
 _DECIMAL = re.compile(r"^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$")
 _CURRENCY = re.compile(r"^[A-Z]{3}$")
@@ -106,6 +117,27 @@ class CreateTransactionOperation(TypedDict):
     expected_postcondition: dict[str, Any]
 
 
+class EditTransactionOperation(TypedDict):
+    """One identity-preserving W02 scalar edit with complete prior-value guards."""
+
+    operation_id: str
+    kind: str
+    capability: str
+    transaction_entity: str
+    transaction_gid: str
+    account_gid: str
+    owner_uri: str
+    source_event_id: str
+    currency_unit: str
+    timezone: str
+    changes: dict[str, str | None]
+    expected_prior: dict[str, str | None]
+    expected_balance_delta: str
+    expected_postcondition: dict[str, Any]
+    allowed_changed_fields: list[str]
+    correction_mode: str
+
+
 class WritePlan(TypedDict):
     """Version-two envelope, intentionally closed until W01-W04 are evidenced."""
 
@@ -127,7 +159,11 @@ class WritePlan(TypedDict):
     expected_account_gid: str
     expected_cached_account_balance: str
     currency_unit: str
-    operations: list[PayeeReassignmentOperation | CreateTransactionOperation]
+    operations: list[
+        PayeeReassignmentOperation
+        | CreateTransactionOperation
+        | EditTransactionOperation
+    ]
 
 
 def canonical_json(payload: Mapping[str, Any]) -> str:
@@ -484,6 +520,114 @@ def _validate_create_operation(
     return operation["transaction_gid"]
 
 
+def edit_changed_fields(changes: Mapping[str, Any]) -> list[str]:
+    """Map the closed logical allowlist to its exact native mutation surface."""
+    if not changes or not set(changes) <= EDIT_FIELDS.keys():
+        raise PlanValidationError("changes must contain only supported W02 fields")
+    return sorted({native for field in changes for native in EDIT_FIELDS[field]})
+
+
+def _validate_edit_operation(
+    operation: Mapping[str, Any], prefix: str, plan: dict[str, Any]
+) -> str:
+    expected_keys = {
+        "operation_id",
+        "kind",
+        "capability",
+        "transaction_entity",
+        "transaction_gid",
+        "account_gid",
+        "owner_uri",
+        "source_event_id",
+        "currency_unit",
+        "timezone",
+        "changes",
+        "expected_prior",
+        "expected_balance_delta",
+        "expected_postcondition",
+        "allowed_changed_fields",
+        "correction_mode",
+    }
+    if set(operation) != expected_keys:
+        raise PlanValidationError(f"{prefix} has unknown or missing fields")
+    if (
+        operation.get("capability") != EDIT_CAPABILITY
+        or plan["capability"] != EDIT_CAPABILITY
+    ):
+        raise PlanValidationError(f"{prefix}.capability does not match its kind")
+    if operation.get("transaction_entity") not in EDIT_ENTITIES:
+        raise PlanValidationError(f"{prefix}.transaction_entity is not enabled for W02")
+    for field in ("transaction_gid", "account_gid", "owner_uri", "source_event_id"):
+        _text(operation.get(field), f"{prefix}.{field}")
+    for field, envelope in (
+        ("account_gid", "expected_account_gid"),
+        ("owner_uri", "owner_uri"),
+        ("source_event_id", "source_event_id"),
+        ("currency_unit", "currency_unit"),
+        ("timezone", "timezone"),
+    ):
+        if operation[field] != plan[envelope]:
+            raise PlanValidationError(f"{prefix}.{field} must match the envelope")
+    _currency(operation["currency_unit"], f"{prefix}.currency_unit")
+    if operation["correction_mode"] != "reject_reconciled":
+        raise PlanValidationError("reconciled correction semantics are not enabled")
+    changes, prior = operation["changes"], operation["expected_prior"]
+    if not isinstance(changes, Mapping) or not isinstance(prior, Mapping):
+        raise PlanValidationError("changes and expected_prior must be objects")
+    allowed = edit_changed_fields(changes)
+    if set(changes) != set(prior):
+        raise PlanValidationError(
+            "expected_prior must cover exactly every changed field"
+        )
+    if operation["allowed_changed_fields"] != allowed:
+        raise PlanValidationError(
+            "allowed_changed_fields must match the native W02 allowlist"
+        )
+    delta = Decimal(0)
+    for field, value in changes.items():
+        previous = prior[field]
+        if field == "amount":
+            old_amount = Decimal(_canonical_decimal(previous, "expected_prior.amount"))
+            amount = Decimal(_canonical_decimal(value, "changes.amount"))
+            positive = operation["transaction_entity"] != "WithdrawTransaction"
+            if any(
+                number == 0 or (number > 0) != positive
+                for number in (old_amount, amount)
+            ):
+                raise PlanValidationError(
+                    "amount has the wrong sign for the transaction entity"
+                )
+            delta = amount - old_amount
+        elif field == "occurred_at":
+            for timestamp in (previous, value):
+                _whole_timestamp(timestamp, field)
+                _validate_timezone_offset(timestamp, operation["timezone"], field)
+            if datetime.fromisoformat(previous) == datetime.fromisoformat(value):
+                raise PlanValidationError(
+                    "W02 changes must not contain unchanged values"
+                )
+        else:
+            _optional_text(previous, f"expected_prior.{field}")
+            _optional_text(value, f"changes.{field}")
+        if previous == value:
+            raise PlanValidationError("W02 changes must not contain unchanged values")
+    expected_delta = _canonical_decimal(
+        operation["expected_balance_delta"], "expected_balance_delta"
+    )
+    if Decimal(expected_delta) != delta:
+        raise PlanValidationError(
+            "expected_balance_delta must equal the amount difference"
+        )
+    if operation["expected_postcondition"] != {
+        "fields": dict(changes),
+        "expected_balance_delta": expected_delta,
+    }:
+        raise PlanValidationError(
+            "expected_postcondition must exactly match requested W02 fields"
+        )
+    return operation["transaction_gid"]
+
+
 def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
     """Validate the complete v2 envelope and its strict operation union."""
     if not isinstance(payload, Mapping):
@@ -537,7 +681,7 @@ def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
     except ZoneInfoNotFoundError as exc:
         raise PlanValidationError("timezone must be an IANA timezone") from exc
     capability = plan.get("capability")
-    if capability not in {PAYEE_CAPABILITY, *CREATE_CAPABILITIES}:
+    if capability not in {PAYEE_CAPABILITY, EDIT_CAPABILITY, *CREATE_CAPABILITIES}:
         raise PlanValidationError("capability is not enabled")
     store = plan.get("store_identity")
     if not isinstance(store, Mapping):
@@ -592,6 +736,8 @@ def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
                     f"{prefix}.kind does not match the envelope capability"
                 )
             transaction_gid = _validate_payee_operation(operation, prefix, plan)
+        elif kind == "edit_transaction":
+            transaction_gid = _validate_edit_operation(operation, prefix, plan)
         elif kind in CREATE_OPERATION_POLICIES:
             create_operations += 1
             transaction_gid = _validate_create_operation(operation, prefix, plan)
@@ -606,7 +752,10 @@ def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
         )
     if create_operations:
         _whole_timestamp(plan["created_at"], "created_at")
-    if not create_operations and plan["capability"] != PAYEE_CAPABILITY:
+    if not create_operations and plan["capability"] not in {
+        PAYEE_CAPABILITY,
+        EDIT_CAPABILITY,
+    }:
         raise PlanValidationError("create capability requires a create operation")
     actual = compute_digest(plan)
     supplied = plan.get("plan_digest")
@@ -727,10 +876,16 @@ def validate_result(plan: dict[str, Any], result: object) -> dict[str, Any]:
         elif success:
             if receipt.get("postcondition") != operation["expected_postcondition"]:
                 raise PlanValidationError(
-                    "native operation receipt violates its creation postcondition"
+                    "native operation receipt violates its "
+                    + (
+                        "edit"
+                        if operation["kind"] == "edit_transaction"
+                        else "creation"
+                    )
+                    + " postcondition"
                 )
         elif receipt.get("postcondition") is not None:
             raise PlanValidationError(
-                "unverified creation receipt must not claim a postcondition"
+                "unverified operation receipt must not claim a postcondition"
             )
     return result

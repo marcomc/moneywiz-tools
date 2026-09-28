@@ -104,15 +104,15 @@ def test_installed_creation_cli_and_journal(
             (expected["operations"][0]["transaction_gid"],),
         ).fetchall()
         assert len(rows) == 1
-    snapshot = run("snapshot", expected_exit=3)
-    # The intentionally pinned API recognizes the direct tag table but treats
-    # the new model's unrelated tag tables as ambiguous. Preserve that diagnostic.
+    snapshot = run("snapshot")
+    # The read-completeness API distinguishes the direct transaction-tag table
+    # from unrelated model-48 tag tables.
     completeness = snapshot["completeness"]
-    assert completeness["complete"] is False
+    assert completeness["complete"] is True
     transactions = completeness["managers"]["transactions"]
     assert transactions["source_count"] == transactions["parsed_count"]
     assert transactions["parsed_count"] >= 2
-    assert transactions["relationships"]["transaction_tags"]["storage"] == "unknown"
+    assert transactions["relationships"]["transaction_tags"]["storage"] == "present"
     assert int(result["operations"][0]["durable_numeric_id"]) in [
         row["id"] for row in snapshot["transactions"]
     ]

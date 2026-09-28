@@ -56,6 +56,27 @@ remain excluded. At W01 integration, the API revision was pinned at
 | P1-W01-06 | Independent review and release handoff / controller | P1-W01-05 | One cumulative ledger, local READY, current-head GitHub review, PR targeting release branch; no merge | Independent local review complete; current-head GitHub evidence accompanies PR handoff |
 | P1-W01-07 | Application and sync acceptance / future authorized acceptance owner | P1-W01-06 | Direct MoneyWiz reopen/history and remote-client evidence for each promoted variant | Not authorized in this synthetic-only task; live capabilities blocked |
 
+### P1 W02 transaction editing
+
+Entry: W01 integrated at `e80b08006aab268f8cc192f8fe0bb98c259fd06f`.
+Branch: `feat/p1-w02-transaction-edit`; PR target: `release/0.3.0`.
+Scope: [W02](doc/proposals/TRANSACTION-WRITE-API.md#operation-contracts-and-acceptance)
+through P1F version-2 plans. Owners below have exclusive implementation areas;
+the controller owns integration and the cumulative review ledger.
+Only invented disposable model-48 stores are authorized. W03 relationship
+mutation, W04 flags, reconciled correction, special transactions, FX and P2/P3
+are excluded. Preserve the exact pinned API revision and existing W01/v1 behavior.
+
+| ID | Deliverable / owner | Depends on | Acceptance | State |
+| --- | --- | --- | --- | --- |
+| P1-W02-01 | Scalar allowlist and model semantics / native worker | W01 merge | Installed TestFlight 2026.37.1 build 449 model-48 evidence; supported income/expense/refund variants and exclusions explicit | Implemented on synthetic model-48 fixtures; live scope blocked |
+| P1-W02-02 | Strict edit plans and CLI / controller | P1-W02-01 | Exact entity/GID, expected prior for every change, owner/account/currency guards; Python/native contract parity | Python/native contract and negative paths passed |
+| P1-W02-03 | Native atomic edit and verification / native worker | P1-W02-01–02 | Whole-plan preflight, one save, unchanged identities/relationships/history, expected balance and refund invariants | Native persistence and rollback tests passed on disposable stores |
+| P1-W02-04 | Disposable regressions and recovery / fixture worker and controller | P1-W02-02–03 | Every scalar positive/negative; stale/special/reconciled rejection; atomic rollback, repeat no-op, before/after-save crash and durable journal evidence | Native crash/recovery and full CLI suite passed on disposable stores |
+| P1-W02-05 | Installed bundle and documentation / controller | P1-W02-04 | Full required validation; production bundled host; relocated install after disposable build source unavailable; unchanged API pin | Relocated bundle CLI passed with source reads denied; API pin remains `401c919` |
+| P1-W02-06 | Independent review and PR handoff / controller | P1-W02-05 | One coordinator/ledger; local READY; PR to release/0.3.0; one current-head Codex monitor; do not merge | Local READY after independent review; remote current-head review pending |
+| P1-W02-07 | Application and sync acceptance / future authorized owner | P1-W02-06 | Direct authorized MoneyWiz reopen/history and remote-client evidence for each variant | Not authorized; live edit capability blocked |
+
 ## Propositions
 
 - [ ] **Audit redundant read compatibility after integrating the new API pin.**

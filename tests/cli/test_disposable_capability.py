@@ -1,4 +1,4 @@
-"""W01 fixture admission must never promote the live capability register."""
+"""W01/W02 fixture admission must never promote the live capability register."""
 
 import plistlib
 import sqlite3
@@ -46,7 +46,7 @@ def disposable_store(synthetic_store: Path) -> Path:
 
 
 @pytest.mark.parametrize(
-    "capability", sorted(compatibility.DISPOSABLE_CREATE_CAPABILITIES)
+    "capability", sorted(compatibility.DISPOSABLE_WRITE_CAPABILITIES)
 )
 def test_fixture_admission_does_not_grant_live_clearance(
     disposable_store: Path, capability: str
@@ -74,7 +74,7 @@ def test_fixture_marker_is_exact(disposable_store: Path, marker: object) -> None
             "UPDATE Z_METADATA SET Z_PLIST=?", (plistlib.dumps(metadata),)
         )
     with pytest.raises(
-        compatibility.CompatibilityError, match="live creation remains blocked"
+        compatibility.CompatibilityError, match="live writes remain blocked"
     ):
         compatibility.require_disposable_write_capability(
             disposable_store, "write.create-income"
@@ -84,7 +84,7 @@ def test_fixture_marker_is_exact(disposable_store: Path, marker: object) -> None
 @pytest.mark.parametrize(
     "capability",
     [
-        "write.edit-transaction",
+        "write.assign-categories",
         "write.reconcile",
         "write.unknown",
         "write.reassign-payees-by-id",

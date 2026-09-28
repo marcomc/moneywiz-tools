@@ -63,13 +63,16 @@ their command-specific output behavior.
 ## Versioned writer and recovery
 
 The version-2 interface accepts a saved typed plan and defaults to inspection.
-W01 creation is restricted to marked disposable fixtures; live W01 and W02–W04
-remain blocked. See [Transaction Creation](doc/TRANSACTION-CREATION.md) for
-creation fields and [Writer Recovery](doc/WRITER-RECOVERY.md) for journals.
+W01 creation and W02 editing are restricted to marked disposable fixtures;
+live W01/W02 and W03–W04 remain blocked. See
+[Transaction Creation](doc/TRANSACTION-CREATION.md) for creation fields,
+[Transaction Editing](doc/TRANSACTION-EDITING.md) for edit fields, and
+[Writer Recovery](doc/WRITER-RECOVERY.md) for journals.
 
 | Command | Behavior |
 | --- | --- |
 | `transaction create --request FILE --plan FILE` | Build a W01 plan from explicit JSON inputs without opening a store |
+| `transaction edit --request FILE --plan FILE` | Build a guarded W02 scalar edit plan without opening a store |
 | `write validate --plan FILE` | Validate and display the exact plan and canonical digest |
 | `write apply --plan FILE` | Inspect without mutation |
 | `write apply --plan FILE --reviewed-digest SHA --apply` | Apply the reviewed coherent unit with durable recovery evidence |
