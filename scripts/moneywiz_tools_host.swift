@@ -2172,7 +2172,10 @@ func inspectAdjustBalance(_ plan: WriterPlanV2, context: NSManagedObjectContext,
         guard try nativeDecimal(transaction, "reconcileAmount") == roundedRowBalance else {
             throw HostError.message("W05 account history has an inconsistent adjustment balance")
         }
-        if date > latest { latest = date }
+        guard date > latest else {
+            throw HostError.message("W05 account history has ambiguous adjustment dates")
+        }
+        latest = date
     }
     var unrounded = opening + sum
     var actual = Decimal()
@@ -2218,7 +2221,7 @@ func inspectAdjustBalance(_ plan: WriterPlanV2, context: NSManagedObjectContext,
     let classification: String
     if existing != nil && actual == target { classification = saved ? "applied" : "noop" }
     else if existing == nil && actual == target && prior == target { classification = "noop" }
-    else if existing == nil && actual == prior && occurred >= latest { classification = "retry_safe" }
+    else if existing == nil && actual == prior && occurred > latest { classification = "retry_safe" }
     else { classification = "unknown" }
     let success = classification == "applied" || classification == "noop"
     var item = WriterOperationResultV2(operationID: operation.operationID,

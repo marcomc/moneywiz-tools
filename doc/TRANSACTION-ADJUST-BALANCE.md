@@ -22,7 +22,9 @@ the exact app, model, store, owner, account, prior balance and date in the
 reviewed plan; refuses holdings, valuation history and unsupported transaction
 history; saves one row; then reads it back in a fresh context. A deterministic
 GID prevents a lost response from creating a duplicate. A matching target is a
-no-op. Dates before the latest account transaction are rejected.
+no-op. Historical adjustment timestamps must be unique for ordered balance
+verification. New plan dates at or before the latest account transaction are
+rejected.
 
 ## Capability boundary
 
