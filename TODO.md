@@ -63,8 +63,8 @@ Branch: `feat/p1-w02-transaction-edit`; PR target: `release/0.3.0`.
 Scope: [W02](doc/proposals/TRANSACTION-WRITE-API.md#operation-contracts-and-acceptance)
 through P1F version-2 plans. Owners below have exclusive implementation areas;
 the controller owns integration and the cumulative review ledger.
-Only invented disposable model-48 stores are authorized. W03 relationship
-mutation, W04 flags, reconciled correction, special transactions, FX and P2/P3
+Only invented disposable model-48 stores are authorized. W04 flags,
+reconciled correction, special transactions, FX and P2/P3
 are excluded. Preserve the exact pinned API revision and existing W01/v1 behavior.
 
 | ID | Deliverable / owner | Depends on | Acceptance | State |
@@ -76,6 +76,24 @@ are excluded. Preserve the exact pinned API revision and existing W01/v1 behavio
 | P1-W02-05 | Installed bundle and documentation / controller | P1-W02-04 | Full required validation; production bundled host; relocated install after disposable build source unavailable; unchanged API pin | Relocated bundle CLI passed with source reads denied; API pin remains `401c919` |
 | P1-W02-06 | Independent review and PR handoff / controller | P1-W02-05 | One coordinator/ledger; local READY; PR to release/0.3.0; merge after current-head clean evidence | PR #7 clean on `084eab3`, squash-merged into release at `e0bb1d5` |
 | P1-W02-07 | Application and sync acceptance / future authorized owner | P1-W02-06 | Direct authorized MoneyWiz reopen/history and remote-client evidence for each variant | Not authorized; live edit capability blocked |
+
+### P1 W03 transaction assignment
+
+Entry: W02 integrated at `e0bb1d5`. Branch:
+`feat/p1-w03-assign-payee-categories`; PR target: `release/0.3.0`.
+Scope: exact-ID replacement of payee and category splits on existing ordinary
+transactions. Only invented disposable model-48 stores are authorized. Live
+capability stays blocked pending application and sync acceptance. See
+[Transaction Assignment](doc/TRANSACTION-ASSIGNMENT.md).
+
+| ID | Deliverable | Acceptance | State |
+| --- | --- | --- | --- |
+| P1-W03-01 | Strict plan and CLI | Prior/target relationships, exact transaction identity, signed split total and replacement intent | Implemented; Python validation passed |
+| P1-W03-02 | Native preflight and atomic replacement | Owner/category type and stale-state guards; deliberate obsolete-link deletion; unchanged balance and unrelated fields | Implemented on invented disposable stores |
+| P1-W03-03 | Read-back and recovery | Durable IDs, exact final relationships, repeat no-op and before/after-save classification | Native fixture tests passed |
+| P1-W03-04 | Bundle and regression validation | Relocated installed bundle plus unchanged W01/W02/P1F behavior | 606 CLI tests passed; relocated W01/W02/W03 bundle checks passed |
+| P1-W03-05 | Independent review and release handoff | Local readiness, current-head independent GitHub review, PR into release branch | Local independent review clean; GitHub PR/review pending |
+| P1-W03-06 | Application and sync acceptance | Authorized MoneyWiz reopen/history and remote-client evidence | Not authorized; live capability blocked |
 
 ## Propositions
 

@@ -26,6 +26,7 @@ CREATE_CAPABILITIES = frozenset(
     capability for capability, _entity, _sign in CREATE_OPERATION_POLICIES.values()
 )
 EDIT_CAPABILITY = "write.edit-transaction"
+ASSIGN_CAPABILITY = "write.assign-payee-categories"
 EDIT_ENTITIES = frozenset(
     {"DepositTransaction", "WithdrawTransaction", "RefundTransaction"}
 )
@@ -138,6 +139,27 @@ class EditTransactionOperation(TypedDict):
     correction_mode: str
 
 
+class AssignTransactionOperation(TypedDict):
+    """Replace the payee and category assignments of one exact transaction."""
+
+    operation_id: str
+    kind: str
+    capability: str
+    transaction_entity: str
+    transaction_gid: str
+    account_gid: str
+    owner_uri: str
+    source_event_id: str
+    currency_unit: str
+    amount: str
+    expected_assignments: dict[str, Any]
+    target: dict[str, Any]
+    replacement_mode: str
+    expected_balance_delta: str
+    expected_postcondition: dict[str, Any]
+    allowed_changed_fields: list[str]
+
+
 class WritePlan(TypedDict):
     """Version-two envelope, intentionally closed until W01-W04 are evidenced."""
 
@@ -163,6 +185,7 @@ class WritePlan(TypedDict):
         PayeeReassignmentOperation
         | CreateTransactionOperation
         | EditTransactionOperation
+        | AssignTransactionOperation
     ]
 
 
@@ -628,6 +651,57 @@ def _validate_edit_operation(
     return operation["transaction_gid"]
 
 
+def _validate_assign_operation(
+    operation: Mapping[str, Any], prefix: str, plan: dict[str, Any]
+) -> str:
+    required = {
+        "operation_id", "kind", "capability", "transaction_entity",
+        "transaction_gid", "account_gid", "owner_uri", "source_event_id",
+        "currency_unit", "amount", "expected_assignments", "target",
+        "replacement_mode", "expected_balance_delta", "expected_postcondition",
+        "allowed_changed_fields",
+    }
+    if set(operation) != required:
+        raise PlanValidationError(f"{prefix} has unknown or missing fields")
+    if operation["capability"] != ASSIGN_CAPABILITY or plan["capability"] != ASSIGN_CAPABILITY:
+        raise PlanValidationError(f"{prefix}.capability does not match W03")
+    if operation["transaction_entity"] not in EDIT_ENTITIES:
+        raise PlanValidationError(f"{prefix}.transaction_entity is not enabled for W03")
+    for field in ("transaction_gid", "account_gid", "owner_uri", "source_event_id"):
+        _text(operation[field], f"{prefix}.{field}")
+    for field, envelope in (("account_gid", "expected_account_gid"),
+                            ("owner_uri", "owner_uri"),
+                            ("source_event_id", "source_event_id"),
+                            ("currency_unit", "currency_unit")):
+        if operation[field] != plan[envelope]:
+            raise PlanValidationError(f"{prefix}.{field} must match the envelope")
+    if operation["replacement_mode"] != "replace":
+        raise PlanValidationError("W03 requires deliberate relationship replacement")
+    amount = Decimal(_canonical_decimal(operation["amount"], f"{prefix}.amount"))
+    positive = operation["transaction_entity"] != "WithdrawTransaction"
+    if amount == 0 or (amount > 0) != positive:
+        raise PlanValidationError("W03 amount has the wrong sign")
+    states = []
+    for name in ("expected_assignments", "target"):
+        state = operation[name]
+        if not isinstance(state, Mapping) or set(state) != {"payee_gid", "category_splits"}:
+            raise PlanValidationError(f"{prefix}.{name} has unknown or missing fields")
+        _optional_text(state["payee_gid"], f"{prefix}.{name}.payee_gid")
+        _validate_category_splits(state["category_splits"],
+                                  prefix=f"{prefix}.{name}.category_splits",
+                                  transaction_amount=amount)
+        states.append(dict(state))
+    if states[0] == states[1]:
+        raise PlanValidationError("W03 target must differ from expected_assignments")
+    if operation["allowed_changed_fields"] != ["payee", "categoriesAssigments"]:
+        raise PlanValidationError("W03 native relationship allowlist differs")
+    if operation["expected_balance_delta"] != "0":
+        raise PlanValidationError("W03 must preserve the account balance")
+    if operation["expected_postcondition"] != {**states[1], "expected_balance_delta": "0"}:
+        raise PlanValidationError("W03 postcondition must match target relationships")
+    return operation["transaction_gid"]
+
+
 def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
     """Validate the complete v2 envelope and its strict operation union."""
     if not isinstance(payload, Mapping):
@@ -681,7 +755,7 @@ def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
     except ZoneInfoNotFoundError as exc:
         raise PlanValidationError("timezone must be an IANA timezone") from exc
     capability = plan.get("capability")
-    if capability not in {PAYEE_CAPABILITY, EDIT_CAPABILITY, *CREATE_CAPABILITIES}:
+    if capability not in {PAYEE_CAPABILITY, EDIT_CAPABILITY, ASSIGN_CAPABILITY, *CREATE_CAPABILITIES}:
         raise PlanValidationError("capability is not enabled")
     store = plan.get("store_identity")
     if not isinstance(store, Mapping):
@@ -738,6 +812,8 @@ def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
             transaction_gid = _validate_payee_operation(operation, prefix, plan)
         elif kind == "edit_transaction":
             transaction_gid = _validate_edit_operation(operation, prefix, plan)
+        elif kind == "assign_payee_categories":
+            transaction_gid = _validate_assign_operation(operation, prefix, plan)
         elif kind in CREATE_OPERATION_POLICIES:
             create_operations += 1
             transaction_gid = _validate_create_operation(operation, prefix, plan)
@@ -755,6 +831,7 @@ def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
     if not create_operations and plan["capability"] not in {
         PAYEE_CAPABILITY,
         EDIT_CAPABILITY,
+        ASSIGN_CAPABILITY,
     }:
         raise PlanValidationError("create capability requires a create operation")
     actual = compute_digest(plan)
@@ -880,6 +957,8 @@ def validate_result(plan: dict[str, Any], result: object) -> dict[str, Any]:
                     + (
                         "edit"
                         if operation["kind"] == "edit_transaction"
+                        else "assignment"
+                        if operation["kind"] == "assign_payee_categories"
                         else "creation"
                     )
                     + " postcondition"

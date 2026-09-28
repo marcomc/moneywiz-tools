@@ -215,6 +215,7 @@ Reconciliation reads (JSON):
 Writes (dry-run by default; add --apply to commit):
   transaction create --help            Build a strict W01 creation plan.
   transaction edit --help              Build a guarded W02 scalar edit plan.
+  transaction assign --help            Build a guarded W03 relationship replacement plan.
   write validate|apply|recover --plan FILE
                                       Inspect or execute a reviewed versioned plan.
   write locations|journal|cleanup [--apply]
