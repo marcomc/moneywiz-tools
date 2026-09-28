@@ -11,9 +11,10 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from compatibility import CompatibilityError, require_disposable_write_capability
+from compatibility import CompatibilityError, require_disposable_write_capability, require_write_capability
 from write_journal import JournalError, JournalStore, store_lock
 from write_plan import (
+    ADJUST_BALANCE_CAPABILITY,
     ASSIGN_CAPABILITY,
     CREATE_CAPABILITIES,
     EDIT_CAPABILITY,
@@ -269,6 +270,12 @@ class WriterClient:
         return record
 
     def _require_operation_capability(self, plan: dict[str, Any]) -> None:
+        if plan["capability"] == ADJUST_BALANCE_CAPABILITY:
+            try:
+                require_write_capability(self.store, plan["capability"])
+            except CompatibilityError as exc:
+                raise WriterClientError(str(exc)) from exc
+            return
         if plan["capability"] not in {
             *CREATE_CAPABILITIES, EDIT_CAPABILITY, ASSIGN_CAPABILITY,
             *(policy[0] for policy in RECONCILE_CAPABILITIES.values()),

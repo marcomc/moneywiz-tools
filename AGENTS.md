@@ -6,12 +6,13 @@ These rules do not apply outside of work under `moneywiz-tools/`.
 
 - Follow `doc/proposals/TRANSACTION-WRITE-IMPLEMENTATION-PLAN.md` for phase scope
   and progressive TODO refinement.
-- Use `release/0.3.0` to integrate P0, P1F and P1. Later release scopes get their
-  own `release/` branches. Create individual implementation branches from the
-  owning release branch using the `feat/` prefix.
-- Target implementation pull requests at their owning release branch. Require
-  independent code review on GitHub and resolution of actionable findings before
-  merging; an implementation agent's self-review is not sufficient.
+- The confirmed `0.3.0` scope is the full P0/P1F/P1/P2/P3 writing roadmap,
+  including W01–W09. Keep each operation in a separate `feat/` branch and PR
+  targeting `release/0.3.0`; phase labels describe dependencies and review scope,
+  not separate release branches.
+- Require independent code review on GitHub and resolve actionable findings.
+  Leave each new PR open for the user to inspect and merge; do not merge it on
+  the user's behalf. An implementation agent's self-review is not sufficient.
 - Run `$scoped-pre-pr-remediation` before committing/pushing the final changes
   and creating a PR. Then run `$codex-pr-review-remediation-loop`, reusing the
   same coordinator and ledger until local readiness and current-head remote

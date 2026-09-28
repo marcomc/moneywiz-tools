@@ -69,6 +69,9 @@ to marked disposable fixtures; all four live capabilities remain blocked. See
 [Transaction Editing](doc/TRANSACTION-EDITING.md) for edit fields,
 [Transaction Assignment](doc/TRANSACTION-ASSIGNMENT.md) for relationships,
 [Transaction Reconciliation](doc/TRANSACTION-RECONCILIATION.md) for flags, and
+[Transaction Adjust Balance](doc/TRANSACTION-ADJUST-BALANCE.md) for the observed
+investment-total variant. W05 live writes remain blocked pending app and sync
+acceptance. See
 [Writer Recovery](doc/WRITER-RECOVERY.md) for journals.
 
 | Command | Behavior |
@@ -78,6 +81,7 @@ to marked disposable fixtures; all four live capabilities remain blocked. See
 | `transaction assign --request FILE --plan FILE` | Build a guarded W03 payee/category replacement plan without opening a store |
 | `transaction reconcile --request FILE --plan FILE` | Build a guarded W04 reconciliation plan without opening a store |
 | `transaction unreconcile --request FILE --plan FILE` | Build a guarded W04 correction plan without opening a store |
+| `transaction adjust-balance --request FILE --plan FILE` | Build a W05 GBP investment-total plan without opening a store |
 | `write validate --plan FILE` | Validate and display the exact plan and canonical digest |
 | `write apply --plan FILE` | Inspect without mutation |
 | `write apply --plan FILE --reviewed-digest SHA --apply` | Apply the reviewed coherent unit with durable recovery evidence |

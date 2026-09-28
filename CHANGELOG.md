@@ -20,6 +20,10 @@
   with a complete-account inventory and balance guard, preserved native
   status/flags, atomic save and interruption recovery. Live reconciliation and
   P2/P3 remain blocked pending separate acceptance.
+- W05 guarded GBP investment-total Adjust Balance plans for the observed
+  no-holdings account shape, with native `ReconcileTransaction` creation,
+  history checks and replay recovery. Live W05 writes remain blocked pending
+  application and sync acceptance.
 - Private recovery journals, consistent pre-write snapshots, durable results,
   source-event retry guards and explicit retention cleanup.
 - Read-only runtime identity discovery binding the application edition/build,

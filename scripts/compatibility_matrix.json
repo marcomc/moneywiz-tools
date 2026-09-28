@@ -41,7 +41,8 @@
         "write.edit-transaction": "blocked",
         "write.assign-payee-categories": "blocked",
         "write.reconcile": "blocked",
-        "write.unreconcile": "blocked"
+        "write.unreconcile": "blocked",
+        "write.adjust-balance-investment-total": "blocked"
       }
     },
     {

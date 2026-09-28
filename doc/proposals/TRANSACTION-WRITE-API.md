@@ -3,6 +3,12 @@
 Status: proposed; analysis only, 9 September 2026. No new write capability is
 implemented or enabled by this document.
 
+Release-scope update (2026-09-28): the user confirmed that W01–W09 all belong to
+`release/0.3.0`, with separate operation PRs. This supersedes the earlier plan
+for P2/P3 to use future release branches; phase labels continue to describe
+dependencies and evidence gates. See the [implementation plan](TRANSACTION-WRITE-IMPLEMENTATION-PLAN.md)
+for current coordination and status.
+
 Delivery tracking, confirmed scope and progressive task preparation are recorded
 in the [implementation plan](TRANSACTION-WRITE-IMPLEMENTATION-PLAN.md).
 

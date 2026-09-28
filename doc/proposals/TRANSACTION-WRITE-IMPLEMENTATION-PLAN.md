@@ -1,11 +1,14 @@
 # Transaction write implementation plan
 
-Status: P0, P1F and W01 integrated on `release/0.3.0`, through merge `e80b080`.
-W02 is activated in `feat/p1-w02-transaction-edit`; validation uses invented
-disposable stores. Independent review evidence accompanies its PR handoff.
-Application acceptance remains separate.
-The first delivery scope is confirmed. Later phases describe intended scope and
-require phase preparation before executable tasks are added.
+Status (2026-09-28): P0, P1F and P1/W01–W04 implementation is integrated on
+`release/0.3.0` through W04 PR #9 at `1f91151`. W05 implementation of the
+observed GBP investment-total variant is active on `feat/p2-w05-adjust-balance`;
+app and sync acceptance remain separate.
+The user has confirmed that the complete P0/P1F/P1/P2/P3 roadmap, including
+W01–W09, belongs to release `0.3.0`. W01–W04 are already integrated; keep each
+remaining operation in a separate PR and leave new PRs open for user inspection.
+Do not merge on the user's behalf. This 2026-09-28 decision supersedes the earlier
+proposal to put P2/P3 in later releases.
 
 ## Purpose and related documents
 
@@ -30,10 +33,11 @@ No proposed command or roadmap entry constitutes an enabled write capability.
 | --- | --- |
 | First delivery: P0, shared writer foundation and P1/W01–W04 | Confirmed by user |
 | New release version and first release branch: `0.3.0`, `release/0.3.0` | Confirmed by user |
+| Full implementation scope: P0/P1F/P1/P2/P3 and W01–W09 in `release/0.3.0`, with a separate PR per operation | Confirmed by user on 2026-09-28; supersedes the earlier future-release split for P2/P3 |
 | Initial application acceptance target: MoneyWiz TestFlight | Confirmed; rediscover exact app, store and model during execution |
 | Use Obsidian for private recovery/session information | Confirmed in principle |
 | Create detailed TODO tasks progressively as each phase is prepared | Requested by user |
-| Integrate P0/P1F/P1 on `release/0.3.0`; child implementation branches with independent GitHub review | Confirmed by execution goal; supersedes separate branches for these phases |
+| Integrate the complete P0/P1F/P1/P2/P3 roadmap on `release/0.3.0`; separate operation branches and independent GitHub review | Confirmed by the user's 2026-09-28 scope decision; new PRs stay open for the user's merge |
 | Read models and database discovery belong in `moneywiz-api` | Existing architecture, retained |
 | Python plans and native Core Data persistence belong in MoneyWiz Tools | Existing architecture, retained |
 | Machine journal stored locally, readable reports in Obsidian | Confirmed by user |
@@ -48,12 +52,13 @@ Extend the existing Swift Core Data host. Preserve verified v1 payee reassignmen
 and its guards. Each new operation and meaningful variant needs an independently
 verified capability; direct SQLite mutation is outside this design.
 
-The execution goal authorizes P0/P1F/P1 implementation, scoped commits, pushes,
-PR creation/review and merges into `release/0.3.0`, including required API fork
-changes. Main-branch merges, release publication and fabricated production
-transactions are outside that authority. Live financial writes require an
-authorized real reconciliation scope. Routine technical choices proceed from
-the confirmed requirements without repeating resolved questions.
+The user authorizes coordination and implementation of the full P0/P1F/P1/P2/P3
+roadmap, with separate W01–W09 PRs into `release/0.3.0`, including scoped commits,
+pushes and review remediation. Leave each new PR open for user inspection; merging,
+main-branch integration, release publication and fabricated production
+transactions are outside this authority. Live financial writes require a separate
+authorized real reconciliation scope. Routine technical choices proceed from the
+confirmed requirements without repeating resolved questions.
 
 ## Progressive phase preparation
 
@@ -80,10 +85,13 @@ These are naming conventions, not tasks created by this document.
 
 ## Delivery sequence
 
-P0 precedes the shared foundation (P1F), which precedes P1 operations and their
-supervised acceptance. P2 builds on that foundation; P3 follows with additional
-investment and relationship evidence. Native-reference research may overlap when
-it has an isolated, authorized test environment and no shared-writer contention.
+P0 precedes the shared foundation (P1F), which precedes P1 operations. P2 builds
+on that foundation; P3 follows with additional investment and relationship
+evidence. All phases are within `release/0.3.0`; phase ordering remains a dependency
+and review constraint, not a release-version split. Native-reference research may
+overlap when it has an isolated, authorized test environment and no shared-writer
+contention. App and sync acceptance remain separate from synthetic implementation
+and are required before live capability promotion.
 
 ### Release branches and GitHub review
 
@@ -96,35 +104,37 @@ this planning update does not change the installed product version.
 | Work | Branch / PR target | Integration condition |
 | --- | --- | --- |
 | P0 documentation baseline | `release/0.3.0` | Documentation validation; separate from executable changes |
-| Individual implementation | `feat/<task-id>-<topic>` from the owning phase branch | PR targets that phase branch; independent GitHub code review and required checks |
-| P1F and P1 | Child implementation branches of `release/0.3.0` | Prerequisite implementation reviewed and integrated; scope/tasks refined first |
-| P2 and P3 | Future release branches with separately defined scope | Not part of 0.3.0 |
-| Completed 0.3.0 delivery | Reviewed integration on `release/0.3.0` | Exit evidence; main merge and publication require separate authorization |
+| Each W01–W09 implementation | Separate `feat/<task-id>-<topic>` branch from the current `release/0.3.0` head | PR targets `release/0.3.0`; independent GitHub review and required checks; leave open for user inspection |
+| P0/P1F/P1/P2/P3 | Integrated sequentially on `release/0.3.0` | Respect prerequisites; refine phase tasks; synthetic validation does not promote live capability |
+| Completed 0.3.0 delivery | Full planned scope on `release/0.3.0` | Required implementation and acceptance evidence complete; main merge and publication require separate authorization |
 
-Use the actual phase release branch as the review base, not `main`, for each
-implementation PR. Each reviewer must be independent of the implementation agent
-and inspect the current PR changes. Record review evidence on GitHub; address
-actionable findings and rerun affected checks after changes before merging.
-Local tests or self-review alone do not satisfy this requirement.
+Use `release/0.3.0` as the review base for every operation PR, not `main` or a
+separate P2/P3 release branch. Each reviewer must be independent of the
+implementation agent and inspect the current PR changes. Record review evidence
+on GitHub; address actionable findings and rerun affected checks before handing
+the still-open PR to the user. Local tests or self-review alone do not satisfy
+this requirement.
 
 Run `$scoped-pre-pr-remediation` before PR creation and reach local `READY`.
 Commit and push the implementation/remediations, create the PR, then run
 `$codex-pr-review-remediation-loop` using the same coordinator and ledger.
 Observe an existing active pass before requesting one; monitor each pass once.
-After fixes, push and revalidate affected evidence. Merge only with local
-`READY`, passing required checks and a verified clean Codex result for the
-current pushed head. Reuse unchanged evidence without skipping required gates.
+After fixes, push and revalidate affected evidence. Before handoff, require local
+`READY`, passing required checks and a verified clean Codex result for the current
+pushed head. Leave the PR open; the user performs any merge after inspection.
+Reuse unchanged evidence without skipping required gates.
 
-Track the phase branch, implementation branch, PR and review evidence against
-each activated TODO task. Dependent task branches start from the release branch
-after their prerequisites merge. An API dependency change follows the same phase
+Track each implementation branch, PR and review evidence against its TODO task.
+Dependent task branches start from the advanced `release/0.3.0` head after their
+prerequisites are integrated by the user. An API dependency change follows the same phase
 and independent-review discipline in its own repository, with cross-referenced
 PRs and a deliberate tested pin/lock update in MoneyWiz Tools.
 
-Create later phase branches from the accepted integration baseline. Avoid starting
-future implementation on unreviewed predecessor changes. Implementation branching
-and GitHub review are required workflow steps; commit, push, PR creation, merge,
-tagging and publication still follow the user's execution authorization.
+Create each operation branch from the accepted `release/0.3.0` integration
+baseline. Avoid starting dependent implementation on unreviewed or unintegrated
+predecessor changes. Implementation branching and GitHub review are required
+workflow steps; commit, push and PR creation are authorized, while merge, tagging
+and publication remain with the user unless separately authorized.
 
 ### P0: complete reads and runtime identity
 
@@ -207,10 +217,11 @@ minimal authorized TestFlight acceptance and a supervised reconciliation cycle.
 Verify IDs and flags again after final edits. Report CLI coverage and GUI fallbacks
 from observed outcomes; do not assume most operations have been automated.
 
-The first delivery ends here. P2/P3 operations retain their existing supported
-fallbacks until independently verified.
+The original first-delivery boundary ended after P1/W01–W04. By the user's
+2026-09-28 decision, P2/P3 are also part of `release/0.3.0`; their operations
+retain existing supported fallbacks until independently verified.
 
-### P2: adjustments, deletion and transfers
+### P2: adjustments, deletion and transfers (within release 0.3.0)
 
 | Contract | Deliverable | Evidence needed before implementation/promotion |
 | --- | --- | --- |
@@ -237,7 +248,7 @@ Exit evidence: native before/after comparisons, stale-state and interruption tes
 both FX directions, separate source dates, fee currencies, duplicate/orphan checks,
 history preservation, app reopen and operation-specific sync acceptance.
 
-### P3: investments and payee merges
+### P3: investments and payee merges (within release 0.3.0)
 
 | Contract | Deliverable | Decisive evidence |
 | --- | --- | --- |
@@ -380,8 +391,8 @@ promote a whole model or phase based on one operation's success.
 | P0 | Integrated on `release/0.3.0` | PR #3 merged at `374ebd4`; no live write promotion |
 | P1F | Integrated on `release/0.3.0` | PR #4 merged; synthetic native/crash and relocated bundle evidence |
 | P1 | W01–W04 code integrated on `release/0.3.0` | PR #9 merged at `1f91151`; app and sync acceptance pending |
-| P2 | W05 reference preparation on `feat/p2-w05-adjust-balance` | App-created native examples, owning release branch and P1 promotion evidence pending |
-| P3 | Roadmap only; prepare after earlier evidence | Pending |
+| P2 | W05 observed-variant implementation on `feat/p2-w05-adjust-balance`; W06/W07 follow as separate PRs | All PRs target `release/0.3.0`; other W05 units and live acceptance pending; no live capability promotion |
+| P3 | W08/W09 roadmap; prepare each after its prerequisites | Separate PRs target `release/0.3.0`; operation, app and sync evidence pending |
 
 At handoff, record completed task IDs, code/dependency revisions, tests, exact
 capabilities enabled, private evidence references and remaining limitations.
