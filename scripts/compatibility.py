@@ -264,6 +264,8 @@ DISPOSABLE_CREATE_CAPABILITIES = frozenset(
 DISPOSABLE_WRITE_CAPABILITIES = DISPOSABLE_CREATE_CAPABILITIES | {
     "write.edit-transaction",
     "write.assign-payee-categories",
+    "write.reconcile",
+    "write.unreconcile",
 }
 DISPOSABLE_METADATA_KEY = "MoneyWizToolsDisposableFixture"
 DISPOSABLE_METADATA_VALUE = "W01-v1"
@@ -272,7 +274,7 @@ DISPOSABLE_METADATA_VALUE = "W01-v1"
 def require_disposable_write_capability(
     db_path: Path, capability: str
 ) -> CompatibilityAssessment:
-    """Admit W01-W03 experiments only on explicitly marked model-48 fixture stores.
+    """Admit W01-W04 experiments only on explicitly marked model-48 fixture stores.
 
     This is separate from live capability clearance. The native host independently
     enforces the same persistent-store metadata boundary before opening for writes.
@@ -284,14 +286,14 @@ def require_disposable_write_capability(
         or assessment.profile_id != "moneywiz-2026-model-48"
     ):
         raise CompatibilityError(
-            "W01-W03 requires an exact model-48 disposable profile"
+            "W01-W04 requires an exact model-48 disposable profile"
         )
     connection = _open_read_only(db_path)
     try:
         rows = connection.execute("SELECT Z_PLIST FROM Z_METADATA").fetchall()
         if len(rows) != 1:
             raise CompatibilityError(
-                "W01-W03 requires one disposable store metadata record"
+                "W01-W04 requires one disposable store metadata record"
             )
         metadata = plistlib.loads(bytes(rows[0][0]))
         if (
@@ -299,7 +301,7 @@ def require_disposable_write_capability(
             or metadata.get(DISPOSABLE_METADATA_KEY) != DISPOSABLE_METADATA_VALUE
         ):
             raise CompatibilityError(
-                "W01-W03 live writes remain blocked; an invented disposable fixture is required"
+                "W01-W04 live writes remain blocked; an invented disposable fixture is required"
             )
     except (sqlite3.Error, ValueError, TypeError, plistlib.InvalidFileException) as exc:
         raise CompatibilityError("cannot verify disposable store metadata") from exc

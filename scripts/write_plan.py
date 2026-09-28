@@ -27,6 +27,10 @@ CREATE_CAPABILITIES = frozenset(
 )
 EDIT_CAPABILITY = "write.edit-transaction"
 ASSIGN_CAPABILITY = "write.assign-payee-categories"
+RECONCILE_CAPABILITIES = {
+    "reconcile_transaction": ("write.reconcile", False, True),
+    "unreconcile_transaction": ("write.unreconcile", True, False),
+}
 EDIT_ENTITIES = frozenset(
     {"DepositTransaction", "WithdrawTransaction", "RefundTransaction"}
 )
@@ -160,6 +164,27 @@ class AssignTransactionOperation(TypedDict):
     allowed_changed_fields: list[str]
 
 
+class ReconcileTransactionOperation(TypedDict):
+    """One guarded W04 native reconciliation-flag transition."""
+
+    operation_id: str
+    kind: str
+    capability: str
+    transaction_entity: str
+    transaction_gid: str
+    account_gid: str
+    owner_uri: str
+    source_event_id: str
+    expected_reconciled: bool
+    target_reconciled: bool
+    expected_native_status: int
+    expected_native_flags: int
+    correction_reason: str | None
+    expected_balance_delta: str
+    expected_postcondition: dict[str, Any]
+    allowed_changed_fields: list[str]
+
+
 class WritePlan(TypedDict):
     """Version-two envelope, intentionally closed until W01-W04 are evidenced."""
 
@@ -181,11 +206,13 @@ class WritePlan(TypedDict):
     expected_account_gid: str
     expected_cached_account_balance: str
     currency_unit: str
+    source_scope: NotRequired[dict[str, Any]]
     operations: list[
         PayeeReassignmentOperation
         | CreateTransactionOperation
         | EditTransactionOperation
         | AssignTransactionOperation
+        | ReconcileTransactionOperation
     ]
 
 
@@ -702,6 +729,90 @@ def _validate_assign_operation(
     return operation["transaction_gid"]
 
 
+def _validate_reconcile_operation(
+    operation: Mapping[str, Any], prefix: str, plan: dict[str, Any]
+) -> str:
+    required = {
+        "operation_id", "kind", "capability", "transaction_entity",
+        "transaction_gid", "account_gid", "owner_uri", "source_event_id",
+        "expected_reconciled", "target_reconciled", "expected_native_status",
+        "expected_native_flags", "correction_reason", "expected_balance_delta",
+        "expected_postcondition", "allowed_changed_fields",
+    }
+    if set(operation) != required:
+        raise PlanValidationError(f"{prefix} has unknown or missing fields")
+    capability, old, target = RECONCILE_CAPABILITIES[operation["kind"]]
+    if operation["capability"] != capability or plan["capability"] != capability:
+        raise PlanValidationError(f"{prefix}.capability does not match W04 kind")
+    if operation["transaction_entity"] not in EDIT_ENTITIES:
+        raise PlanValidationError("W04 supports only ordinary income, expense and refund")
+    for field in ("transaction_gid", "account_gid", "owner_uri", "source_event_id"):
+        _text(operation[field], f"{prefix}.{field}")
+    for field, envelope in (("account_gid", "expected_account_gid"),
+                            ("owner_uri", "owner_uri"),
+                            ("source_event_id", "source_event_id")):
+        if operation[field] != plan[envelope]:
+            raise PlanValidationError(f"{prefix}.{field} must match the envelope")
+    if (type(operation["expected_reconciled"]) is not bool
+            or type(operation["target_reconciled"]) is not bool
+            or operation["expected_reconciled"] is not old
+            or operation["target_reconciled"] is not target):
+        raise PlanValidationError("W04 reconciliation state does not match capability")
+    for field in ("expected_native_status", "expected_native_flags"):
+        value = operation[field]
+        if type(value) is not int or value < 0 or value > 32767:
+            raise PlanValidationError(f"{prefix}.{field} must be a native nonnegative integer")
+    if operation["expected_native_status"] != 1:
+        raise PlanValidationError("W04 requires an active native transaction status")
+    reason = operation["correction_reason"]
+    if operation["kind"] == "unreconcile_transaction":
+        _text(reason, f"{prefix}.correction_reason")
+    elif reason is not None:
+        raise PlanValidationError("reconcile does not accept a correction reason")
+    if operation["expected_balance_delta"] != "0":
+        raise PlanValidationError("W04 must preserve account balance")
+    if operation["allowed_changed_fields"] != ["reconciled"]:
+        raise PlanValidationError("W04 native field allowlist differs")
+    postcondition = {
+        "reconciled": target,
+        "native_status": operation["expected_native_status"],
+        "native_flags": operation["expected_native_flags"],
+        "expected_balance_delta": "0",
+    }
+    if operation["expected_postcondition"] != postcondition:
+        raise PlanValidationError("W04 postcondition differs from requested flags")
+    return operation["transaction_gid"]
+
+
+def _validate_source_scope(scope: object, plan: dict[str, Any]) -> list[str]:
+    required = {
+        "scope", "read_status", "external_source_verified", "account_gid",
+        "currency_unit", "verified_balance", "source_count", "parsed_count",
+        "transaction_gids",
+    }
+    if not isinstance(scope, Mapping) or set(scope) != required:
+        raise PlanValidationError("W04 source_scope has unknown or missing fields")
+    if (scope["scope"] != "entire_account" or scope["read_status"] != "complete"
+            or scope["external_source_verified"] is not True):
+        raise PlanValidationError("W04 requires a complete, externally verified account scope")
+    if (scope["account_gid"] != plan["expected_account_gid"]
+            or scope["currency_unit"] != plan["currency_unit"]
+            or Decimal(_canonical_decimal(scope["verified_balance"], "source_scope.verified_balance"))
+            != Decimal(_decimal(plan["expected_cached_account_balance"], "expected_cached_account_balance"))):
+        raise PlanValidationError("W04 source scope differs from the reviewed account")
+    gids = scope["transaction_gids"]
+    if not isinstance(gids, list) or not gids:
+        raise PlanValidationError("W04 source scope requires all account transaction GIDs")
+    validated = [_text(gid, "source_scope.transaction_gids[]") for gid in gids]
+    if validated != sorted(set(validated)):
+        raise PlanValidationError("W04 source transaction GIDs must be unique and sorted")
+    if (type(scope["source_count"]) is not int or type(scope["parsed_count"]) is not int
+            or scope["source_count"] != len(validated)
+            or scope["parsed_count"] != len(validated)):
+        raise PlanValidationError("W04 source/parsed counts must cover the entire scope")
+    return validated
+
+
 def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
     """Validate the complete v2 envelope and its strict operation union."""
     if not isinstance(payload, Mapping):
@@ -728,6 +839,9 @@ def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
         "currency_unit",
         "operations",
     }
+    w04 = plan.get("capability") in {policy[0] for policy in RECONCILE_CAPABILITIES.values()}
+    if w04:
+        required.add("source_scope")
     if set(plan) != required and set(plan) != required - {"plan_digest"}:
         raise PlanValidationError("plan has unknown or missing fields")
     if (
@@ -755,7 +869,9 @@ def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
     except ZoneInfoNotFoundError as exc:
         raise PlanValidationError("timezone must be an IANA timezone") from exc
     capability = plan.get("capability")
-    if capability not in {PAYEE_CAPABILITY, EDIT_CAPABILITY, ASSIGN_CAPABILITY, *CREATE_CAPABILITIES}:
+    if capability not in {PAYEE_CAPABILITY, EDIT_CAPABILITY, ASSIGN_CAPABILITY,
+                          *(policy[0] for policy in RECONCILE_CAPABILITIES.values()),
+                          *CREATE_CAPABILITIES}:
         raise PlanValidationError("capability is not enabled")
     store = plan.get("store_identity")
     if not isinstance(store, Mapping):
@@ -789,6 +905,7 @@ def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
         plan.get("expected_cached_account_balance"), "expected_cached_account_balance"
     )
     _text(plan.get("currency_unit"), "currency_unit")
+    scope_gids = _validate_source_scope(plan["source_scope"], plan) if w04 else []
     operations = plan.get("operations")
     if not isinstance(operations, list) or not operations:
         raise PlanValidationError("operations must be a nonempty list")
@@ -814,6 +931,8 @@ def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
             transaction_gid = _validate_edit_operation(operation, prefix, plan)
         elif kind == "assign_payee_categories":
             transaction_gid = _validate_assign_operation(operation, prefix, plan)
+        elif kind in RECONCILE_CAPABILITIES:
+            transaction_gid = _validate_reconcile_operation(operation, prefix, plan)
         elif kind in CREATE_OPERATION_POLICIES:
             create_operations += 1
             transaction_gid = _validate_create_operation(operation, prefix, plan)
@@ -822,6 +941,8 @@ def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
         if transaction_gid in transaction_gids:
             raise PlanValidationError("operations must not target a transaction twice")
         transaction_gids.add(transaction_gid)
+        if w04 and transaction_gid not in scope_gids:
+            raise PlanValidationError("W04 target is absent from complete account scope")
     if create_operations and len(operations) != 1:
         raise PlanValidationError(
             "a W01 source event must create exactly one transaction"
@@ -832,6 +953,7 @@ def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
         PAYEE_CAPABILITY,
         EDIT_CAPABILITY,
         ASSIGN_CAPABILITY,
+        *(policy[0] for policy in RECONCILE_CAPABILITIES.values()),
     }:
         raise PlanValidationError("create capability requires a create operation")
     actual = compute_digest(plan)

@@ -8,8 +8,8 @@ preflight, atomic persistence and recovery. W01 creation uses the same journal
 with deterministic source-event identities on marked disposable fixtures. W02
 scalar editing uses the same journal with exact target IDs and prior values.
 W03 relationship replacement uses it with exact prior and target assignments.
-Live W01–W03 and reconciliation remain
-disabled. Existing version-1 commands retain their interface and capability
+W04 reconciliation adds a full-account inventory and exact native flag guards.
+Live W01–W04 remain disabled. Existing version-1 commands retain their interface and capability
 checks.
 
 This phase is validated with synthetic/disposable stores. Local persisted
@@ -17,7 +17,8 @@ read-back, MoneyWiz application acceptance and remote sync are separate evidence
 No live P1 operation is cleared by these tests. See
 [Transaction Creation](TRANSACTION-CREATION.md) and
 [Transaction Editing](TRANSACTION-EDITING.md), and
-[Transaction Assignment](TRANSACTION-ASSIGNMENT.md) for fields and evidence.
+[Transaction Assignment](TRANSACTION-ASSIGNMENT.md), and
+[Transaction Reconciliation](TRANSACTION-RECONCILIATION.md) for fields and evidence.
 
 ## Review and apply
 

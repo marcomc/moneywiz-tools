@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build immutable W01-W03 transaction plans from explicit JSON requests."""
+"""Build immutable W01-W04 transaction plans from explicit JSON requests."""
 
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ from write_plan import (
     EDIT_CAPABILITY,
     OPERATION_SCHEMA_VERSION,
     PlanValidationError,
+    RECONCILE_CAPABILITIES,
     deterministic_transaction_gid,
     edit_changed_fields,
     normalize_decimal,
@@ -270,6 +271,56 @@ def build_assign_plan(request: Mapping[str, Any]) -> dict[str, Any]:
     })
 
 
+def build_reconcile_plan(request: Mapping[str, Any], *, kind: str) -> dict[str, Any]:
+    """Build one guarded flag transition batch from reviewed full-account scope."""
+    raw = _mapping(request, "request")
+    if set(raw) != _ENVELOPE_FIELDS | {"source_scope", "operations"}:
+        raise PlanValidationError("request has unknown or missing W04 fields")
+    scope = _mapping(raw.pop("source_scope"), "source_scope")
+    requests = raw.pop("operations")
+    if not isinstance(requests, list) or not requests:
+        raise PlanValidationError("operations must be a nonempty list")
+    capability, old, target = RECONCILE_CAPABILITIES[kind]
+    operations = []
+    required = {
+        "operation_id", "kind", "transaction_entity", "transaction_gid",
+        "account_gid", "expected_reconciled", "expected_native_status",
+        "expected_native_flags", "correction_reason",
+    }
+    for index, value in enumerate(requests):
+        operation = _mapping(value, f"operations[{index}]")
+        if set(operation) != required or operation["kind"] != kind:
+            raise PlanValidationError(f"operations[{index}] has unknown or missing W04 fields")
+        operation.update(
+            capability=capability,
+            owner_uri=raw["owner_uri"],
+            source_event_id=raw["source_event_id"],
+            target_reconciled=target,
+            expected_balance_delta="0",
+            allowed_changed_fields=["reconciled"],
+            expected_postcondition={
+                "reconciled": target,
+                "native_status": operation["expected_native_status"],
+                "native_flags": operation["expected_native_flags"],
+                "expected_balance_delta": "0",
+            },
+        )
+        if operation["expected_reconciled"] is not old:
+            raise PlanValidationError(f"operations[{index}] has the wrong prior state")
+        operations.append(operation)
+    scope["verified_balance"] = normalize_decimal(
+        scope.get("verified_balance"), "source_scope.verified_balance"
+    )
+    return validate_plan({
+        "contract_version": CONTRACT_VERSION,
+        "operation_schema_version": OPERATION_SCHEMA_VERSION,
+        **raw,
+        "source_scope": scope,
+        "capability": capability,
+        "operations": operations,
+    })
+
+
 def _load_request(path: Path) -> dict[str, Any]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -310,7 +361,7 @@ def make_parser() -> argparse.ArgumentParser:
         help=argparse.SUPPRESS,
     )
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ("create", "edit", "assign"):
+    for name in ("create", "edit", "assign", "reconcile", "unreconcile"):
         command = commands.add_parser(name)
         command.add_argument("--request", type=Path, required=True)
         command.add_argument(
@@ -324,9 +375,12 @@ def make_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     args = make_parser().parse_args(argv)
     try:
-        builder = {"create": build_plan, "edit": build_edit_plan,
-                   "assign": build_assign_plan}[args.command]
-        plan = builder(_load_request(args.request))
+        builders = {"create": build_plan, "edit": build_edit_plan,
+                    "assign": build_assign_plan}
+        request = _load_request(args.request)
+        plan = (builders[args.command](request)
+                if args.command in builders else build_reconcile_plan(
+                    request, kind=f"{args.command}_transaction"))
         if args.plan is not None:
             _write_plan(args.plan, plan)
             output = {

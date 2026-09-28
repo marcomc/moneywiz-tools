@@ -1,4 +1,4 @@
-"""W01/W02 fixture admission must never promote the live capability register."""
+"""W01-W04 fixture admission must never promote the live capability register."""
 
 import plistlib
 import sqlite3
@@ -85,7 +85,6 @@ def test_fixture_marker_is_exact(disposable_store: Path, marker: object) -> None
     "capability",
     [
         "write.assign-categories",
-        "write.reconcile",
         "write.unknown",
         "write.reassign-payees-by-id",
     ],

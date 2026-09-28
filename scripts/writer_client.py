@@ -17,6 +17,7 @@ from write_plan import (
     ASSIGN_CAPABILITY,
     CREATE_CAPABILITIES,
     EDIT_CAPABILITY,
+    RECONCILE_CAPABILITIES,
     PlanValidationError,
     validate_plan,
     validate_result,
@@ -268,7 +269,10 @@ class WriterClient:
         return record
 
     def _require_operation_capability(self, plan: dict[str, Any]) -> None:
-        if plan["capability"] not in {*CREATE_CAPABILITIES, EDIT_CAPABILITY, ASSIGN_CAPABILITY}:
+        if plan["capability"] not in {
+            *CREATE_CAPABILITIES, EDIT_CAPABILITY, ASSIGN_CAPABILITY,
+            *(policy[0] for policy in RECONCILE_CAPABILITIES.values()),
+        }:
             return
         try:
             require_disposable_write_capability(self.store, plan["capability"])
