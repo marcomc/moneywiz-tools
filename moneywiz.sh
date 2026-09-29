@@ -221,6 +221,7 @@ Writes (dry-run by default; add --apply to commit):
   transaction adjust-balance --help     Build the observed W05 investment-total plan.
   transaction delete-adjustment --help  Build a guarded W06 deletion plan for that variant.
   transaction transfer --help           Build a guarded W07 transfer replacement plan.
+  transaction investment --help         Build a guarded W08 investment transaction plan.
   write validate|apply|recover --plan FILE
                                       Inspect or execute a reviewed versioned plan.
   write locations|journal|cleanup [--apply]

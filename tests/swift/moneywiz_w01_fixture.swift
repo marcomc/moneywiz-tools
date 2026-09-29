@@ -203,7 +203,8 @@ func runFixtureWriter() throws {
             guard (args.count == 4 || args.count == 5), args[0] == "--store", args[2] == "--model",
                   args.count == 4 || ["--unmarked", "--w06", "--w06-unmarked", "--w06-linked",
                     "--w07-source", "--w07-paired", "--w07-reverse", "--w07-ambiguous",
-                    "--w07-unmarked", "--w07-voided"].contains(args[4]) else {
+                    "--w07-unmarked", "--w07-voided", "--w08-aggregate",
+                    "--w08-units", "--w08-unmarked"].contains(args[4]) else {
                 throw HostError.message("usage")
             }
             let store = URL(fileURLWithPath: args[1]), modelURL = URL(fileURLWithPath: args[3])
@@ -216,7 +217,7 @@ func runFixtureWriter() throws {
             guard let persistentStore = container.persistentStoreCoordinator.persistentStores.first else { throw HostError.message("fixture has no persistent store") }
             if args.count == 4 || ["--w06", "--w06-linked", "--w07-source",
                 "--w07-paired", "--w07-reverse", "--w07-ambiguous",
-                "--w07-voided"].contains(args[4]) {
+                "--w07-voided", "--w08-aggregate", "--w08-units"].contains(args[4]) {
                 var storeMetadata = persistentStore.metadata ?? [:]
                 storeMetadata["MoneyWizToolsDisposableFixture"] = "W01-v1"
                 container.persistentStoreCoordinator.setMetadata(storeMetadata, for: persistentStore)
@@ -305,6 +306,65 @@ func runFixtureWriter() throws {
                     "source_numeric_id": durableNumericID(sourceRow.objectID),
                     "destination_numeric_id": destinationRow.map { durableNumericID($0.objectID) } ?? NSNull(),
                     "source_assignment_uri": assignment.objectID.uriRepresentation().absoluteString,
+                ]
+                FileHandle.standardOutput.write(try JSONSerialization.data(withJSONObject: result, options: [.sortedKeys]))
+                FileHandle.standardOutput.write(Data([10]))
+                return
+            }
+            if args.count == 5 && args[4].hasPrefix("--w08-") {
+                let units = args[4] == "--w08-units"
+                let account = try fixtureAccount("InvestmentAccount", gid: "w08-investment",
+                    name: "W08 investment", opening: 100, balance: 0, user: user, context: c)
+                try fixtureSet(account, "archived", false)
+                let payee = try fixtureObject("Payee", c)
+                try fixtureSet(payee, "GID", "w08-payee")
+                try fixtureSet(payee, "name", "W08")
+                try fixtureSet(payee, "user", user)
+                let tag = try fixtureObject("Tag", c)
+                try fixtureSet(tag, "GID", "w08-tag")
+                try fixtureSet(tag, "name", "W08")
+                try fixtureSet(tag, "user", user)
+                for (gid, type) in [("w08-income", 2), ("w08-expense", 1)] {
+                    let category = try fixtureObject("Category", c)
+                    try fixtureSet(category, "GID", gid)
+                    try fixtureSet(category, "name", gid)
+                    try fixtureSet(category, "type", type)
+                    try fixtureSet(category, "user", user)
+                }
+                if units {
+                    let holding = try fixtureObject("InvestmentHolding", c)
+                    try fixtureSet(holding, "GID", "w08-holding")
+                    try fixtureSet(holding, "symbol", "W08")
+                    try fixtureSet(holding, "investmentObjectType", 1)
+                    try fixtureSet(holding, "openningNumberOfShares", 10.0)
+                    try fixtureSet(holding, "pricePerShare", 5.0)
+                    try fixtureSet(holding, "investmentAccount", account)
+                    let existing = try fixtureObject("InvestmentBuyTransaction", c)
+                    try fixtureSet(existing, "GID", "w08-existing-buy")
+                    try fixtureSet(existing, "amount", -11.0)
+                    try fixtureSet(existing, "originalAmount", -11.0)
+                    try fixtureSet(existing, "originalCurrency", "EUR")
+                    try fixtureSet(existing, "originalExchangeRate", 0.0)
+                    try fixtureSet(existing, "currencyExchangeRate", 0.0)
+                    try fixtureSet(existing, "fee", 1.0)
+                    try fixtureSet(existing, "originalFee", 0.0)
+                    try fixtureSet(existing, "numberOfShares", 2.0)
+                    try fixtureSet(existing, "pricePerShare", 5.0)
+                    try fixtureSet(existing, "date", precisePlanTimestamp("2026-09-10T09:00:00Z"))
+                    try fixtureSet(existing, "objectCreationDate", Date())
+                    try fixtureSet(existing, "status", 2)
+                    try fixtureSet(existing, "flags", 0)
+                    try fixtureSet(existing, "reconciled", true)
+                    try fixtureSet(existing, "symbol", "W08")
+                    try fixtureSet(existing, "account", account)
+                    try fixtureSet(existing, "investmentHolding", holding)
+                }
+                try c.save()
+                let metadata = try NSPersistentStoreCoordinator.metadataForPersistentStore(
+                    ofType: NSSQLiteStoreType, at: store, options: nil)
+                let result: [String: Any] = [
+                    "store_uuid": metadata[NSStoreUUIDKey] as! String,
+                    "owner_uri": user.objectID.uriRepresentation().absoluteString,
                 ]
                 FileHandle.standardOutput.write(try JSONSerialization.data(withJSONObject: result, options: [.sortedKeys]))
                 FileHandle.standardOutput.write(Data([10]))

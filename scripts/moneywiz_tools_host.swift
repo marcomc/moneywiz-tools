@@ -664,6 +664,20 @@ struct WriterOperationV2: Decodable {
     let recipientAmount: String?
     let exchangeRate: String?
     let feeAmount: String?
+    let accountMode: String?
+    let cashEventType: String?
+    let investmentSymbol: String?
+    let holdingGID: String?
+    let holdingSymbol: String?
+    let assetType: Int?
+    let quantity: String?
+    let unitPrice: String?
+    let fee: String?
+    let feeCurrency: String?
+    let expectedPriorCash: String?
+    let expectedFinalCash: String?
+    let expectedPriorUnits: String?
+    let expectedFinalUnits: String?
 
     enum CodingKeys: String, CodingKey {
         case operationID = "operation_id"
@@ -712,6 +726,13 @@ struct WriterOperationV2: Decodable {
         case sendAt = "send_at", receiveAt = "receive_at"
         case senderAmount = "sender_amount", recipientAmount = "recipient_amount"
         case exchangeRate = "exchange_rate", feeAmount = "fee_amount"
+        case accountMode = "account_mode", cashEventType = "cash_event_type"
+        case investmentSymbol = "investment_symbol"
+        case holdingGID = "holding_gid", holdingSymbol = "holding_symbol"
+        case assetType = "asset_type", quantity, unitPrice = "unit_price", fee
+        case feeCurrency = "fee_currency", expectedPriorCash = "expected_prior_cash"
+        case expectedFinalCash = "expected_final_cash", expectedPriorUnits = "expected_prior_units"
+        case expectedFinalUnits = "expected_final_units"
     }
 }
 
@@ -882,6 +903,50 @@ struct TransferDetails: Encodable {
     }
 }
 
+struct InvestmentDetails: Encodable {
+    let accountMode: String
+    let cashEventType: String?
+    let investmentSymbol: String?
+    let holdingGID: String?
+    let holdingSymbol: String?
+    let assetType: Int?
+    let quantity: String
+    let unitPrice: String
+    let fee: String
+    let feeCurrency: String
+    let expectedPriorCash: String
+    let expectedFinalCash: String
+    let expectedPriorUnits: String?
+    let expectedFinalUnits: String?
+
+    enum CodingKeys: String, CodingKey {
+        case accountMode = "account_mode", cashEventType = "cash_event_type"
+        case investmentSymbol = "investment_symbol"
+        case holdingGID = "holding_gid", holdingSymbol = "holding_symbol"
+        case assetType = "asset_type", quantity, unitPrice = "unit_price", fee
+        case feeCurrency = "fee_currency", expectedPriorCash = "expected_prior_cash"
+        case expectedFinalCash = "expected_final_cash", expectedPriorUnits = "expected_prior_units"
+        case expectedFinalUnits = "expected_final_units"
+    }
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(accountMode, forKey: .accountMode)
+        try c.encode(cashEventType, forKey: .cashEventType)
+        try c.encode(investmentSymbol, forKey: .investmentSymbol)
+        try c.encode(holdingGID, forKey: .holdingGID)
+        try c.encode(holdingSymbol, forKey: .holdingSymbol)
+        try c.encode(assetType, forKey: .assetType)
+        try c.encode(quantity, forKey: .quantity)
+        try c.encode(unitPrice, forKey: .unitPrice)
+        try c.encode(fee, forKey: .fee)
+        try c.encode(feeCurrency, forKey: .feeCurrency)
+        try c.encode(expectedPriorCash, forKey: .expectedPriorCash)
+        try c.encode(expectedFinalCash, forKey: .expectedFinalCash)
+        try c.encode(expectedPriorUnits, forKey: .expectedPriorUnits)
+        try c.encode(expectedFinalUnits, forKey: .expectedFinalUnits)
+    }
+}
+
 struct RefundReference: Codable, Equatable {
     let originalTransactionEntity: String
     let originalTransactionGID: String
@@ -915,6 +980,7 @@ struct WriterOperationResultV2: Encodable {
     var deleteAdjustmentPostcondition: DeleteAdjustmentPostcondition? = nil
     var transferPostcondition: TransferPostcondition? = nil
     var transferDetails: TransferDetails? = nil
+    var investmentDetails: InvestmentDetails? = nil
 
     enum CodingKeys: String, CodingKey {
         case operationID = "operation_id"
@@ -927,6 +993,7 @@ struct WriterOperationResultV2: Encodable {
         case newPayeeGID = "new_payee_gid"
         case postcondition
         case transferDetails = "transfer_details"
+        case investmentDetails = "investment_details"
     }
 
     func encode(to encoder: Encoder) throws {
@@ -940,6 +1007,7 @@ struct WriterOperationResultV2: Encodable {
         try container.encode(oldPayeeGID, forKey: .oldPayeeGID)
         try container.encode(newPayeeGID, forKey: .newPayeeGID)
         try container.encodeIfPresent(transferDetails, forKey: .transferDetails)
+        try container.encodeIfPresent(investmentDetails, forKey: .investmentDetails)
         if let transferPostcondition { try container.encode(transferPostcondition, forKey: .postcondition) }
         else if let deleteAdjustmentPostcondition { try container.encode(deleteAdjustmentPostcondition, forKey: .postcondition) }
         else if let adjustBalancePostcondition { try container.encode(adjustBalancePostcondition, forKey: .postcondition) }
@@ -1082,7 +1150,8 @@ func validateWriterPlanV2(_ plan: WriterPlanV2, rawPlan: [String: Any]) throws {
             try validateTransferShape(rawOperation, plan: plan)
             continue
         }
-        if kind == "create_income" || kind == "create_expense" || kind == "create_refund" {
+        if kind == "create_income" || kind == "create_expense" || kind == "create_refund" ||
+           ["investment_income", "investment_expense", "investment_buy", "investment_sell"].contains(kind) {
             try validateCreationOperationShape(rawOperation, plan: plan)
             continue
         }
@@ -1096,7 +1165,7 @@ func validateWriterPlanV2(_ plan: WriterPlanV2, rawPlan: [String: Any]) throws {
           plan.operationSchemaVersion == 1,
           plan.profileID == policy.profileID,
           plan.modelChecksum == policy.modelChecksum,
-          (plan.capability == policy.capability || ["write.create-income", "write.create-expense", "write.create-refund", "write.edit-transaction", "write.assign-payee-categories", "write.reconcile", "write.unreconcile", "write.adjust-balance-investment-total", "write.delete-adjust-balance-investment-total", "write.replace-import-with-transfer"].contains(plan.capability)),
+          (plan.capability == policy.capability || ["write.create-income", "write.create-expense", "write.create-refund", "write.edit-transaction", "write.assign-payee-categories", "write.reconcile", "write.unreconcile", "write.adjust-balance-investment-total", "write.delete-adjust-balance-investment-total", "write.replace-import-with-transfer", "write.investment-income", "write.investment-expense", "write.investment-buy", "write.investment-sell"].contains(plan.capability)),
           moneyWizBundleIdentifiers.contains(plan.appIdentity.bundleID),
           !isBlank(plan.appIdentity.version),
           !isBlank(plan.appIdentity.path),
@@ -1169,6 +1238,10 @@ func validateWriterPlanV2(_ plan: WriterPlanV2, rawPlan: [String: Any]) throws {
     if w07 && (plan.operations.count != 1 || plan.operations[0].kind != "replace_import_with_transfer") {
         throw HostError.message("W07 requires exactly one atomic transfer replacement")
     }
+    if ["write.investment-income", "write.investment-expense", "write.investment-buy", "write.investment-sell"].contains(plan.capability) &&
+       (plan.operations.count != 1 || !plan.operations[0].kind.hasPrefix("investment_")) {
+        throw HostError.message("W08 requires exactly one investment operation")
+    }
     for operation in plan.operations {
         if operation.kind == "edit_transaction" || operation.kind == "assign_payee_categories" ||
            operation.kind == "reconcile_transaction" || operation.kind == "unreconcile_transaction" {
@@ -1178,7 +1251,8 @@ func validateWriterPlanV2(_ plan: WriterPlanV2, rawPlan: [String: Any]) throws {
             }
             continue
         }
-        if ["create_income", "create_expense", "create_refund", "adjust_investment_total"].contains(operation.kind) {
+        if ["create_income", "create_expense", "create_refund", "adjust_investment_total",
+            "investment_income", "investment_expense", "investment_buy", "investment_sell"].contains(operation.kind) {
             guard operation.capability == plan.capability,
                   operation.accountGID == plan.expectedAccountGID,
                   operation.currencyUnit == plan.currencyUnit,
@@ -1495,12 +1569,18 @@ func validateTransferShape(_ raw: [String: Any], plan: WriterPlanV2) throws {
 }
 
 func validateCreationOperationShape(_ raw: [String: Any], plan: WriterPlanV2) throws {
-    let required: Set<String> = [
+    let investmentKinds: Set<String> = ["investment_income", "investment_expense", "investment_buy", "investment_sell"]
+    let investment = investmentKinds.contains(raw["kind"] as? String ?? "")
+    let extra: Set<String> = ["account_mode", "cash_event_type", "investment_symbol", "holding_gid", "holding_symbol",
+        "asset_type", "quantity", "unit_price", "fee", "fee_currency",
+        "expected_prior_cash", "expected_final_cash", "expected_prior_units", "expected_final_units"]
+    let base: Set<String> = [
         "operation_id", "kind", "capability", "transaction_entity", "transaction_gid",
         "account_gid", "owner_uri", "source_event_id", "amount", "currency_unit",
         "occurred_at", "timezone", "payee_gid", "category_splits", "tag_gids", "note",
         "refund_reference", "expected_balance_delta", "expected_postcondition",
     ]
+    let required = investment ? base.union(extra) : base
     guard Set(raw.keys) == required,
           let kind = raw["kind"] as? String,
           let capability = raw["capability"] as? String,
@@ -1513,14 +1593,14 @@ func validateCreationOperationShape(_ raw: [String: Any], plan: WriterPlanV2) th
           raw["payee_gid"] is String || raw["payee_gid"] is NSNull,
           raw["note"] is String || raw["note"] is NSNull,
           let postcondition = raw["expected_postcondition"] as? [String: Any],
-          Set(postcondition.keys) == required.subtracting(["operation_id", "kind", "capability", "source_event_id", "expected_postcondition"]),
+          Set(postcondition.keys) == base.subtracting(["operation_id", "kind", "capability", "source_event_id", "expected_postcondition"]),
           postcondition["transaction_entity"] as? String == entity,
           postcondition["transaction_gid"] as? String == raw["transaction_gid"] as? String,
           postcondition["amount"] as? String == amount,
           postcondition["expected_balance_delta"] as? String == delta else {
         throw HostError.message("writer v2 creation operation contains unknown, missing, or unreviewed fields")
     }
-    let expectedPost = raw.filter { !["operation_id", "kind", "capability", "source_event_id", "expected_postcondition"].contains($0.key) }
+    let expectedPost = raw.filter { !["operation_id", "kind", "capability", "source_event_id", "expected_postcondition"].contains($0.key) && !extra.contains($0.key) }
     guard NSDictionary(dictionary: postcondition).isEqual(to: expectedPost) else {
         throw HostError.message("W01 postcondition differs from reviewed fields")
     }
@@ -1562,6 +1642,10 @@ func validateCreationOperationShape(_ raw: [String: Any], plan: WriterPlanV2) th
         "create_income": ("write.create-income", "DepositTransaction", 1),
         "create_expense": ("write.create-expense", "WithdrawTransaction", -1),
         "create_refund": ("write.create-refund", "RefundTransaction", 1),
+        "investment_income": ("write.investment-income", "DepositTransaction", 1),
+        "investment_expense": ("write.investment-expense", "WithdrawTransaction", -1),
+        "investment_buy": ("write.investment-buy", "InvestmentBuyTransaction", -1),
+        "investment_sell": ("write.investment-sell", "InvestmentSellTransaction", 1),
     ]
     let parsedAmount = try canonicalDecimal(amount)
     let parsedDelta = try canonicalDecimal(delta)
@@ -1602,6 +1686,67 @@ func validateCreationOperationShape(_ raw: [String: Any], plan: WriterPlanV2) th
         }
     } else if !(refund is NSNull) {
         throw HostError.message("writer v2 refund reference is unsupported for this kind")
+    }
+    if investment {
+        let operation = plan.operations[0]
+        guard raw["transaction_gid"] as? String == deterministicCreationGID(plan: plan),
+              raw["account_gid"] as? String == plan.expectedAccountGID,
+              raw["owner_uri"] as? String == plan.ownerURI,
+              raw["source_event_id"] as? String == plan.sourceEventID,
+              raw["currency_unit"] as? String == plan.currencyUnit,
+              raw["timezone"] as? String == plan.timezone,
+              plan.expectedCachedAccountBalance == "0",
+              let mode = operation.accountMode, ["aggregate", "units"].contains(mode),
+              let quantityText = operation.quantity, let priceText = operation.unitPrice,
+              let feeText = operation.fee, let priorText = operation.expectedPriorCash,
+              let finalText = operation.expectedFinalCash,
+              operation.feeCurrency == plan.currencyUnit,
+              let quantity = try? canonicalDecimal(quantityText),
+              let price = try? canonicalDecimal(priceText),
+              let fee = try? canonicalDecimal(feeText),
+              let prior = try? canonicalDecimal(priorText),
+              let final = try? canonicalDecimal(finalText),
+              fee >= 0, final == prior + parsedAmount else {
+            throw HostError.message("W08 identity, currency, or derived cash is invalid")
+        }
+        let trade = kind == "investment_buy" || kind == "investment_sell"
+        if trade {
+            guard mode == "units", operation.cashEventType == nil,
+                  operation.investmentSymbol == nil,
+                  splits.isEmpty, let gid = operation.holdingGID, !isBlank(gid),
+                  let symbol = operation.holdingSymbol, !isBlank(symbol),
+                  let assetType = operation.assetType, assetType >= 0,
+                  let unitsText = operation.expectedPriorUnits,
+                  let finalUnitsText = operation.expectedFinalUnits,
+                  let units = try? canonicalDecimal(unitsText),
+                  let finalUnits = try? canonicalDecimal(finalUnitsText),
+                  quantity > 0, price > 0, units >= 0, finalUnits >= 0,
+                  finalUnits == units + (kind == "investment_buy" ? quantity : -quantity),
+                  parsedAmount == (kind == "investment_buy" ? -(quantity * price + fee) : quantity * price - fee) else {
+                throw HostError.message("W08 trade amount, asset, or units is invalid")
+            }
+        } else {
+            let types: Set<String> = kind == "investment_income"
+                ? ["dividend", "interest", "sale_proceeds", "other_income"]
+                : ["fee", "other_expense"]
+            guard let event = operation.cashEventType, types.contains(event),
+                  splits.count == 1, operation.holdingGID == nil,
+                  operation.holdingSymbol == nil, operation.assetType == nil,
+                  operation.expectedPriorUnits == nil, operation.expectedFinalUnits == nil,
+                  quantity == 0, price == 0, fee == 0 else {
+                throw HostError.message("W08 cash event shape is invalid")
+            }
+            if let symbol = operation.investmentSymbol,
+               isBlank(symbol) || symbol != symbol.trimmingCharacters(in: .whitespacesAndNewlines) {
+                throw HostError.message("W08 investment symbol is invalid")
+            }
+        }
+        for value in [amount, feeText, priorText, finalText] {
+            let decimal = try canonicalDecimal(value)
+            var source = decimal, rounded = Decimal()
+            NSDecimalRound(&rounded, &source, 2, .plain)
+            guard rounded == decimal else { throw HostError.message("W08 cash precision exceeds cents") }
+        }
     }
 }
 
@@ -3397,6 +3542,10 @@ func recoverPlanV2(_ plan: WriterPlanV2, container: NSPersistentContainer) throw
                 result = .success(try inspectTransfer(plan, context: context).receipt)
                 return
             }
+            if let operation = plan.operations.first, operation.kind.hasPrefix("investment_") {
+                result = .success(try inspectInvestment(operation, plan: plan, context: context))
+                return
+            }
             if let creation = plan.operations.first, creation.kind.hasPrefix("create_") {
                 result = .success(try inspectCreation(creation, plan: plan, context: context))
                 return
@@ -3461,6 +3610,11 @@ func writePlanV2(
             }
             if plan.capability == "write.replace-import-with-transfer" {
                 result = .success(try replaceImportWithTransferV2(plan, context: context, requireStopped: requireStopped))
+                return
+            }
+            if let operation = plan.operations.first, operation.kind.hasPrefix("investment_") {
+                result = .success(try createInvestmentV2(operation, plan: plan, context: context,
+                    requireStopped: requireStopped))
                 return
             }
             if let creation = plan.operations.first,
@@ -3595,6 +3749,7 @@ struct CreationReferences {
     let original: NSManagedObject?
     let amount: Decimal
     let balanceAfter: Decimal
+    var holding: NSManagedObject? = nil
 }
 
 func preflightCreation(_ operation: WriterOperationV2, plan: WriterPlanV2,
@@ -3686,9 +3841,25 @@ func verifyCreatedTransaction(_ transaction: NSManagedObject, operation: WriterO
         "originalExchangeRate": 1.0, "date": try planTimestamp(operation.occurredAt!),
         "objectCreationDate": try planTimestamp(plan.createdAt), "notes": operation.note as Any? ?? NSNull(),
     ]
+    var expectedFixed = fixed
+    if operation.kind.hasPrefix("investment_") {
+        let trade = operation.kind == "investment_buy" || operation.kind == "investment_sell"
+        expectedFixed["status"] = 2
+        expectedFixed["flags"] = 0
+        expectedFixed["reconciled"] = true
+        expectedFixed["currencyExchangeRate"] = trade ? 0.0 : 1.0
+        expectedFixed["originalExchangeRate"] = trade ? 0.0 : 1.0
+        expectedFixed["investmentSymbol"] = operation.investmentSymbol as Any? ?? NSNull()
+    }
+    if operation.kind == "investment_buy" || operation.kind == "investment_sell" {
+        expectedFixed["numberOfShares"] = nativeDouble(try decimalValue(operation.quantity!, field: "W08 quantity"))
+        expectedFixed["pricePerShare"] = nativeDouble(try decimalValue(operation.unitPrice!, field: "W08 price"))
+        expectedFixed["fee"] = nativeDouble(try decimalValue(operation.fee!, field: "W08 fee"))
+        expectedFixed["symbol"] = operation.holdingSymbol!
+    }
     guard transaction.entity.name == operation.transactionEntity else { throw HostError.message("W01 source identity collision") }
     for (key, attribute) in transaction.entity.attributesByName {
-        let expected = fixed[key] ?? attribute.defaultValue ?? NSNull()
+        let expected = expectedFixed[key] ?? attribute.defaultValue ?? NSNull()
         let actual = transaction.value(forKey: key) ?? NSNull()
         if attribute.attributeType == .doubleAttributeType, let number = expected as? NSNumber {
             guard try nativeDecimal(transaction, key) == Decimal(string: String(number.doubleValue)) else {
@@ -3701,7 +3872,8 @@ func verifyCreatedTransaction(_ transaction: NSManagedObject, operation: WriterO
             throw HostError.message("W01 persisted attribute differs: \(key)")
         }
     }
-    let scalarRefs: [String: NSManagedObject?] = ["account": references.account, "payee": references.payee]
+    let scalarRefs: [String: NSManagedObject?] = ["account": references.account, "payee": references.payee,
+        "investmentHolding": references.holding]
     for (key, relationship) in transaction.entity.relationshipsByName {
         if let expected = scalarRefs[key] {
             guard (transaction.value(forKey: key) as? NSManagedObject)?.objectID == expected?.objectID else {
@@ -3774,6 +3946,7 @@ func creationPreimages(_ refs: CreationReferences, context: NSManagedObjectConte
         for object in try context.fetch(NSFetchRequest<NSManagedObject>(entityName: name)) {
             var allowed: Set<String> = []
             if object.objectID == refs.account.objectID { allowed = ["attribute:ballance", "relationship:transactionsHistory"] }
+            if object.objectID == refs.holding?.objectID { allowed.insert("relationship:investmentTransactions") }
             if object.objectID == refs.payee?.objectID || refs.tags.contains(object) { allowed.insert("relationship:transactions") }
             if refs.categories.contains(object) { allowed.insert("relationship:categoryAssigments") }
             if object.objectID == refs.original?.objectID { allowed.insert("relationship:refundTransactionsLinks") }
@@ -3852,6 +4025,193 @@ func createTransactionV2(_ operation: WriterOperationV2, plan: WriterPlanV2,
     readback.performAndWait {
         result = Result {
             let receipt = try inspectCreation(operation, plan: plan, context: readback, saved: true)
+            try verifyCreationPreimages(preimages, context: readback)
+            return receipt
+        }
+    }
+    return try result.get()
+}
+
+func investmentDetails(_ operation: WriterOperationV2) -> InvestmentDetails {
+    InvestmentDetails(accountMode: operation.accountMode!, cashEventType: operation.cashEventType,
+        investmentSymbol: operation.investmentSymbol,
+        holdingGID: operation.holdingGID, holdingSymbol: operation.holdingSymbol,
+        assetType: operation.assetType, quantity: operation.quantity!, unitPrice: operation.unitPrice!,
+        fee: operation.fee!, feeCurrency: operation.feeCurrency!,
+        expectedPriorCash: operation.expectedPriorCash!, expectedFinalCash: operation.expectedFinalCash!,
+        expectedPriorUnits: operation.expectedPriorUnits, expectedFinalUnits: operation.expectedFinalUnits)
+}
+
+func investmentLedger(_ account: NSManagedObject) throws -> Decimal {
+    var total = try nativeDecimal(account, "openingBalance")
+    for row in try relatedObjects(account, "transactionsHistory") {
+        guard (row.value(forKey: "voidCheque") as? NSNumber)?.intValue == 0 else {
+            throw HostError.message("W08 account ledger contains a void row")
+        }
+        total += try nativeDecimal(row, "amount")
+    }
+    return total
+}
+
+func investmentUnits(_ holding: NSManagedObject, account: NSManagedObject) throws -> Decimal {
+    var total = try nativeDecimal(holding, "openningNumberOfShares")
+    for row in try relatedObjects(holding, "investmentTransactions") {
+        guard (row.value(forKey: "account") as? NSManagedObject)?.objectID == account.objectID,
+              (row.value(forKey: "voidCheque") as? NSNumber)?.intValue == 0,
+              let entity = row.entity.name,
+              ["InvestmentBuyTransaction", "InvestmentSellTransaction"].contains(entity) else {
+            throw HostError.message("W08 holding history contains unsupported transaction")
+        }
+        let quantity = try nativeDecimal(row, "numberOfShares")
+        guard quantity > 0 else { throw HostError.message("W08 holding history has nonpositive units") }
+        total += entity == "InvestmentBuyTransaction" ? quantity : -quantity
+    }
+    guard total >= 0 else { throw HostError.message("W08 holding has negative derived units") }
+    return total
+}
+
+func preflightInvestment(_ operation: WriterOperationV2, plan: WriterPlanV2,
+                         context: NSManagedObjectContext, alreadyPresent: Bool) throws -> CreationReferences {
+    guard let coordinator = context.persistentStoreCoordinator else { throw HostError.message("W08 missing coordinator") }
+    try requireCreationFixture(coordinator)
+    let account = try fetchExactObject(entityName: "InvestmentAccount", gid: plan.expectedAccountGID,
+                                       context: context)
+    guard let owner = account.value(forKey: "user") as? NSManagedObject,
+          owner.objectID.uriRepresentation().absoluteString == plan.ownerURI,
+          account.value(forKey: "currencyName") as? String == plan.currencyUnit,
+          (account.value(forKey: "archived") as? NSNumber)?.boolValue == false,
+          account.value(forKey: "onlineBankAccount") == nil,
+          try nativeDecimal(account, "ballance") == 0 else {
+        throw HostError.message("W08 requires an active same-owner InvestmentAccount with untouched cache")
+    }
+    let holdings = try relatedObjects(account, "investmentHoldings")
+    if operation.accountMode == "aggregate" && !holdings.isEmpty {
+        throw HostError.message("W08 aggregate account unexpectedly has holdings")
+    }
+    if operation.accountMode == "units" && holdings.isEmpty {
+        throw HostError.message("W08 units account has no holdings")
+    }
+    let amount = try decimalValue(operation.amount!, field: "W08 amount")
+    let prior = try decimalValue(operation.expectedPriorCash!, field: "W08 prior ledger")
+    let final = try decimalValue(operation.expectedFinalCash!, field: "W08 final ledger")
+    guard try investmentLedger(account) == (alreadyPresent ? final : prior) else {
+        throw HostError.message("W08 investment ledger is stale")
+    }
+    func owned(_ entity: String, _ gid: String) throws -> NSManagedObject {
+        let object = try fetchExactObject(entityName: entity, gid: gid, context: context)
+        guard (object.value(forKey: "user") as? NSManagedObject)?.objectID == owner.objectID else {
+            throw HostError.message("W08 \(entity) owner mismatch")
+        }
+        return object
+    }
+    let payee = try operation.payeeGID.map { try owned("Payee", $0) }
+    let tags = try (operation.tagGIDs ?? []).map { try owned("Tag", $0) }
+    let categories = try (operation.categorySplits ?? []).map { split -> NSManagedObject in
+        let category = try owned("Category", split.categoryGID)
+        let expectedType = operation.kind == "investment_income" ? 2 : 1
+        guard (category.value(forKey: "type") as? NSNumber)?.intValue == expectedType else {
+            throw HostError.message("W08 cash category type differs from transaction")
+        }
+        return category
+    }
+    var holding: NSManagedObject?
+    if let gid = operation.holdingGID {
+        let selected = try fetchExactObject(entityName: "InvestmentHolding", gid: gid, context: context)
+        guard holdings.contains(selected),
+              (selected.value(forKey: "investmentAccount") as? NSManagedObject)?.objectID == account.objectID,
+              selected.value(forKey: "symbol") as? String == operation.holdingSymbol,
+              (selected.value(forKey: "investmentObjectType") as? NSNumber)?.intValue == operation.assetType,
+              try investmentUnits(selected, account: account) == decimalValue(
+                alreadyPresent ? operation.expectedFinalUnits! : operation.expectedPriorUnits!, field: "W08 units") else {
+            throw HostError.message("W08 holding identity or derived units are stale")
+        }
+        holding = selected
+    }
+    return CreationReferences(account: account, payee: payee, categories: categories, tags: tags,
+        original: nil, amount: amount, balanceAfter: final, holding: holding)
+}
+
+func investmentReceipt(_ operation: WriterOperationV2, plan: WriterPlanV2,
+                       classification: String, objectID: NSManagedObjectID?) -> WriterResultV2 {
+    let success = classification == "applied" || classification == "noop"
+    var item = WriterOperationResultV2(operationID: operation.operationID,
+        status: success ? classification : "unknown", transactionEntity: operation.transactionEntity,
+        transactionGID: operation.transactionGID, durableURI: objectID?.uriRepresentation().absoluteString,
+        durableNumericID: objectID.map(durableNumericID), oldPayeeGID: nil, newPayeeGID: nil,
+        postcondition: success ? creationPostcondition(operation) : nil)
+    if success { item.investmentDetails = investmentDetails(operation) }
+    return WriterResultV2(contractVersion: 2, planID: plan.planID, planDigest: plan.planDigest,
+        classification: classification, verified: success, operations: [item])
+}
+
+func inspectInvestment(_ operation: WriterOperationV2, plan: WriterPlanV2,
+                       context: NSManagedObjectContext, saved: Bool = false) throws -> WriterResultV2 {
+    let existing = try creationObjects(entity: "SyncObject", gid: operation.transactionGID, context: context)
+    guard existing.count <= 1 else { throw HostError.message("W08 source identity is ambiguous") }
+    let refs = try preflightInvestment(operation, plan: plan, context: context, alreadyPresent: !existing.isEmpty)
+    guard let transaction = existing.first else {
+        guard !saved else { throw HostError.message("W08 persisted transaction is missing") }
+        return investmentReceipt(operation, plan: plan, classification: "retry_safe", objectID: nil)
+    }
+    try verifyCreatedTransaction(transaction, operation: operation, plan: plan, references: refs)
+    return investmentReceipt(operation, plan: plan, classification: saved ? "applied" : "noop",
+                             objectID: transaction.objectID)
+}
+
+func createInvestmentV2(_ operation: WriterOperationV2, plan: WriterPlanV2,
+                        context: NSManagedObjectContext,
+                        requireStopped: () throws -> Void) throws -> WriterResultV2 {
+    let prior = try inspectInvestment(operation, plan: plan, context: context)
+    if prior.classification == "noop" { return prior }
+    let refs = try preflightInvestment(operation, plan: plan, context: context, alreadyPresent: false)
+    let preimages = try creationPreimages(refs, context: context)
+    let row = NSEntityDescription.insertNewObject(forEntityName: operation.transactionEntity, into: context)
+    row.setValue(operation.transactionGID, forKey: "GID")
+    row.setValue(nativeDouble(refs.amount), forKey: "amount")
+    row.setValue(nativeDouble(refs.amount), forKey: "originalAmount")
+    row.setValue(plan.currencyUnit, forKey: "originalCurrency")
+    let trade = operation.kind == "investment_buy" || operation.kind == "investment_sell"
+    row.setValue(trade ? 0.0 : 1.0, forKey: "originalExchangeRate")
+    row.setValue(trade ? 0.0 : 1.0, forKey: "currencyExchangeRate")
+    row.setValue(2, forKey: "status")
+    row.setValue(0, forKey: "flags")
+    row.setValue(true, forKey: "reconciled")
+    row.setValue(operation.investmentSymbol, forKey: "investmentSymbol")
+    row.setValue(try planTimestamp(operation.occurredAt!), forKey: "date")
+    row.setValue(try planTimestamp(plan.createdAt), forKey: "objectCreationDate")
+    row.setValue(operation.note, forKey: "notes")
+    row.setValue(refs.account, forKey: "account")
+    row.setValue(refs.payee, forKey: "payee")
+    row.setValue(NSSet(array: refs.tags), forKey: "tags")
+    if let holding = refs.holding {
+        let fee = try decimalValue(operation.fee!, field: "W08 fee")
+        row.setValue(holding, forKey: "investmentHolding")
+        row.setValue(nativeDouble(try decimalValue(operation.quantity!, field: "W08 quantity")), forKey: "numberOfShares")
+        row.setValue(nativeDouble(try decimalValue(operation.unitPrice!, field: "W08 price")), forKey: "pricePerShare")
+        row.setValue(nativeDouble(fee), forKey: "fee")
+        row.setValue(operation.holdingSymbol, forKey: "symbol")
+    }
+    for (index, category) in refs.categories.enumerated() {
+        let assignment = NSEntityDescription.insertNewObject(forEntityName: "CategoryAssigment", into: context)
+        assignment.setValue(nativeDouble(refs.amount), forKey: "amount")
+        assignment.setValue(index, forKey: "assigmentNumber")
+        assignment.setValue(category, forKey: "category")
+        assignment.setValue(row, forKey: "transaction")
+    }
+    try requireStopped()
+#if MONEYWIZ_TOOLS_TESTING
+    if writerTestCrashPoint == .beforeSave { _exit(86) }
+#endif
+    try context.save()
+#if MONEYWIZ_TOOLS_TESTING
+    if writerTestCrashPoint == .afterSave { _exit(87) }
+#endif
+    let readback = NSManagedObjectContext(concurrencyType: .privateQueueConcurrencyType)
+    readback.persistentStoreCoordinator = context.persistentStoreCoordinator
+    var result: Result<WriterResultV2, Error> = .failure(HostError.message("W08 read-back did not run"))
+    readback.performAndWait {
+        result = Result {
+            let receipt = try inspectInvestment(operation, plan: plan, context: readback, saved: true)
             try verifyCreationPreimages(preimages, context: readback)
             return receipt
         }
@@ -4012,9 +4372,13 @@ func run() throws {
            plan.capability == "write.assign-payee-categories" ||
            plan.capability == "write.reconcile" || plan.capability == "write.unreconcile" ||
            plan.capability == "write.delete-adjust-balance-investment-total" ||
-           plan.capability == "write.replace-import-with-transfer" {
-            let fixtureName = plan.capability == "write.replace-import-with-transfer" ? "W07" :
+           plan.capability == "write.replace-import-with-transfer" ||
+           ["write.investment-income", "write.investment-expense", "write.investment-buy",
+            "write.investment-sell"].contains(plan.capability) {
+            let fixtureName = plan.capability.hasPrefix("write.investment-") ? "W08" :
+                (plan.capability == "write.replace-import-with-transfer" ? "W07" :
                 (plan.capability == "write.delete-adjust-balance-investment-total" ? "W06" : "W01")
+                )
             guard moneyWizApp.bundleIdentifier == "com.moneywiz.personalfinance",
                   installedVersion == "2026.37.1",
                   moneyWizApp.object(forInfoDictionaryKey: "CFBundleVersion") as? String == "449" else {

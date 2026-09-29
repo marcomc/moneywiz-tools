@@ -172,6 +172,26 @@ they do not establish nonzero-fee or live conversion acceptance.
 | P2-W07-05 | Local validation and review | Integrated suite, bundle privacy, lint and independent review | 691 passed; fresh bundle file/link scan clean; independent local review clean |
 | P2-W07-06 | Application and sync acceptance | MoneyWiz reopen/history and operation-specific sync evidence | Pending separate live-write authorization; capability blocked |
 
+## P3 preparation: W08 investment transactions
+
+Entry: W07 merged into `release/0.3.0` at `d5911bb`. W08 uses the installed
+model-48 InvestmentAccount and holding relationships. Read-only native records
+show ordinary investment cash events and linked Buy/Sell rows. Aggregate
+accounts must not acquire invented holdings or assetless Sell transactions.
+Model-48 holdings have no mutable current-units attribute; units and investment
+cash are derived from transaction history and must be checked independently.
+Only marked disposable stores are authorized for implementation validation.
+
+| ID | Deliverable | Acceptance | State |
+| --- | --- | --- | --- |
+| P3-W08-01 | Native reference and account modes | Record real Buy/Sell/cash field shapes, holding ownership, cash and quantity equations; identify unsupported variants | Read-only native records and disposable before/after evidence complete for the supported shapes |
+| P3-W08-02 | Investment cash-event plans | Explicit InvestmentAccount, income/expense kind, amount, currency, date, category and expected cash state; preserve aggregate versus units-based policy | Implemented; disposable validation passed |
+| P3-W08-03 | Buy/Sell plans | Bind existing holding, asset identity/type, positive quantity and price, commission/currency, account cash and holding units | Implemented for existing holdings; disposable validation passed |
+| P3-W08-04 | Native atomic persistence | One guarded save; exact derived cash and unit deltas, unchanged unrelated objects, fresh-context read-back | Implemented; disposable persistence and read-back passed |
+| P3-W08-05 | Recovery and refusal | Verified no-op replay, before/after-save recovery; reject stale, ambiguous, FX and unsupported zero-value shapes | Implemented; replay, crash and refusal checks passed |
+| P3-W08-06 | Bundle validation and independent review | Installed bundle, privacy scan, regressions, local READY and current-head GitHub review | Fresh bundle and direct admission passed; 709 integrated and 29 installed tests passed; independent local review clean; GitHub review pending |
+| P3-W08-07 | Application and sync acceptance | MoneyWiz reopen/history and operation-specific sync evidence before live promotion | Pending separate live-write authorization |
+
 ## Propositions
 
 - [ ] **Audit redundant read compatibility after integrating the new API pin.**

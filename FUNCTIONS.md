@@ -76,6 +76,8 @@ limited to marked disposable stores. See
 [Writer Recovery](doc/WRITER-RECOVERY.md) for journals.
 W07 transfer replacement is also limited to marked disposable stores; see
 [Transaction Transfer](doc/TRANSACTION-TRANSFER.md) for its paired-leg contract.
+W08 investment cash events and Buy/Sell transactions are limited to marked
+disposable stores; see [Investment Transactions](doc/TRANSACTION-INVESTMENT.md).
 
 | Command | Behavior |
 | --- | --- |
@@ -87,6 +89,7 @@ W07 transfer replacement is also limited to marked disposable stores; see
 | `transaction adjust-balance --request FILE --plan FILE` | Build a W05 GBP investment-total plan without opening a store |
 | `transaction delete-adjustment --request FILE --plan FILE` | Build a W06 plan for one exact latest GBP investment-total adjustment without opening a store |
 | `transaction transfer --request FILE --plan FILE` | Build a W07 plan to replace one or two imported rows with a zero-fee paired transfer without opening a store |
+| `transaction investment --request FILE --plan FILE` | Build one guarded W08 cash event or existing-holding Buy/Sell plan without opening a store |
 | `write validate --plan FILE` | Validate and display the exact plan and canonical digest |
 | `write apply --plan FILE` | Inspect without mutation |
 | `write apply --plan FILE --reviewed-digest SHA --apply` | Apply the reviewed coherent unit with durable recovery evidence |

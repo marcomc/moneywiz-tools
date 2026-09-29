@@ -13,6 +13,7 @@ compatibility is defined per write path.
 | Reassign a payee and create its destination | Verified | Bundled Core Data writer. |
 | Merge exact-normalized duplicate payees | Blocked | Requires independent Core Data acceptance evidence. |
 | Merge similar-name payees | Not implemented | Requires an approved map and a separate reviewed contract. |
+| W08 investment cash events and Buy/Sell | Blocked | Marked disposable stores only; application and sync acceptance are pending. |
 
 No backup requirement is imposed by the command. The operator remains
 responsible for deciding their own recovery posture before modifying
