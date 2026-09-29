@@ -34,6 +34,13 @@ RECONCILE_CAPABILITIES = {
 ADJUST_BALANCE_CAPABILITY = "write.adjust-balance-investment-total"
 DELETE_ADJUSTMENT_CAPABILITY = "write.delete-adjust-balance-investment-total"
 TRANSFER_CAPABILITY = "write.replace-import-with-transfer"
+INVESTMENT_POLICIES = {
+    "investment_income": ("write.investment-income", "DepositTransaction", 1),
+    "investment_expense": ("write.investment-expense", "WithdrawTransaction", -1),
+    "investment_buy": ("write.investment-buy", "InvestmentBuyTransaction", -1),
+    "investment_sell": ("write.investment-sell", "InvestmentSellTransaction", 1),
+}
+INVESTMENT_CAPABILITIES = frozenset(item[0] for item in INVESTMENT_POLICIES.values())
 EDIT_ENTITIES = frozenset(
     {"DepositTransaction", "WithdrawTransaction", "RefundTransaction"}
 )
@@ -288,6 +295,7 @@ class WritePlan(TypedDict):
         | AdjustBalanceOperation
         | DeleteAdjustmentOperation
         | TransferReplacementOperation
+        | dict[str, Any]
     ]
 
 
@@ -1109,6 +1117,116 @@ def _validate_transfer_operation(
     return operation["transaction_gid"]
 
 
+def _validate_investment_operation(
+    operation: Mapping[str, Any], prefix: str, plan: dict[str, Any]
+) -> str:
+    base = {
+        "operation_id", "kind", "capability", "transaction_entity",
+        "transaction_gid", "account_gid", "owner_uri", "source_event_id",
+        "amount", "currency_unit", "occurred_at", "timezone", "payee_gid",
+        "category_splits", "tag_gids", "note", "refund_reference",
+        "expected_balance_delta", "expected_postcondition",
+    }
+    extra = {
+        "account_mode", "cash_event_type", "investment_symbol", "holding_gid", "holding_symbol",
+        "asset_type", "quantity", "unit_price", "fee", "fee_currency",
+        "expected_prior_cash", "expected_final_cash", "expected_prior_units",
+        "expected_final_units",
+    }
+    if set(operation) != base | extra:
+        raise PlanValidationError(f"{prefix} has unknown or missing W08 fields")
+    kind = operation.get("kind")
+    if kind not in INVESTMENT_POLICIES:
+        raise PlanValidationError(f"{prefix}.kind is not an investment operation")
+    capability, entity, sign = INVESTMENT_POLICIES[kind]
+    if (
+        operation["capability"] != capability
+        or plan["capability"] != capability
+        or operation["transaction_entity"] != entity
+        or operation["account_gid"] != plan["expected_account_gid"]
+        or operation["owner_uri"] != plan["owner_uri"]
+        or operation["source_event_id"] != plan["source_event_id"]
+        or operation["currency_unit"] != plan["currency_unit"]
+        or operation["timezone"] != plan["timezone"]
+        or operation["transaction_gid"] != deterministic_transaction_gid(
+            store_uuid=plan["store_identity"]["store_uuid"],
+            owner_uri=plan["owner_uri"], source_event_id=plan["source_event_id"]
+        )
+    ):
+        raise PlanValidationError("W08 operation identity differs from its envelope")
+    if operation["account_mode"] not in {"aggregate", "units"}:
+        raise PlanValidationError("W08 account_mode must be aggregate or units")
+    if kind in {"investment_buy", "investment_sell"} and operation["account_mode"] != "units":
+        raise PlanValidationError("W08 Buy/Sell requires a units-based account")
+    for field in ("amount", "expected_balance_delta", "quantity", "unit_price", "fee",
+                  "expected_prior_cash", "expected_final_cash"):
+        _canonical_decimal(operation[field], f"{prefix}.{field}")
+    amount = Decimal(operation["amount"])
+    quantity = Decimal(operation["quantity"])
+    price = Decimal(operation["unit_price"])
+    fee = Decimal(operation["fee"])
+    before_cash = Decimal(operation["expected_prior_cash"])
+    after_cash = Decimal(operation["expected_final_cash"])
+    if (
+        amount == 0 or (amount > 0) != (sign > 0)
+        or operation["expected_balance_delta"] != operation["amount"]
+        or after_cash != before_cash + amount
+        or fee < 0
+        or any(Decimal(operation[field]).as_tuple().exponent < -2 for field in
+               ("amount", "fee", "expected_prior_cash", "expected_final_cash"))
+        or operation["fee_currency"] != plan["currency_unit"]
+        or plan["expected_cached_account_balance"] != "0"
+    ):
+        raise PlanValidationError("W08 amount, fee or derived cash disagrees")
+    _currency(operation["fee_currency"], f"{prefix}.fee_currency")
+    _currency(plan["currency_unit"], "currency_unit")
+    _whole_timestamp(operation["occurred_at"], f"{prefix}.occurred_at")
+    _validate_timezone_offset(operation["occurred_at"], plan["timezone"], f"{prefix}.occurred_at")
+    _optional_text(operation["payee_gid"], f"{prefix}.payee_gid")
+    _optional_text(operation["note"], f"{prefix}.note")
+    if operation["refund_reference"] is not None:
+        raise PlanValidationError("W08 does not create refund links")
+    if not isinstance(operation["tag_gids"], list) or operation["tag_gids"] != sorted(set(operation["tag_gids"])):
+        raise PlanValidationError("W08 tags must be sorted and unique")
+    for tag in operation["tag_gids"]:
+        _text(tag, f"{prefix}.tag_gids[]")
+    splits = _validate_category_splits(
+        operation["category_splits"], prefix=f"{prefix}.category_splits",
+        transaction_amount=amount,
+    )
+    if kind in {"investment_income", "investment_expense"}:
+        allowed = ({"dividend", "interest", "sale_proceeds", "other_income"}
+                   if sign > 0 else {"fee", "other_expense"})
+        if operation["cash_event_type"] not in allowed or len(splits) != 1:
+            raise PlanValidationError("W08 cash event requires its type and one category")
+        if any(operation[field] is not None for field in
+               ("holding_gid", "holding_symbol", "asset_type", "expected_prior_units", "expected_final_units")):
+            raise PlanValidationError("W08 cash event must not fabricate a holding")
+        _optional_text(operation["investment_symbol"], f"{prefix}.investment_symbol")
+        if quantity != 0 or price != 0 or fee != 0:
+            raise PlanValidationError("W08 cash event has no quantity, price or transaction fee")
+    else:
+        if operation["cash_event_type"] is not None or operation["investment_symbol"] is not None or splits:
+            raise PlanValidationError("W08 Buy/Sell has no cash-event category")
+        _text(operation["holding_gid"], f"{prefix}.holding_gid")
+        _text(operation["holding_symbol"], f"{prefix}.holding_symbol")
+        if type(operation["asset_type"]) is not int or operation["asset_type"] < 0:
+            raise PlanValidationError("W08 asset_type must be a native nonnegative integer")
+        for field in ("expected_prior_units", "expected_final_units"):
+            _canonical_decimal(operation[field], f"{prefix}.{field}")
+        prior_units = Decimal(operation["expected_prior_units"])
+        final_units = Decimal(operation["expected_final_units"])
+        if (
+            quantity <= 0 or price <= 0 or prior_units < 0 or final_units < 0
+            or final_units != prior_units + (quantity if sign < 0 else -quantity)
+            or amount != (-(quantity * price + fee) if sign < 0 else quantity * price - fee)
+        ):
+            raise PlanValidationError("W08 quantity, price, fee and units disagree")
+    if operation["expected_postcondition"] != _create_postcondition(operation):
+        raise PlanValidationError("W08 postcondition differs from requested creation")
+    return operation["transaction_gid"]
+
+
 def _validate_source_scope(scope: object, plan: dict[str, Any]) -> list[str]:
     required = {
         "scope", "read_status", "external_source_verified", "account_gid",
@@ -1200,6 +1318,7 @@ def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
     if capability not in {PAYEE_CAPABILITY, EDIT_CAPABILITY, ASSIGN_CAPABILITY,
                           ADJUST_BALANCE_CAPABILITY, DELETE_ADJUSTMENT_CAPABILITY,
                           TRANSFER_CAPABILITY,
+                          *INVESTMENT_CAPABILITIES,
                           *(policy[0] for policy in RECONCILE_CAPABILITIES.values()),
                           *CREATE_CAPABILITIES}:
         raise PlanValidationError("capability is not enabled")
@@ -1291,6 +1410,8 @@ def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
             transaction_gid = _validate_delete_adjustment_operation(operation, prefix, plan)
         elif kind == "replace_import_with_transfer":
             transaction_gid = _validate_transfer_operation(operation, prefix, plan)
+        elif kind in INVESTMENT_POLICIES:
+            transaction_gid = _validate_investment_operation(operation, prefix, plan)
         else:
             raise PlanValidationError(f"{prefix}.kind is not enabled")
         if transaction_gid in transaction_gids:
@@ -1298,11 +1419,12 @@ def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
         transaction_gids.add(transaction_gid)
         if w04 and transaction_gid not in scope_gids:
             raise PlanValidationError("W04 target is absent from complete account scope")
-    if (create_operations or adjust_operations or delete_operations or w07) and len(operations) != 1:
+    if (create_operations or adjust_operations or delete_operations or w07
+            or plan["capability"] in INVESTMENT_CAPABILITIES) and len(operations) != 1:
         raise PlanValidationError(
             "a creation or deletion source event must contain exactly one operation"
         )
-    if create_operations or adjust_operations:
+    if create_operations or adjust_operations or plan["capability"] in INVESTMENT_CAPABILITIES:
         _whole_timestamp(plan["created_at"], "created_at")
     if not create_operations and plan["capability"] not in {
         PAYEE_CAPABILITY,
@@ -1311,6 +1433,7 @@ def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
         ADJUST_BALANCE_CAPABILITY,
         DELETE_ADJUSTMENT_CAPABILITY,
         TRANSFER_CAPABILITY,
+        *INVESTMENT_CAPABILITIES,
         *(policy[0] for policy in RECONCILE_CAPABILITIES.values()),
     }:
         raise PlanValidationError("create capability requires a create operation")
@@ -1392,7 +1515,7 @@ def validate_result(plan: dict[str, Any], result: object) -> dict[str, Any]:
             receipt.get("durable_uri"),
         )
         creation_retry_safe = (
-            operation["kind"] in CREATE_OPERATION_POLICIES
+            operation["kind"] in CREATE_OPERATION_POLICIES | INVESTMENT_POLICIES
             and classification == "retry_safe"
         )
         transfer_without_pair = (
@@ -1477,6 +1600,18 @@ def validate_result(plan: dict[str, Any], result: object) -> dict[str, Any]:
                     raise PlanValidationError("W07 receipt pair differs from the reviewed transfer")
             elif details is not None:
                 raise PlanValidationError("unverified W07 receipt claims a paired identity")
+        if operation["kind"] in INVESTMENT_POLICIES:
+            fields = (
+                "account_mode", "cash_event_type", "investment_symbol", "holding_gid", "holding_symbol",
+                "asset_type", "quantity", "unit_price", "fee", "fee_currency",
+                "expected_prior_cash", "expected_final_cash", "expected_prior_units",
+                "expected_final_units",
+            )
+            details = receipt.get("investment_details")
+            if success and details != {field: operation[field] for field in fields}:
+                raise PlanValidationError("W08 receipt differs from derived cash or holding state")
+            if not success and details is not None:
+                raise PlanValidationError("unverified W08 receipt claims investment state")
         if operation["kind"] == "reassign_payee":
             if (
                 success

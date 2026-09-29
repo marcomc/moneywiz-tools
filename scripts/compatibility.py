@@ -268,6 +268,10 @@ DISPOSABLE_WRITE_CAPABILITIES = DISPOSABLE_CREATE_CAPABILITIES | {
     "write.unreconcile",
     "write.delete-adjust-balance-investment-total",
     "write.replace-import-with-transfer",
+    "write.investment-income",
+    "write.investment-expense",
+    "write.investment-buy",
+    "write.investment-sell",
 }
 DISPOSABLE_METADATA_KEY = "MoneyWizToolsDisposableFixture"
 DISPOSABLE_METADATA_VALUE = "W01-v1"

@@ -215,6 +215,7 @@ command table and exact examples.
 | Inspect complete reconciliation reads and runtime identity | [Reconciliation Reads](doc/RECONCILIATION-READS.md) |
 | Review disposable transaction reconciliation writes | [Transaction Reconciliation](doc/TRANSACTION-RECONCILIATION.md) |
 | Review disposable transfer replacement writes | [Transaction Transfer](doc/TRANSACTION-TRANSFER.md) |
+| Review disposable investment transactions | [Investment Transactions](doc/TRANSACTION-INVESTMENT.md) |
 | Install, relocate, or remove the app | [Bundle Installation](doc/BUNDLE-INSTALLATION.md) |
 | Understand the live writer | [Core Data Writer](doc/CORE-DATA-WRITER.md) |
 | Operate and revalidate live writes | [Live Write Compatibility](doc/LIVE-WRITE-COMPATIBILITY.md) |

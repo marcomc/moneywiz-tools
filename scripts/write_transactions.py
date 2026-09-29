@@ -21,6 +21,7 @@ from write_plan import (
     ASSIGN_CAPABILITY,
     CREATE_OPERATION_POLICIES,
     EDIT_CAPABILITY,
+    INVESTMENT_POLICIES,
     OPERATION_SCHEMA_VERSION,
     PlanValidationError,
     RECONCILE_CAPABILITIES,
@@ -477,6 +478,79 @@ def build_transfer_plan(request: Mapping[str, Any]) -> dict[str, Any]:
     return validate_plan(plan)
 
 
+def build_investment_plan(request: Mapping[str, Any]) -> dict[str, Any]:
+    """Plan one model-48 investment cash event or linked Buy/Sell."""
+    raw = _mapping(request, "request")
+    if set(raw) != _ENVELOPE_FIELDS | {"operation"}:
+        raise PlanValidationError("request has unknown or missing W08 fields")
+    operation = _mapping(raw.pop("operation"), "operation")
+    required = {
+        "operation_id", "kind", "account_gid", "amount", "occurred_at",
+        "payee_gid", "category_splits", "tag_gids", "note", "account_mode",
+        "cash_event_type", "holding_gid", "holding_symbol", "asset_type",
+        "investment_symbol",
+        "quantity", "unit_price", "fee", "fee_currency",
+        "expected_prior_cash", "expected_prior_units",
+    }
+    if set(operation) != required or operation.get("kind") not in INVESTMENT_POLICIES:
+        raise PlanValidationError("operation has unknown or missing W08 fields")
+    for field in ("amount", "quantity", "unit_price", "fee", "expected_prior_cash"):
+        operation[field] = normalize_decimal(operation[field], f"operation.{field}")
+    for field in ("expected_prior_units",):
+        if operation[field] is not None:
+            operation[field] = normalize_decimal(operation[field], f"operation.{field}")
+    splits = operation["category_splits"]
+    if isinstance(splits, list):
+        operation["category_splits"] = sorted(
+            [dict(split, amount=normalize_decimal(split["amount"], "category split"))
+             if isinstance(split, Mapping) and "amount" in split else split for split in splits],
+            key=lambda split: split.get("category_gid", "") if isinstance(split, Mapping) else "",
+        )
+    tags = operation["tag_gids"]
+    if isinstance(tags, list) and all(isinstance(tag, str) for tag in tags):
+        operation["tag_gids"] = sorted(tags)
+    capability, entity, sign = INVESTMENT_POLICIES[operation["kind"]]
+    amount = Decimal(operation["amount"])
+    quantity = Decimal(operation["quantity"])
+    prior_cash = Decimal(operation["expected_prior_cash"])
+    prior_units = operation["expected_prior_units"]
+    operation.update(
+        capability=capability,
+        transaction_entity=entity,
+        transaction_gid=deterministic_transaction_gid(
+            store_uuid=_mapping(raw["store_identity"], "store_identity").get("store_uuid"),
+            owner_uri=raw["owner_uri"], source_event_id=raw["source_event_id"],
+        ),
+        owner_uri=raw["owner_uri"],
+        source_event_id=raw["source_event_id"],
+        currency_unit=raw["currency_unit"],
+        timezone=raw["timezone"],
+        refund_reference=None,
+        expected_balance_delta=operation["amount"],
+        expected_final_cash=normalize_decimal(format(prior_cash + amount, "f"), "expected_final_cash"),
+        expected_final_units=(
+            normalize_decimal(format(Decimal(prior_units) + (quantity if sign < 0 else -quantity), "f"),
+                              "expected_final_units")
+            if prior_units is not None else None
+        ),
+    )
+    operation["expected_postcondition"] = {
+        field: deepcopy(operation[field]) for field in (
+            "transaction_entity", "transaction_gid", "account_gid", "owner_uri",
+            "amount", "currency_unit", "occurred_at", "timezone", "payee_gid",
+            "category_splits", "tag_gids", "note", "refund_reference", "expected_balance_delta",
+        )
+    }
+    plan = {
+        "contract_version": CONTRACT_VERSION,
+        "operation_schema_version": OPERATION_SCHEMA_VERSION,
+        **raw,
+        "capability": capability,
+        "operations": [operation],
+    }
+    return validate_plan(plan)
+
+
 def _load_request(path: Path) -> dict[str, Any]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -517,7 +591,7 @@ def make_parser() -> argparse.ArgumentParser:
         help=argparse.SUPPRESS,
     )
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ("create", "edit", "assign", "reconcile", "unreconcile", "adjust-balance", "delete-adjustment", "transfer"):
+    for name in ("create", "edit", "assign", "reconcile", "unreconcile", "adjust-balance", "delete-adjustment", "transfer", "investment"):
         command = commands.add_parser(name)
         command.add_argument("--request", type=Path, required=True)
         command.add_argument(
@@ -534,7 +608,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         builders = {"create": build_plan, "edit": build_edit_plan,
                     "assign": build_assign_plan, "adjust-balance": build_adjust_balance_plan,
                     "delete-adjustment": build_delete_adjustment_plan,
-                    "transfer": build_transfer_plan}
+                    "transfer": build_transfer_plan,
+                    "investment": build_investment_plan}
         request = _load_request(args.request)
         plan = (builders[args.command](request)
                 if args.command in builders else build_reconcile_plan(

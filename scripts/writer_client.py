@@ -20,6 +20,7 @@ from write_plan import (
     ASSIGN_CAPABILITY,
     CREATE_CAPABILITIES,
     EDIT_CAPABILITY,
+    INVESTMENT_CAPABILITIES,
     RECONCILE_CAPABILITIES,
     PlanValidationError,
     validate_plan,
@@ -282,6 +283,7 @@ class WriterClient:
             *CREATE_CAPABILITIES, EDIT_CAPABILITY, ASSIGN_CAPABILITY,
             DELETE_ADJUSTMENT_CAPABILITY,
             TRANSFER_CAPABILITY,
+            *INVESTMENT_CAPABILITIES,
             *(policy[0] for policy in RECONCILE_CAPABILITIES.values()),
         }:
             return
