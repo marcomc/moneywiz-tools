@@ -4427,6 +4427,14 @@ struct PayeeMergeResultV2: Encodable {
     }
 }
 
+func payeeMergeWhitespace(_ character: Character) -> Bool {
+    character.isWhitespace || "\u{001C}\u{001D}\u{001E}\u{001F}".contains(character)
+}
+
+func isBlankPayeeMergeName(_ name: String) -> Bool {
+    name.allSatisfy(payeeMergeWhitespace)
+}
+
 func validatePayeeMergePlanV2(_ plan: PayeeMergePlanV2, raw: [String: Any]) throws {
     let keys: Set<String> = [
         "contract_version", "operation_schema_version", "plan_id", "plan_digest",
@@ -4460,7 +4468,7 @@ func validatePayeeMergePlanV2(_ plan: PayeeMergePlanV2, raw: [String: Any]) thro
     for (name, payee) in [("source", plan.merge.source), ("survivor", plan.merge.survivor)] {
         guard let rawPayee = merge[name] as? [String: Any],
               Set(rawPayee.keys) == ["gid", "numeric_id", "name", "object_uri"],
-              !isBlank(payee.gid), !isBlank(payee.name),
+              !isBlank(payee.gid), !isBlankPayeeMergeName(payee.name),
               Int(payee.numericID).map({ $0 > 0 }) == true,
               payee.objectURI == "x-coredata://\(plan.storeIdentity.storeUUID)/Payee/p\(payee.numericID)" else {
             throw HostError.message("W09 payee identity is incomplete")
@@ -4471,10 +4479,10 @@ func validatePayeeMergePlanV2(_ plan: PayeeMergePlanV2, raw: [String: Any]) thro
         throw HostError.message("W09 requires distinct source and survivor")
     }
     let exact = plan.merge.source.name.precomposedStringWithCompatibilityMapping
-        .split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+        .split(whereSeparator: payeeMergeWhitespace).joined(separator: " ")
         .folding(options: .caseInsensitive, locale: Locale(identifier: "en_US_POSIX")) ==
         plan.merge.survivor.name.precomposedStringWithCompatibilityMapping
-        .split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+        .split(whereSeparator: payeeMergeWhitespace).joined(separator: " ")
         .folding(options: .caseInsensitive, locale: Locale(identifier: "en_US_POSIX"))
     guard (plan.capability == "write.merge-exact-payees") == exact,
           plan.merge.kind == (exact ? "merge_exact_payee" : "merge_approved_fuzzy_payee") else {
@@ -4683,7 +4691,7 @@ func payeeInventory(sourceGID: String, survivorGID: String,
             func identity(_ payee: NSManagedObject) throws -> PayeeInventoryIdentity {
                 guard let gid = payee.value(forKey: "GID") as? String,
                       let name = payee.value(forKey: "name") as? String,
-                      !isBlank(gid), !isBlank(name) else {
+                      !isBlank(gid), !isBlankPayeeMergeName(name) else {
                     throw HostError.message("W09 payee identity is incomplete")
                 }
                 return PayeeInventoryIdentity(

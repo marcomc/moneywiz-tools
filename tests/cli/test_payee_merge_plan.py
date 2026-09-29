@@ -100,6 +100,14 @@ def test_plan_rejects_whitespace_only_payee_name(role: str) -> None:
         validate_plan(changed)
 
 
+def test_exact_plan_normalizes_ascii_information_separator() -> None:
+    changed = deepcopy(plan())
+    changed.pop("plan_digest")
+    changed["merge"]["source"]["name"] = "A\u001cB"
+    changed["merge"]["survivor"]["name"] = "A B"
+    assert validate_plan(changed)["merge"]["source"]["name"] == "A\u001cB"
+
+
 @pytest.mark.parametrize("change", [
     lambda value: value["merge"]["source"].update(name="Other"),
     lambda value: value["merge"]["source"].update(object_uri="x-coredata://other/Payee/p2"),

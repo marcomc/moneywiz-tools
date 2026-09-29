@@ -64,7 +64,8 @@ def inspect(runtime: W01Runtime, db: Path, directory: Path) -> dict:
 
 
 @pytest.mark.parametrize("fuzzy,flag", [
-    (False, "--w09-exact"), (False, "--w09-untrimmed"), (True, "--w09-fuzzy"),
+    (False, "--w09-exact"), (False, "--w09-untrimmed"),
+    (False, "--w09-control-space"), (True, "--w09-fuzzy"),
 ])
 def test_w09_applies_replays_and_recovers_all_relationships(
     w01_runtime: W01Runtime, tmp_path: Path, fuzzy: bool, flag: str
@@ -107,6 +108,19 @@ def test_w09_refuses_unmarked_store_and_stale_inventory(
     stale = _invoke(w01_runtime, db, reviewed, fresh_dir)
     assert stale.returncode == 2
     assert "stale" in stale.stderr or "changed" in stale.stderr
+
+
+def test_w09_inventory_rejects_control_only_payee_name(
+    w01_runtime: W01Runtime, tmp_path: Path
+) -> None:
+    result = subprocess.run(
+        [str(w01_runtime.fixture_builder), "--store", str(tmp_path / "blank.sqlite"),
+         "--model", str(w01_runtime.model), "--w09-blank-control"],
+        cwd=tmp_path, env=w01_runtime.environment, capture_output=True, text=True,
+        check=False,
+    )
+    assert result.returncode != 0
+    assert "W09 payee identity is incomplete" in result.stderr
 
 
 @pytest.mark.parametrize("boundary,expected", [

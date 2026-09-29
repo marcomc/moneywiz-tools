@@ -285,7 +285,9 @@ func runFixtureWriter() throws {
                     "--w07-source", "--w07-paired", "--w07-reverse", "--w07-ambiguous",
                     "--w07-unmarked", "--w07-voided", "--w08-aggregate",
                     "--w08-units", "--w08-unmarked", "--w09-exact",
-                    "--w09-fuzzy", "--w09-untrimmed", "--w09-unmarked"].contains(args[4]) else {
+                    "--w09-fuzzy", "--w09-untrimmed", "--w09-control-space",
+                    "--w09-blank-control",
+                    "--w09-unmarked"].contains(args[4]) else {
                 throw HostError.message("usage")
             }
             let store = URL(fileURLWithPath: args[1]), modelURL = URL(fileURLWithPath: args[3])
@@ -299,7 +301,8 @@ func runFixtureWriter() throws {
             if args.count == 4 || ["--w06", "--w06-linked", "--w07-source",
                 "--w07-paired", "--w07-reverse", "--w07-ambiguous",
                 "--w07-voided", "--w08-aggregate", "--w08-units",
-                "--w09-exact", "--w09-fuzzy", "--w09-untrimmed"].contains(args[4]) {
+                "--w09-exact", "--w09-fuzzy", "--w09-untrimmed",
+                "--w09-control-space", "--w09-blank-control"].contains(args[4]) {
                 var storeMetadata = persistentStore.metadata ?? [:]
                 storeMetadata["MoneyWizToolsDisposableFixture"] = "W01-v1"
                 container.persistentStoreCoordinator.setMetadata(storeMetadata, for: persistentStore)
@@ -315,13 +318,15 @@ func runFixtureWriter() throws {
                 let source = try fixtureObject("Payee", c)
                 try fixtureSet(source, "GID", "w09-source")
                 let sourceName = args[4] == "--w09-fuzzy" ? "Merchant East" :
-                    (args[4] == "--w09-untrimmed" ? "MERCHANT " : "MERCHANT")
+                    (args[4] == "--w09-untrimmed" ? "MERCHANT " :
+                    (args[4] == "--w09-control-space" ? "A\u{001C}B" :
+                    (args[4] == "--w09-blank-control" ? "\u{001C}" : "MERCHANT")))
                 try fixtureSet(source, "name", sourceName)
                 try fixtureSet(source, "objectCreationDate", Date())
                 try fixtureSet(source, "user", user)
                 let survivor = try fixtureObject("Payee", c)
                 try fixtureSet(survivor, "GID", "w09-survivor")
-                try fixtureSet(survivor, "name", "Merchant")
+                try fixtureSet(survivor, "name", args[4] == "--w09-control-space" ? "A B" : "Merchant")
                 try fixtureSet(survivor, "objectCreationDate", Date())
                 try fixtureSet(survivor, "user", user)
                 let unrelated = try fixtureObject("Payee", c)
