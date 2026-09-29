@@ -31,6 +31,7 @@ RECONCILE_CAPABILITIES = {
     "reconcile_transaction": ("write.reconcile", False, True),
     "unreconcile_transaction": ("write.unreconcile", True, False),
 }
+ADJUST_BALANCE_CAPABILITY = "write.adjust-balance-investment-total"
 EDIT_ENTITIES = frozenset(
     {"DepositTransaction", "WithdrawTransaction", "RefundTransaction"}
 )
@@ -185,6 +186,27 @@ class ReconcileTransactionOperation(TypedDict):
     allowed_changed_fields: list[str]
 
 
+class AdjustBalanceOperation(TypedDict):
+    """One W05 aggregate investment balance adjustment."""
+
+    operation_id: str
+    kind: str
+    capability: str
+    transaction_entity: str
+    transaction_gid: str
+    account_gid: str
+    owner_uri: str
+    source_event_id: str
+    balance_unit: str
+    expected_prior_balance: str
+    target_balance: str
+    expected_balance_delta: str
+    currency_unit: str
+    occurred_at: str
+    timezone: str
+    expected_postcondition: dict[str, str]
+
+
 class WritePlan(TypedDict):
     """Version-two envelope, intentionally closed until W01-W04 are evidenced."""
 
@@ -213,6 +235,7 @@ class WritePlan(TypedDict):
         | EditTransactionOperation
         | AssignTransactionOperation
         | ReconcileTransactionOperation
+        | AdjustBalanceOperation
     ]
 
 
@@ -784,6 +807,63 @@ def _validate_reconcile_operation(
     return operation["transaction_gid"]
 
 
+def _validate_adjust_balance_operation(
+    operation: Mapping[str, Any], prefix: str, plan: dict[str, Any]
+) -> str:
+    fields = {
+        "transaction_entity", "transaction_gid", "account_gid", "owner_uri",
+        "balance_unit", "expected_prior_balance", "target_balance",
+        "expected_balance_delta", "currency_unit", "occurred_at", "timezone",
+    }
+    required = fields | {
+        "operation_id", "kind", "capability", "source_event_id",
+        "expected_postcondition",
+    }
+    if set(operation) != required:
+        raise PlanValidationError(f"{prefix} has unknown or missing W05 fields")
+    if (operation.get("kind") != "adjust_investment_total"
+            or operation.get("capability") != ADJUST_BALANCE_CAPABILITY
+            or plan["capability"] != ADJUST_BALANCE_CAPABILITY
+            or operation.get("transaction_entity") != "ReconcileTransaction"
+            or operation.get("balance_unit") != "investment_total"):
+        raise PlanValidationError(f"{prefix} is not the observed W05 variant")
+    for field, envelope in (
+        ("account_gid", "expected_account_gid"),
+        ("owner_uri", "owner_uri"),
+        ("source_event_id", "source_event_id"),
+        ("currency_unit", "currency_unit"),
+        ("timezone", "timezone"),
+    ):
+        if operation.get(field) != plan[envelope]:
+            raise PlanValidationError(f"{prefix}.{field} must match the envelope")
+    if operation.get("transaction_gid") != deterministic_transaction_gid(
+        store_uuid=plan["store_identity"]["store_uuid"],
+        owner_uri=plan["owner_uri"],
+        source_event_id=plan["source_event_id"],
+    ):
+        raise PlanValidationError(f"{prefix}.transaction_gid is not deterministic")
+    prior = _canonical_decimal(operation.get("expected_prior_balance"), f"{prefix}.expected_prior_balance")
+    target = _canonical_decimal(operation.get("target_balance"), f"{prefix}.target_balance")
+    delta = _canonical_decimal(operation.get("expected_balance_delta"), f"{prefix}.expected_balance_delta")
+    if Decimal(target) - Decimal(prior) != Decimal(delta):
+        raise PlanValidationError(f"{prefix}.expected_balance_delta differs from target minus prior")
+    if plan["currency_unit"] != "GBP" or any(
+        Decimal(value).as_tuple().exponent < -2 for value in (prior, target, delta)
+    ):
+        raise PlanValidationError("W05 is limited to GBP pence in the observed account shape")
+    occurred_at = _whole_timestamp(operation.get("occurred_at"), f"{prefix}.occurred_at")
+    _validate_timezone_offset(occurred_at, plan["timezone"], f"{prefix}.occurred_at")
+    if plan["expected_cached_account_balance"] != "0":
+        raise PlanValidationError("W05 requires the observed zero investment cash cache")
+    if operation["account_gid"] != plan["expected_account_gid"]:
+        raise PlanValidationError(f"{prefix}.account_gid must match the envelope")
+    postcondition = operation.get("expected_postcondition")
+    expected = {field: operation[field] for field in fields}
+    if not isinstance(postcondition, Mapping) or dict(postcondition) != expected:
+        raise PlanValidationError(f"{prefix}.expected_postcondition differs from reviewed fields")
+    return operation["transaction_gid"]
+
+
 def _validate_source_scope(scope: object, plan: dict[str, Any]) -> list[str]:
     required = {
         "scope", "read_status", "external_source_verified", "account_gid",
@@ -870,6 +950,7 @@ def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
         raise PlanValidationError("timezone must be an IANA timezone") from exc
     capability = plan.get("capability")
     if capability not in {PAYEE_CAPABILITY, EDIT_CAPABILITY, ASSIGN_CAPABILITY,
+                          ADJUST_BALANCE_CAPABILITY,
                           *(policy[0] for policy in RECONCILE_CAPABILITIES.values()),
                           *CREATE_CAPABILITIES}:
         raise PlanValidationError("capability is not enabled")
@@ -912,6 +993,7 @@ def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
     operation_ids: set[str] = set()
     transaction_gids: set[str] = set()
     create_operations = 0
+    adjust_operations = 0
     for index, operation in enumerate(operations):
         prefix = f"operations[{index}]"
         if not isinstance(operation, Mapping):
@@ -936,6 +1018,9 @@ def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
         elif kind in CREATE_OPERATION_POLICIES:
             create_operations += 1
             transaction_gid = _validate_create_operation(operation, prefix, plan)
+        elif kind == "adjust_investment_total":
+            adjust_operations += 1
+            transaction_gid = _validate_adjust_balance_operation(operation, prefix, plan)
         else:
             raise PlanValidationError(f"{prefix}.kind is not enabled")
         if transaction_gid in transaction_gids:
@@ -943,16 +1028,17 @@ def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
         transaction_gids.add(transaction_gid)
         if w04 and transaction_gid not in scope_gids:
             raise PlanValidationError("W04 target is absent from complete account scope")
-    if create_operations and len(operations) != 1:
+    if (create_operations or adjust_operations) and len(operations) != 1:
         raise PlanValidationError(
-            "a W01 source event must create exactly one transaction"
+            "a creation source event must contain exactly one operation"
         )
-    if create_operations:
+    if create_operations or adjust_operations:
         _whole_timestamp(plan["created_at"], "created_at")
     if not create_operations and plan["capability"] not in {
         PAYEE_CAPABILITY,
         EDIT_CAPABILITY,
         ASSIGN_CAPABILITY,
+        ADJUST_BALANCE_CAPABILITY,
         *(policy[0] for policy in RECONCILE_CAPABILITIES.values()),
     }:
         raise PlanValidationError("create capability requires a create operation")
@@ -1037,12 +1123,27 @@ def validate_result(plan: dict[str, Any], result: object) -> dict[str, Any]:
             operation["kind"] in CREATE_OPERATION_POLICIES
             and classification == "retry_safe"
         )
+        adjust_without_row = (
+            operation["kind"] == "adjust_investment_total"
+            and classification in {"noop", "retry_safe", "unknown"}
+            and numeric_id is None and uri is None
+        )
+        if (
+            operation["kind"] == "adjust_investment_total"
+            and classification == "retry_safe"
+            and not adjust_without_row
+        ):
+            raise PlanValidationError("W05 retry-safe receipt must not claim a durable row")
+        if adjust_without_row and classification == "noop" and (
+            operation["expected_prior_balance"] != operation["target_balance"]
+        ):
+            raise PlanValidationError("W05 no-row noop requires an already matching target")
         if creation_retry_safe:
             if numeric_id is not None or uri is not None:
                 raise PlanValidationError(
                     "retry-safe creation receipt must not claim a durable identity"
                 )
-        elif (
+        elif not adjust_without_row and (
             not isinstance(numeric_id, str)
             or not numeric_id.isascii()
             or not numeric_id.isdigit()
@@ -1051,7 +1152,7 @@ def validate_result(plan: dict[str, Any], result: object) -> dict[str, Any]:
             raise PlanValidationError(
                 "native operation receipt has no durable numeric identity"
             )
-        if not creation_retry_safe:
+        if not creation_retry_safe and not adjust_without_row:
             if (
                 not isinstance(uri, str)
                 or not uri.startswith(

@@ -611,6 +611,9 @@ struct WriterOperationV2: Decodable {
     let expectedNativeStatus: Int?
     let expectedNativeFlags: Int?
     let correctionReason: String?
+    let balanceUnit: String?
+    let expectedPriorBalance: String?
+    let targetBalance: String?
 
     enum CodingKeys: String, CodingKey {
         case operationID = "operation_id"
@@ -646,6 +649,9 @@ struct WriterOperationV2: Decodable {
         case expectedNativeStatus = "expected_native_status"
         case expectedNativeFlags = "expected_native_flags"
         case correctionReason = "correction_reason"
+        case balanceUnit = "balance_unit"
+        case expectedPriorBalance = "expected_prior_balance"
+        case targetBalance = "target_balance"
     }
 }
 
@@ -712,6 +718,27 @@ struct ReconcilePostcondition: Encodable {
     }
 }
 
+struct AdjustBalancePostcondition: Encodable {
+    let transactionEntity: String
+    let transactionGID: String
+    let accountGID: String
+    let ownerURI: String
+    let balanceUnit: String
+    let expectedPriorBalance: String
+    let targetBalance: String
+    let expectedBalanceDelta: String
+    let currencyUnit: String
+    let occurredAt: String
+    let timezone: String
+    enum CodingKeys: String, CodingKey {
+        case transactionEntity = "transaction_entity", transactionGID = "transaction_gid"
+        case accountGID = "account_gid", ownerURI = "owner_uri", balanceUnit = "balance_unit"
+        case expectedPriorBalance = "expected_prior_balance", targetBalance = "target_balance"
+        case expectedBalanceDelta = "expected_balance_delta", currencyUnit = "currency_unit"
+        case occurredAt = "occurred_at", timezone
+    }
+}
+
 struct RefundReference: Codable, Equatable {
     let originalTransactionEntity: String
     let originalTransactionGID: String
@@ -741,6 +768,7 @@ struct WriterOperationResultV2: Encodable {
     var editPostcondition: EditPostcondition? = nil
     var assignmentPostcondition: AssignmentPostcondition? = nil
     var reconcilePostcondition: ReconcilePostcondition? = nil
+    var adjustBalancePostcondition: AdjustBalancePostcondition? = nil
 
     enum CodingKeys: String, CodingKey {
         case operationID = "operation_id"
@@ -764,7 +792,8 @@ struct WriterOperationResultV2: Encodable {
         try container.encode(durableNumericID, forKey: .durableNumericID)
         try container.encode(oldPayeeGID, forKey: .oldPayeeGID)
         try container.encode(newPayeeGID, forKey: .newPayeeGID)
-        if let reconcilePostcondition { try container.encode(reconcilePostcondition, forKey: .postcondition) }
+        if let adjustBalancePostcondition { try container.encode(adjustBalancePostcondition, forKey: .postcondition) }
+        else if let reconcilePostcondition { try container.encode(reconcilePostcondition, forKey: .postcondition) }
         else if let assignmentPostcondition { try container.encode(assignmentPostcondition, forKey: .postcondition) }
         else if let editPostcondition { try container.encode(editPostcondition, forKey: .postcondition) }
         else { try container.encodeIfPresent(postcondition, forKey: .postcondition) }
@@ -889,6 +918,10 @@ func validateWriterPlanV2(_ plan: WriterPlanV2, rawPlan: [String: Any]) throws {
             try validateReconcileOperationShape(rawOperation, plan: plan)
             continue
         }
+        if kind == "adjust_investment_total" {
+            try validateAdjustBalanceShape(rawOperation, plan: plan)
+            continue
+        }
         if kind == "create_income" || kind == "create_expense" || kind == "create_refund" {
             try validateCreationOperationShape(rawOperation, plan: plan)
             continue
@@ -903,7 +936,7 @@ func validateWriterPlanV2(_ plan: WriterPlanV2, rawPlan: [String: Any]) throws {
           plan.operationSchemaVersion == 1,
           plan.profileID == policy.profileID,
           plan.modelChecksum == policy.modelChecksum,
-          (plan.capability == policy.capability || ["write.create-income", "write.create-expense", "write.create-refund", "write.edit-transaction", "write.assign-payee-categories", "write.reconcile", "write.unreconcile"].contains(plan.capability)),
+          (plan.capability == policy.capability || ["write.create-income", "write.create-expense", "write.create-refund", "write.edit-transaction", "write.assign-payee-categories", "write.reconcile", "write.unreconcile", "write.adjust-balance-investment-total"].contains(plan.capability)),
           moneyWizBundleIdentifiers.contains(plan.appIdentity.bundleID),
           !isBlank(plan.appIdentity.version),
           !isBlank(plan.appIdentity.path),
@@ -954,6 +987,10 @@ func validateWriterPlanV2(_ plan: WriterPlanV2, rawPlan: [String: Any]) throws {
         $0.kind == (plan.capability == "write.reconcile" ? "reconcile_transaction" : "unreconcile_transaction") }) {
         throw HostError.message("W04 plans must contain homogeneous flag transitions")
     }
+    if plan.capability == "write.adjust-balance-investment-total" &&
+       (plan.operations.count != 1 || plan.operations[0].kind != "adjust_investment_total") {
+        throw HostError.message("W05 requires exactly one investment-total operation")
+    }
     for operation in plan.operations {
         if operation.kind == "edit_transaction" || operation.kind == "assign_payee_categories" ||
            operation.kind == "reconcile_transaction" || operation.kind == "unreconcile_transaction" {
@@ -963,7 +1000,7 @@ func validateWriterPlanV2(_ plan: WriterPlanV2, rawPlan: [String: Any]) throws {
             }
             continue
         }
-        if ["create_income", "create_expense", "create_refund"].contains(operation.kind) {
+        if ["create_income", "create_expense", "create_refund", "adjust_investment_total"].contains(operation.kind) {
             guard operation.capability == plan.capability,
                   operation.accountGID == plan.expectedAccountGID,
                   operation.currencyUnit == plan.currencyUnit,
@@ -1017,6 +1054,57 @@ func deterministicCreationGID(plan: WriterPlanV2) -> String {
     let bytes = Array(SHA256.hash(data: data).prefix(16))
     let hex = bytes.map { String(format: "%02X", $0) }.joined()
     return "\(hex.prefix(8))-\(hex.dropFirst(8).prefix(4))-\(hex.dropFirst(12).prefix(4))-\(hex.dropFirst(16).prefix(4))-\(hex.dropFirst(20).prefix(12))"
+}
+
+func validateAdjustBalanceShape(_ raw: [String: Any], plan: WriterPlanV2) throws {
+    let fields: Set<String> = ["transaction_entity", "transaction_gid", "account_gid", "owner_uri",
+        "balance_unit", "expected_prior_balance", "target_balance", "expected_balance_delta",
+        "currency_unit", "occurred_at", "timezone"]
+    let required = fields.union(["operation_id", "kind", "capability", "source_event_id", "expected_postcondition"])
+    guard Set(raw.keys) == required,
+          let post = raw["expected_postcondition"] as? [String: String],
+          Set(post.keys) == fields,
+          fields.allSatisfy({ post[$0] == raw[$0] as? String }),
+          raw["kind"] as? String == "adjust_investment_total",
+          raw["capability"] as? String == "write.adjust-balance-investment-total",
+          plan.capability == "write.adjust-balance-investment-total",
+          raw["transaction_entity"] as? String == "ReconcileTransaction",
+          raw["transaction_gid"] as? String == deterministicCreationGID(plan: plan),
+          raw["account_gid"] as? String == plan.expectedAccountGID,
+          raw["owner_uri"] as? String == plan.ownerURI,
+          raw["source_event_id"] as? String == plan.sourceEventID,
+          raw["balance_unit"] as? String == "investment_total",
+          raw["currency_unit"] as? String == plan.currencyUnit,
+          raw["timezone"] as? String == plan.timezone,
+          plan.expectedCachedAccountBalance == "0",
+          plan.currencyUnit == "GBP",
+          let prior = raw["expected_prior_balance"] as? String,
+          let target = raw["target_balance"] as? String,
+          let delta = raw["expected_balance_delta"] as? String,
+          let occurred = raw["occurred_at"] as? String,
+          let operationID = raw["operation_id"] as? String,
+          !isBlank(operationID),
+          !occurred.contains("."), !plan.createdAt.contains(".") else {
+        throw HostError.message("W05 operation shape or envelope is invalid")
+    }
+    let amounts = try [prior, target, delta].map { try decimalValue($0, field: "W05 amount") }
+    guard amounts.allSatisfy({ value in
+        var source = value
+        var rounded = Decimal()
+        NSDecimalRound(&rounded, &source, 2, .plain)
+        return rounded == value
+    }), amounts[1] - amounts[0] == amounts[2] else {
+        throw HostError.message("W05 target minus prior differs from delta")
+    }
+    let instant = try planTimestamp(occurred)
+    let offset = occurred.hasSuffix("Z") ? 0 : {
+        let suffix = occurred.suffix(6)
+        let seconds = (Int(suffix.dropFirst().prefix(2))! * 60 + Int(suffix.suffix(2))!) * 60
+        return seconds * (suffix.first == "-" ? -1 : 1)
+    }()
+    guard TimeZone(identifier: plan.timezone)?.secondsFromGMT(for: instant) == offset else {
+        throw HostError.message("W05 date offset differs from the reviewed timezone")
+    }
 }
 
 func validateCreationOperationShape(_ raw: [String: Any], plan: WriterPlanV2) throws {
@@ -2014,6 +2102,196 @@ func validateAccountGuards(_ account: NSManagedObject, plan: WriterPlanV2) throw
     }
 }
 
+struct AdjustBalanceInspection {
+    let receipt: WriterResultV2
+    let account: NSManagedObject
+    let openingBalance: Decimal
+}
+
+func adjustBalancePostcondition(_ operation: WriterOperationV2) -> AdjustBalancePostcondition {
+    AdjustBalancePostcondition(transactionEntity: operation.transactionEntity,
+        transactionGID: operation.transactionGID, accountGID: operation.accountGID!,
+        ownerURI: operation.ownerURI, balanceUnit: operation.balanceUnit!,
+        expectedPriorBalance: operation.expectedPriorBalance!, targetBalance: operation.targetBalance!,
+        expectedBalanceDelta: operation.expectedBalanceDelta!, currencyUnit: operation.currencyUnit!,
+        occurredAt: operation.occurredAt!, timezone: operation.timezone!)
+}
+
+func inspectAdjustBalance(_ plan: WriterPlanV2, context: NSManagedObjectContext,
+                          saved: Bool = false) throws -> AdjustBalanceInspection {
+    let operation = plan.operations[0]
+    let account = try fetchExactObject(entityName: "InvestmentAccount", gid: plan.expectedAccountGID,
+                                       context: context)
+    guard let owner = account.value(forKey: "user") as? NSManagedObject,
+          owner.objectID.uriRepresentation().absoluteString == plan.ownerURI,
+          account.value(forKey: "currencyName") as? String == plan.currencyUnit,
+          (account.value(forKey: "archived") as? NSNumber)?.boolValue == false,
+          account.value(forKey: "onlineBankAccount") == nil,
+          try relatedObjects(account, "investmentHoldings").isEmpty,
+          try relatedObjects(account, "investmentTotalValueHistory").isEmpty,
+          try nativeDecimal(account, "ballance") == 0 else {
+        throw HostError.message("W05 account identity or aggregate investment shape differs")
+    }
+    let opening = try nativeDecimal(account, "openingBalance")
+    let transactions = try relatedObjects(account, "transactionsHistory")
+    var sum: Decimal = 0
+    var latest = Date.distantPast
+    let ordered = transactions.sorted {
+        ($0.value(forKey: "date") as? Date ?? .distantPast) <
+            ($1.value(forKey: "date") as? Date ?? .distantPast)
+    }
+    for transaction in ordered {
+        // Older native rows may be reconciled and retain FX metadata.
+        guard transaction.entity.name == "ReconcileTransaction",
+              (transaction.value(forKey: "account") as? NSManagedObject)?.objectID == account.objectID,
+              transaction.value(forKey: "investmentHolding") == nil,
+              (transaction.value(forKey: "status") as? NSNumber)?.intValue == 2,
+              (transaction.value(forKey: "flags") as? NSNumber)?.intValue == 0,
+              (transaction.value(forKey: "voidCheque") as? NSNumber)?.intValue == 0,
+              transaction.value(forKey: "desc") as? String == "New balance",
+              transaction.value(forKey: "payee") == nil,
+              transaction.value(forKey: "investmentSymbol") == nil,
+              transaction.value(forKey: "symbol") == nil,
+              transaction.value(forKey: "originalFeeCurrency") == nil,
+              try relatedObjects(transaction, "tags").isEmpty,
+              try relatedObjects(transaction, "categoriesAssigments").isEmpty,
+              try relatedObjects(transaction, "images").isEmpty,
+              try nativeDecimal(transaction, "numberOfShares") == 0,
+              try nativeDecimal(transaction, "reconcileNumberOfShares") == 0,
+              try nativeDecimal(transaction, "fee") == 0,
+              try nativeDecimal(transaction, "originalFee") == 0,
+              try nativeDecimal(transaction, "originalExchangeRate") == 0,
+              try nativeDecimal(transaction, "pricePerShare") == 0,
+              let date = transaction.value(forKey: "date") as? Date else {
+            throw HostError.message("W05 account history contains an unsupported transaction")
+        }
+        sum += try nativeDecimal(transaction, "amount")
+        var rowBalance = opening + sum
+        var roundedRowBalance = Decimal()
+        NSDecimalRound(&roundedRowBalance, &rowBalance, 2, .plain)
+        guard try nativeDecimal(transaction, "reconcileAmount") == roundedRowBalance else {
+            throw HostError.message("W05 account history has an inconsistent adjustment balance")
+        }
+        guard date > latest else {
+            throw HostError.message("W05 account history has ambiguous adjustment dates")
+        }
+        latest = date
+    }
+    var unrounded = opening + sum
+    var actual = Decimal()
+    NSDecimalRound(&actual, &unrounded, 2, .plain)
+    let prior = try decimalValue(operation.expectedPriorBalance!, field: "prior balance")
+    let target = try decimalValue(operation.targetBalance!, field: "target balance")
+    let occurred = try planTimestamp(operation.occurredAt!)
+    let candidates = try creationObjects(entity: "SyncObject", gid: operation.transactionGID, context: context)
+    guard candidates.count <= 1 else { throw HostError.message("W05 duplicate GID collision") }
+    let existing = candidates.first
+    if let existing {
+        guard existing.entity.name == "ReconcileTransaction",
+              (existing.value(forKey: "account") as? NSManagedObject)?.objectID == account.objectID,
+              existing.value(forKey: "date") as? Date == occurred,
+              existing.value(forKey: "desc") as? String == "New balance",
+              existing.value(forKey: "notes") as? String == "",
+              (existing.value(forKey: "status") as? NSNumber)?.intValue == 2,
+              (existing.value(forKey: "flags") as? NSNumber)?.intValue == 0,
+              (existing.value(forKey: "reconciled") as? NSNumber)?.boolValue == false,
+              existing.value(forKey: "investmentHolding") == nil,
+              existing.value(forKey: "originalCurrency") == nil,
+              existing.value(forKey: "originalFeeCurrency") == nil,
+              existing.value(forKey: "investmentSymbol") == nil,
+              existing.value(forKey: "symbol") == nil,
+              existing.value(forKey: "payee") == nil,
+              (existing.value(forKey: "voidCheque") as? NSNumber)?.intValue == 0,
+              try relatedObjects(existing, "tags").isEmpty,
+              try relatedObjects(existing, "categoriesAssigments").isEmpty,
+              try relatedObjects(existing, "images").isEmpty,
+              try nativeDecimal(existing, "amount") == target - prior,
+              try nativeDecimal(existing, "reconcileAmount") == target,
+              try nativeDecimal(existing, "numberOfShares") == 0,
+              try nativeDecimal(existing, "reconcileNumberOfShares") == 0,
+              try nativeDecimal(existing, "originalAmount") == 0,
+              try nativeDecimal(existing, "fee") == 0,
+              try nativeDecimal(existing, "originalFee") == 0,
+              try nativeDecimal(existing, "currencyExchangeRate") == 0,
+              try nativeDecimal(existing, "originalExchangeRate") == 0,
+              try nativeDecimal(existing, "pricePerShare") == 0 else {
+            throw HostError.message("W05 existing GID does not match the requested native adjustment")
+        }
+    }
+    let classification: String
+    if existing != nil && actual == target { classification = saved ? "applied" : "noop" }
+    else if existing == nil && actual == target && prior == target { classification = "noop" }
+    else if existing == nil && actual == prior && occurred > latest { classification = "retry_safe" }
+    else { classification = "unknown" }
+    let success = classification == "applied" || classification == "noop"
+    var item = WriterOperationResultV2(operationID: operation.operationID,
+        status: success ? classification : "unknown", transactionEntity: operation.transactionEntity,
+        transactionGID: operation.transactionGID,
+        durableURI: existing?.objectID.uriRepresentation().absoluteString,
+        durableNumericID: existing.map { durableNumericID($0.objectID) },
+        oldPayeeGID: nil, newPayeeGID: nil, postcondition: nil)
+    if success { item.adjustBalancePostcondition = adjustBalancePostcondition(operation) }
+    return AdjustBalanceInspection(receipt: WriterResultV2(contractVersion: 2, planID: plan.planID,
+        planDigest: plan.planDigest, classification: classification, verified: success,
+        operations: [item]), account: account, openingBalance: opening)
+}
+
+func adjustBalanceV2(_ plan: WriterPlanV2, context: NSManagedObjectContext,
+                     requireStopped: () throws -> Void) throws -> WriterResultV2 {
+    let before = try inspectAdjustBalance(plan, context: context)
+    if before.receipt.classification == "noop" { return before.receipt }
+    guard before.receipt.classification == "retry_safe" else {
+        throw HostError.message("W05 prior balance, date or GID is stale")
+    }
+    let previousHistory = try relatedObjects(before.account, "transactionsHistory")
+    let preimages = try ([before.account] + Array(previousHistory)).map { object -> CreationPreimage in
+        let allowed: Set<String> = object.objectID == before.account.objectID
+            ? ["relationship:transactionsHistory"] : []
+        var fingerprint = try immutableTransactionFingerprint(object)
+        if object.entity.relationshipsByName["payee"] != nil {
+            fingerprint["relationship:payee"] = (object.value(forKey: "payee") as? NSManagedObject)
+                .map { $0.objectID.uriRepresentation().absoluteString as NSString } ?? NSNull()
+        }
+        return CreationPreimage(objectID: object.objectID,
+            fingerprint: fingerprint.filter { !allowed.contains($0.key) }, allowedKeys: allowed)
+    }
+    let operation = plan.operations[0]
+    let transaction = NSEntityDescription.insertNewObject(forEntityName: "ReconcileTransaction", into: context)
+    transaction.setValue(operation.transactionGID, forKey: "GID")
+    transaction.setValue(nativeDouble(try decimalValue(operation.expectedBalanceDelta!, field: "delta")), forKey: "amount")
+    transaction.setValue(nativeDouble(try decimalValue(operation.targetBalance!, field: "target")), forKey: "reconcileAmount")
+    transaction.setValue(try planTimestamp(operation.occurredAt!), forKey: "date")
+    transaction.setValue(try planTimestamp(plan.createdAt), forKey: "objectCreationDate")
+    transaction.setValue("New balance", forKey: "desc")
+    transaction.setValue("", forKey: "notes")
+    transaction.setValue(2, forKey: "status")
+    transaction.setValue(before.account, forKey: "account")
+    try verifyCreationPreimages(preimages, context: context)
+    try requireStopped()
+#if MONEYWIZ_TOOLS_TESTING
+    if writerTestCrashPoint == .beforeSave { _exit(86) }
+#endif
+    try context.save()
+#if MONEYWIZ_TOOLS_TESTING
+    if writerTestCrashPoint == .afterSave { _exit(87) }
+#endif
+    let readback = NSManagedObjectContext(concurrencyType: .privateQueueConcurrencyType)
+    readback.persistentStoreCoordinator = context.persistentStoreCoordinator
+    var result: Result<WriterResultV2, Error> = .failure(HostError.message("W05 read-back did not run"))
+    readback.performAndWait {
+        result = Result {
+            let verified = try inspectAdjustBalance(plan, context: readback, saved: true)
+            guard verified.receipt.classification == "applied",
+                  verified.openingBalance == before.openingBalance else {
+                throw HostError.message("W05 independent read-back differs")
+            }
+            try verifyCreationPreimages(preimages, context: readback)
+            return verified.receipt
+        }
+    }
+    return try result.get()
+}
+
 func immutableTransactionFingerprint(_ transaction: NSManagedObject) throws -> [String: NSObject] {
     var fingerprint: [String: NSObject] = [:]
     for name in transaction.entity.attributesByName.keys {
@@ -2089,6 +2367,10 @@ func recoverPlanV2(_ plan: WriterPlanV2, container: NSPersistentContainer) throw
                 result = .success(try inspectReconciliation(plan, context: context).receipt)
                 return
             }
+            if plan.capability == "write.adjust-balance-investment-total" {
+                result = .success(try inspectAdjustBalance(plan, context: context).receipt)
+                return
+            }
             if let creation = plan.operations.first, creation.kind.hasPrefix("create_") {
                 result = .success(try inspectCreation(creation, plan: plan, context: context))
                 return
@@ -2141,6 +2423,10 @@ func writePlanV2(
             }
             if ["write.reconcile", "write.unreconcile"].contains(plan.capability) {
                 result = .success(try reconcileTransactionsV2(plan, context: context, requireStopped: requireStopped))
+                return
+            }
+            if plan.capability == "write.adjust-balance-investment-total" {
+                result = .success(try adjustBalanceV2(plan, context: context, requireStopped: requireStopped))
                 return
             }
             if let creation = plan.operations.first,
@@ -2700,6 +2986,13 @@ func run() throws {
                 ofType: NSSQLiteStoreType, at: arguments.store, options: nil)
             guard metadata["MoneyWizToolsDisposableFixture"] as? String == "W01-v1" else {
                 throw HostError.message("W01 live creation remains blocked; marked disposable fixture required")
+            }
+        }
+        if plan.capability == "write.adjust-balance-investment-total" {
+            guard moneyWizApp.bundleIdentifier == "com.moneywiz.personalfinance",
+                  installedVersion == "2026.37.1",
+                  moneyWizApp.object(forInfoDictionaryKey: "CFBundleVersion") as? String == "449" else {
+                throw HostError.message("W05 native reference is limited to TestFlight 2026.37.1 build 449")
             }
         }
         let container = try loadContainer(

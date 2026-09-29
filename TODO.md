@@ -4,15 +4,18 @@
 
 ## Active release 0.3.0 tasks
 
-The execution goal authorizes P0/P1F/P1 on `release/0.3.0`. Refine later tasks
-as prerequisites become concrete; preserve the propositions below as requirements.
+The user confirmed on 2026-09-28 that the full P0/P1F/P1/P2/P3 roadmap,
+including W01–W09, belongs to `release/0.3.0`. Keep one PR per operation. W01–W04
+are already integrated as recorded below; leave each new PR open for user
+inspection and do not merge. Refine later task details as prerequisites become
+concrete; preserve the propositions below as requirements.
 
 | ID | Deliverable / owner | Depends on | Acceptance | State |
 | --- | --- | --- | --- | --- |
-| P0-01 | Complete scoped API reads / API worker | Pinned compatibility baseline | Nullable metadata, safe diagnostics, per-consumer aliases, explicit completeness and opt-in DB tests | PR #4 head reviewed and merged API pinned; CI green (run 34761938543) |
-| P0-02 | Runtime identity / identity worker | Existing v1 model resolver | TestFlight/Setapp discovery, explicit overrides, ambiguity and mismatch rejection; v1 regression checks | In progress |
-| P0-03 | CLI snapshots and graph audit / controller | P0-01 interface | Structured completeness, identities/relationships/flags, explicit cutoff/timezone and diagnostic exit status | In progress |
-| P0-04 | API pin, packaging and P0 integration / controller | P0-01–P0-03 | Pre-PR readiness, current-head Codex clean per PR, tested packaged runtime and updated docs | In progress; PR #4 CI green (run 34761938543), merged API pinned |
+| P0-01 | Complete scoped API reads / API worker | Pinned compatibility baseline | Nullable metadata, safe diagnostics, per-consumer aliases, explicit completeness and opt-in DB tests | API read-completeness integrated and pinned; CI green (run 34761938543) |
+| P0-02 | Runtime identity / identity worker | Existing v1 model resolver | TestFlight/Setapp discovery, explicit overrides, ambiguity and mismatch rejection; v1 regression checks | Integrated in Tools P0 PR #3 at `374ebd4` |
+| P0-03 | CLI snapshots and graph audit / controller | P0-01 interface | Structured completeness, identities/relationships/flags, explicit cutoff/timezone and diagnostic exit status | Integrated in Tools P0 PR #3 at `374ebd4` |
+| P0-04 | API pin, packaging and P0 integration / controller | P0-01–P0-03 | Pre-PR readiness, current-head Codex clean per PR, tested packaged runtime and updated docs | Integrated in Tools P0 PR #3 at `374ebd4`; tested API pin included |
 
 PR links and evidence are recorded here once created. Runtime and remote
 acceptance remain distinct from implementation and local test completion.
@@ -109,8 +112,26 @@ their native and external-source acceptance is established.
 | P1-W04-02 | Native flag update | Whole-batch preflight, account/owner/variant guards, one save, unchanged native status/flags and unrelated fields | Implemented; disposable model-48 read-back passed |
 | P1-W04-03 | Recovery and negative paths | Final per-ID flags, repeat no-op, stale/partial/mixed refusal, before/after-save recovery | Native interruption and mixed-batch tests passed |
 | P1-W04-04 | Bundle and documentation | Relocated installed CLI, W01–W03 regressions, help, changelog and contract | Relocated W04 bundle passed; 629 CLI tests passed, 2 skipped before final mixed-batch test |
-| P1-W04-05 | Independent review and PR handoff | Local READY and current-head GitHub review; leave PR open for user inspection | Independent local review clean; GitHub PR/review pending |
+| P1-W04-05 | Independent review and PR handoff | Local READY and current-head GitHub review; leave PR open for user inspection | Current-head review clean; PR #9 merged at `1f91151` |
 | P1-W04-06 | Application and sync acceptance | Authorized MoneyWiz reopen/history and remote-client evidence | Not authorized; live capabilities blocked |
+
+## P2 preparation: W05 Adjust Balance
+
+Entry: W04 code merged into `release/0.3.0` by PR #9 at `1f91151`.
+`feat/p2-w05-adjust-balance` starts from that commit. W05 is part of P2 within
+`release/0.3.0`; the phase label does not create a separate release branch.
+Its PR must target `release/0.3.0` after its base is verified. See
+[W05 reference contract](doc/TRANSACTION-ADJUST-BALANCE.md). P1 application
+and sync acceptance remains a separate promotion gate.
+
+| ID | Deliverable | Acceptance | State |
+| --- | --- | --- | --- |
+| P2-W05-01 | Native reference | Compare the app-created adjustment with before/after data from the observed account | Complete for GBP investment total without holdings; other units lack native evidence |
+| P2-W05-02 | Typed plan and no-op contract | Bind unit, account, target, prior, delta, date/timezone and source identity; reject stale state | Implemented for the observed variant |
+| P2-W05-03 | Native creation and recovery | One save, app-matching fields, unchanged opening balance, durable ID and replay recovery | Verified on a private copy and an authorized live replacement |
+| P2-W05-04 | Store-copy and bundle validation | Positive, stale, duplicate and backdated checks; rebuilt and relocated bundle | Local evidence complete; focused regression gate passed |
+| P2-W05-05 | Independent PR review | Local READY and current-head clean review against `release/0.3.0`; leave PR open for user inspection | [PR #10](https://github.com/marcomc/moneywiz-tools/pull/10) open; local READY, new-head remote review pending |
+| P2-W05-06 | Application and sync acceptance | Reopen a tool-written row in MoneyWiz and verify sync for the supported variant | Live app read-back and iCloud export observed; investment-total capability verified |
 
 ## Propositions
 

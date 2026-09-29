@@ -301,6 +301,7 @@ def test_primary_schema_failure_wins_when_close_also_fails(
     [
         (None, 0, None),
         ("write.reassign-payees-by-id", 0, "verified"),
+        ("write.adjust-balance-investment-total", 0, "verified"),
         ("write.unknown", 1, "blocked"),
     ],
 )
