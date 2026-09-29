@@ -18,6 +18,13 @@ These rules do not apply outside of work under `moneywiz-tools/`.
   clean evidence agree. Do not duplicate active review requests or monitors.
 - Complete phase validation and application acceptance before phase promotion.
   A release branch name alone does not assign a version or enable capabilities.
+- For dependency-pin or write-capability changes, run the opt-in installed
+  bundle suite and review every direct native mutation entry point. Each path
+  must enforce the same disposable-store identity admission as the Python
+  client.
+- Run integrated Python validation with
+  `uv run --with pytest python -m pytest`; this keeps pytest and project
+  dependencies on the same interpreter when pytest is not a declared dependency.
 
 ## Distributable bundle validation
 
