@@ -1354,14 +1354,18 @@ def _validate_payee_merge_plan(plan: dict[str, Any]) -> dict[str, Any]:
             "review_decision", "approved_canonical_id", "review_notes", "map_sha256",
         }:
             raise PlanValidationError("W09 fuzzy approval is incomplete")
-        pair = {(str(approval["left_id"]), approval["left_name"]),
-                (str(approval["right_id"]), approval["right_name"])}
+        if any(not isinstance(approval[field], str) for field in (
+                "left_id", "left_name", "right_id", "right_name",
+                "approved_canonical_id")):
+            raise PlanValidationError("W09 fuzzy map does not approve this exact pair")
+        pair = {(approval["left_id"], approval["left_name"]),
+                (approval["right_id"], approval["right_name"])}
         if (type(approval["user_id"]) is not int
                 or approval["user_id"] != int(owner_uri.rsplit("/p", 1)[1])
                 or pair != {(source["numeric_id"], source["name"]),
                             (survivor["numeric_id"], survivor["name"])}
                 or approval["review_decision"] != "approved"
-                or str(approval["approved_canonical_id"]) != survivor["numeric_id"]
+                or approval["approved_canonical_id"] != survivor["numeric_id"]
                 or not isinstance(approval["review_notes"], str)
                 or not approval["review_notes"].strip()
                 or not isinstance(approval["map_sha256"], str)

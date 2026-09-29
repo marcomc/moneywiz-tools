@@ -128,6 +128,15 @@ def test_fuzzy_plan_requires_approved_exact_pair() -> None:
             validate_plan(changed)
 
 
+@pytest.mark.parametrize("field", ["left_id", "right_id", "approved_canonical_id"])
+def test_fuzzy_plan_rejects_numeric_approval_ids(field: str) -> None:
+    changed = deepcopy(plan(fuzzy=True, approval=fuzzy_approval()))
+    changed.pop("plan_digest")
+    changed["merge"]["approval"][field] = int(changed["merge"]["approval"][field])
+    with pytest.raises(PlanValidationError, match="fuzzy map"):
+        validate_plan(changed)
+
+
 @pytest.mark.parametrize("decision,expected", [
     ("approved", True), ("pending", False), ("rejected", False),
 ])
