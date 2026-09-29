@@ -116,6 +116,10 @@ _build-bundle:
 			exit 1; \
 		fi; \
 		uv venv --clear --relocatable --seed --link-mode copy --python "$$base_python" "$(APP_VENV)"; \
+		venv_config="$(APP_VENV)/pyvenv.cfg"; \
+		test -f "$$venv_config"; \
+		sed '/^home = /d' "$$venv_config" > "$$venv_config.tmp"; \
+		mv "$$venv_config.tmp" "$$venv_config"; \
 		managed_python="$${base_python#$(APP_RUNTIME)/python/}"; \
 		if [ "$$managed_python" = "$$base_python" ]; then \
 			echo "x bundled Python path is outside the staged runtime"; \
@@ -124,6 +128,7 @@ _build-bundle:
 		ln -sfn "../../$$managed_python" "$(APP_VENV)/bin/python"
 	@uv export --project "$(CURDIR)" --frozen --no-dev --no-header --format requirements-txt --output-file "$(APP_RUNTIME)/requirements.txt"
 	@uv pip install --python "$(APP_PY)" --quiet --requirement "$(APP_RUNTIME)/requirements.txt"
+	@"$(APP_PY)" -B "$(CURDIR)/scripts/sanitize_bundle_python.py" "$(APP_PYTHON_MANAGED)"
 	@chmod +x "$(APP_RUNTIME)/moneywiz.sh"
 
 _validate-bundle:

@@ -43,7 +43,8 @@
         "write.reconcile": "blocked",
         "write.unreconcile": "blocked",
         "write.adjust-balance-investment-total": "verified",
-        "write.delete-adjust-balance-investment-total": "blocked"
+        "write.delete-adjust-balance-investment-total": "blocked",
+        "write.replace-import-with-transfer": "blocked"
       }
     },
     {

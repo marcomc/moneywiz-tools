@@ -131,12 +131,21 @@ def install_environment(tmp_path: Path) -> dict[str, Path | dict[str, str]]:
                     executable(
                         install_dir / "fake" / "bin" / "python3.11",
                         "#!/usr/bin/env python3\\n"
+                        "import os\\n"
                         "import sys\\n"
+                        "if '--format' not in sys.argv:\\n"
+                        "    os.execv(sys.executable, [sys.executable, *sys.argv[1:]])\\n"
                         "output_format = sys.argv[sys.argv.index('--format') + 1]\\n"
                         "print('# Fake schema' if output_format == 'md' else '[]')\\n",
                     )
+                    (install_dir / "fake-alias").symlink_to(
+                        install_dir / "fake", target_is_directory=True
+                    )
                 elif args and args[0] == "venv":
                     executable(Path(args[-1]) / "bin" / "python")
+                    (Path(args[-1]) / "pyvenv.cfg").write_text(
+                        f"home = {Path(args[-1]).parent}/staged-python/bin\\nrelocatable = true\\n"
+                    )
                 elif args and args[0] == "export":
                     output = Path(args[args.index("--output-file") + 1])
                     output.parent.mkdir(parents=True, exist_ok=True)
@@ -663,11 +672,14 @@ def test_bundle_artifacts_do_not_disclose_build_paths(
     artifacts = (
         app_bundle / "Contents/Resources/runtime/requirements.txt",
         app_bundle / "Contents/MacOS/MoneyWizTools",
+        app_bundle / "Contents/Resources/runtime/python/venv/pyvenv.cfg",
     )
     for artifact in artifacts:
         contents = artifact.read_bytes()
         assert os.fsencode(source_root) not in contents
         assert os.fsencode(tmp_path) not in contents
+    alias = app_bundle / "Contents/Resources/runtime/python/managed/fake-alias"
+    assert alias.readlink() == Path("fake")
 
 
 def test_installed_version_flags_need_no_database_python_or_source_plist(

@@ -495,6 +495,40 @@ def test_installed_native_host_reads_explicit_model_checksum(
     assert len(base64.b64decode(checksum, validate=True)) == 32
 
 
+def test_installed_bundle_managed_python_has_no_staging_paths(
+    installed_bundle: tuple[Path, Path, Path]
+) -> None:
+    bundle, _launcher, native_host = installed_bundle
+    runtime = bundle / "Contents/Resources/runtime"
+    managed = runtime / "python/managed"
+    installations = [
+        path for path in managed.iterdir() if path.is_dir() and not path.is_symlink()
+    ]
+    configs = [
+        path / "lib/python3.11/_sysconfigdata__darwin_darwin.py"
+        for path in installations
+        if (path / "lib/python3.11/_sysconfigdata__darwin_darwin.py").is_file()
+    ]
+    libraries = [
+        path / "lib/libpython3.11.dylib"
+        for path in installations
+        if (path / "lib/libpython3.11.dylib").is_file()
+    ]
+    assert len(configs) == len(libraries) == 1
+    artifacts = (
+        native_host,
+        runtime / "requirements.txt",
+        runtime / "python/venv/pyvenv.cfg",
+        configs[0],
+        libraries[0],
+    )
+    for artifact in artifacts:
+        assert b".staging." not in artifact.read_bytes(), artifact
+    for link in bundle.rglob("*"):
+        if link.is_symlink():
+            assert ".staging." not in str(link.readlink()), link
+
+
 def test_installed_writer_applies_and_recovers_synthetic_reference_store(
     installed_bundle: tuple[Path, Path, Path], tmp_path: Path
 ) -> None:
