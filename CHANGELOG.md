@@ -34,6 +34,9 @@
 - W08 guarded investment income, expense and existing-holding Buy/Sell plans
   on marked disposable model-48 stores, with cash and units preflight, atomic
   persistence, read-back and recovery. Live W08 capabilities remain blocked.
+- W09 exact and individually approved fuzzy payee merge plans on marked
+  disposable model-48 stores, with complete native reference migration,
+  one-save deletion, fresh read-back and recovery. Live merges remain blocked.
 - Private recovery journals, consistent pre-write snapshots, durable results,
   source-event retry guards and explicit retention cleanup.
 - Read-only runtime identity discovery binding the application edition/build,

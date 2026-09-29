@@ -78,6 +78,8 @@ W07 transfer replacement is also limited to marked disposable stores; see
 [Transaction Transfer](doc/TRANSACTION-TRANSFER.md) for its paired-leg contract.
 W08 investment cash events and Buy/Sell transactions are limited to marked
 disposable stores; see [Investment Transactions](doc/TRANSACTION-INVESTMENT.md).
+W09 payee merges use one reviewed source/survivor pair and a complete native
+reference inventory; see [Payee Consolidation](doc/PAYEE-CONSOLIDATION.md).
 
 | Command | Behavior |
 | --- | --- |
@@ -90,6 +92,7 @@ disposable stores; see [Investment Transactions](doc/TRANSACTION-INVESTMENT.md).
 | `transaction delete-adjustment --request FILE --plan FILE` | Build a W06 plan for one exact latest GBP investment-total adjustment without opening a store |
 | `transaction transfer --request FILE --plan FILE` | Build a W07 plan to replace one or two imported rows with a zero-fee paired transfer without opening a store |
 | `transaction investment --request FILE --plan FILE` | Build one guarded W08 cash event or existing-holding Buy/Sell plan without opening a store |
+| `payee merge --kind KIND --source-gid GID --survivor-gid GID --plan FILE` | Build one W09 merge plan from a native read-only inventory; fuzzy requires `--fuzzy-map` |
 | `write validate --plan FILE` | Validate and display the exact plan and canonical digest |
 | `write apply --plan FILE` | Inspect without mutation |
 | `write apply --plan FILE --reviewed-digest SHA --apply` | Apply the reviewed coherent unit with durable recovery evidence |
@@ -171,8 +174,9 @@ operation in that user-scoped group.
 `merge-duplicate-payees` plans duplicate names that are equal for the same user
 after Unicode NFKC normalization, whitespace collapse, and case folding.
 Similar names are review data only; the fuzzy CSV is never read to perform a
-merge. Native merge application is not implemented, so `--apply` is rejected
-by the blocked capability gate.
+merge through this legacy group command. Its `--apply` path is rejected by the
+blocked capability gate. The separate `payee merge` command accepts one
+explicit source/survivor pair and reads an approved fuzzy CSV row when asked.
 
 1. Create and inspect an exact-merge plan:
 
@@ -188,11 +192,11 @@ by the blocked capability gate.
      --fuzzy-map "$HOME/payee-fuzzy-review.csv"
    ~~~
 
-   Exact-only dry runs and apply attempts do not perform the quadratic fuzzy
+   Exact-only dry runs and legacy apply attempts do not perform the quadratic fuzzy
    comparison pass.
 
-3. Review the plan. The CSV may help identify future cleanup candidates, but
-   changing it does not affect this command.
+3. Review the plan. Editing the CSV does not affect this legacy command; an
+   approved row can be supplied explicitly to `payee merge --kind fuzzy`.
 
 4. The CLI application capability is currently blocked pending separate
    acceptance evidence:
@@ -205,14 +209,15 @@ by the blocked capability gate.
    **Preferences > Payees > Edit**. Reopen the transaction form and confirm
    iCloud Sync is `Up to Date`.
 
-Use `--quiet` on either payee command when only machine-readable output is
-needed.
+Use `--quiet` on the legacy group or reassignment command when only
+machine-readable output is needed.
 
 ## Resolving fuzzy-review pending rows
 
 `pending` means no reviewer has decided whether the two names identify the same
-merchant. The CSV is audit metadata only: `merge-duplicate-payees --apply`
-never reads or applies it. Names beginning with `=`, `+`, `-`, or `@` are
+merchant. `merge-duplicate-payees --apply` never reads or applies the CSV;
+`payee merge --kind fuzzy` reads one matching approved row. Names beginning
+with `=`, `+`, `-`, or `@` are
 prefixed with an apostrophe in the export so spreadsheet applications treat
 them as literal text. Detection also covers compatibility-equivalent sigils and
 sigils hidden behind leading Unicode whitespace or control characters; the
@@ -225,7 +230,8 @@ original name is otherwise preserved character-for-character.
 | Insufficient evidence | Leave `review_decision=pending`; add a note if useful. | Take no write action. |
 
 Do not expect a later `merge-duplicate-payees --apply` run to consume approved
-rows.
+rows. Use [Payee Consolidation](doc/PAYEE-CONSOLIDATION.md) for the disposable
+W09 plan and reviewed-digest apply path.
 
 ### How to edit the CSV
 
@@ -272,7 +278,8 @@ CSV.
 | --- | --- |
 | Configured or explicitly selected store, read-only | `users`, `accounts`, `categories`, `payees`, `tags`, `transactions`, `holdings`, `snapshot`, `identity`, `record`, `summary`, `stats`, `schema`, `shell`, `compatibility` |
 | Live iCloud store through Core Data | `reassign-payees-by-id --apply` when its profile capability is verified |
-| Planning only; apply blocked | `merge-duplicate-payees`; `--apply` remains unavailable until a native implementation has independent acceptance evidence |
+| Planning only; apply blocked | Legacy `merge-duplicate-payees --apply` remains unavailable |
+| Marked disposable model-48 store | `payee merge` plans and `write apply` executes one reviewed W09 merge; live W09 capabilities remain blocked |
 
 For the persistent-history and CloudKit contract, see
 [Core Data Writer](doc/CORE-DATA-WRITER.md),

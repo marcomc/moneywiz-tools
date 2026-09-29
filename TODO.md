@@ -192,6 +192,22 @@ Only marked disposable stores are authorized for implementation validation.
 | P3-W08-06 | Bundle validation and independent review | Installed bundle, privacy scan, regressions, local READY and current-head GitHub review | Fresh bundle and direct admission passed; 709 integrated and 29 installed tests passed; independent local review clean; GitHub review pending |
 | P3-W08-07 | Application and sync acceptance | MoneyWiz reopen/history and operation-specific sync evidence before live promotion | Pending separate live-write authorization |
 
+## P3 preparation: W09 payee merges
+
+Entry: W07 is integrated; W08 has an independent PR. W09 changes payee
+relationships and does not depend on investment transaction code. The model-48
+reference inventory covers transactions, string history, scheduled handlers,
+payment plans and info cards. Only marked disposable stores are admitted.
+
+| ID | Deliverable | Acceptance | State |
+| --- | --- | --- | --- |
+| P3-W09-01 | Complete native inventory | Explicit source, survivor, owner and five relationship families | Implemented; disposable inventory verified |
+| P3-W09-02 | Exact and fuzzy review plans | Separate capabilities; exact name normalization; one approved map row; pending/rejected no-op | Implemented; focused validation passed |
+| P3-W09-03 | Atomic native migration | Guard current inventory, migrate each reference, delete source, save once and read back | Implemented; disposable validation passed |
+| P3-W09-04 | Recovery and refusal | Replay, crash boundaries, stale identity, unmarked store and unsupported model refusal | Focused and installed bundle validation passed |
+| P3-W09-05 | Bundle and independent review | Integrated suite, installed bundle, privacy scan, local READY and current-head GitHub review | 695 passed, 14 skipped; fresh bundle privacy scan and independent local review clean; GitHub review pending |
+| P3-W09-06 | Application and sync acceptance | MoneyWiz reopen/history and operation-specific sync evidence | Pending separate live-write authorization |
+
 ## Propositions
 
 - [ ] **Audit redundant read compatibility after integrating the new API pin.**

@@ -272,6 +272,8 @@ DISPOSABLE_WRITE_CAPABILITIES = DISPOSABLE_CREATE_CAPABILITIES | {
     "write.investment-expense",
     "write.investment-buy",
     "write.investment-sell",
+    "write.merge-exact-payees",
+    "write.merge-approved-fuzzy-payees",
 }
 DISPOSABLE_METADATA_KEY = "MoneyWizToolsDisposableFixture"
 DISPOSABLE_METADATA_VALUE = "W01-v1"

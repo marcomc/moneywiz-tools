@@ -34,6 +34,7 @@ REQUIRED_DISPATCHER_PROGRAMS = (
     "scripts/transactions.py",
     "scripts/users.py",
     "scripts/write.py",
+    "scripts/write_payees.py",
     "scripts/write_transactions.py",
     "scripts/write_journal.py",
     "scripts/write_plan.py",

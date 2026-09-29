@@ -54,6 +54,8 @@ BUNDLE_RUNTIME_SCRIPT_PAYLOAD += \
 	scripts/write.py \
 	scripts/write_transactions.py
 
+BUNDLE_RUNTIME_SCRIPT_PAYLOAD += scripts/write_payees.py
+
 .DEFAULT_GOAL := help
 
 .PHONY: help check-deps configure-install-dir build-bundle _build-bundle _validate-bundle sync app-venv install-runtime install install-moneywiz uninstall reinstall run clean

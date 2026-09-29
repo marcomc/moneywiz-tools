@@ -22,6 +22,7 @@ from write_plan import (
     EDIT_CAPABILITY,
     INVESTMENT_CAPABILITIES,
     RECONCILE_CAPABILITIES,
+    PAYEE_MERGE_CAPABILITIES,
     PlanValidationError,
     validate_plan,
     validate_result,
@@ -284,6 +285,7 @@ class WriterClient:
             DELETE_ADJUSTMENT_CAPABILITY,
             TRANSFER_CAPABILITY,
             *INVESTMENT_CAPABILITIES,
+            *PAYEE_MERGE_CAPABILITIES.values(),
             *(policy[0] for policy in RECONCILE_CAPABILITIES.values()),
         }:
             return
@@ -309,7 +311,8 @@ class WriterClient:
             record = self._matching_record(validated, journal)
             if record is None:
                 if validated["capability"] in {
-                    DELETE_ADJUSTMENT_CAPABILITY, TRANSFER_CAPABILITY
+                    DELETE_ADJUSTMENT_CAPABILITY, TRANSFER_CAPABILITY,
+                    *PAYEE_MERGE_CAPABILITIES.values(),
                 }:
                     inspection = self._invoke(validated, recover=True, lock_fd=lock_fd)
                     if inspection["classification"] != "retry_safe":
@@ -317,6 +320,8 @@ class WriterClient:
                             "W06 requires the exact target to exist before preparing a deletion"
                             if validated["capability"] == DELETE_ADJUSTMENT_CAPABILITY
                             else "W07 requires exact imported rows before preparing a replacement"
+                            if validated["capability"] == TRANSFER_CAPABILITY
+                            else "W09 requires the reviewed source and complete references before merging"
                         )
                 journal.prepare(validated, self.store)
             else:

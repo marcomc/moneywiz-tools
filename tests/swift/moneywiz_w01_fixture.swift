@@ -138,6 +138,46 @@ func runFixtureInspection(_ args: [String]) throws {
     FileHandle.standardOutput.write(Data([10]))
 }
 
+func runFixturePayeeInspection(_ args: [String]) throws {
+    guard args.count == 5, args[0] == "--inspect-w09", args[1] == "--store",
+          args[3] == "--model" else {
+        throw HostError.message("invalid W09 inspection arguments")
+    }
+    configureTransformers()
+    let container = try loadContainer(
+        storeURL: URL(fileURLWithPath: args[2]),
+        modelURL: URL(fileURLWithPath: args[4]),
+        expectedChecksum: "+6BY8eaTke2jfAd5Bzt5D49JRMZld5o8ZoUW+4G2ElQ=", readOnly: true
+    )
+    let context = container.viewContext
+    let source = try optionalPayee(gid: "w09-source", context: context)
+    let survivor = try fetchExactObject(entityName: "Payee", gid: "w09-survivor", context: context)
+    let unrelated = try fetchExactObject(entityName: "Payee", gid: "w09-unrelated", context: context)
+    var references: [String: [String]] = [:]
+    for relationship in ["transactions", "stringHistoryItems", "scheduledTransactions",
+                         "connectedPaymentPlans", "infoCards"] {
+        guard let objects = survivor.value(forKey: relationship) as? NSSet else {
+            throw HostError.message("W09 survivor relationship is incomplete")
+        }
+        references[relationship] = objects.compactMap { ($0 as? NSManagedObject)?
+            .objectID.uriRepresentation().absoluteString }.sorted()
+    }
+    let card = (survivor.value(forKey: "infoCards") as? NSSet)?.allObjects
+        .compactMap { $0 as? NSManagedObject }.first
+    let cardPayees = (card?.value(forKey: "payees") as? NSSet)?.compactMap {
+        ($0 as? NSManagedObject)?.value(forKey: "GID") as? String
+    }.sorted() ?? []
+    let result: [String: Any] = [
+        "source_absent": source == nil,
+        "survivor_references": references,
+        "card_payees": cardPayees,
+        "unrelated_name": unrelated.value(forKey: "name") as? String ?? "",
+    ]
+    FileHandle.standardOutput.write(try JSONSerialization.data(withJSONObject: result,
+                                                                   options: [.sortedKeys]))
+    FileHandle.standardOutput.write(Data([10]))
+}
+
 func runFixtureCrash(_ args: [String]) throws -> Never {
     guard args.count == 7,
           ["--crash-before-save", "--crash-after-save"].contains(args[0]),
@@ -148,6 +188,15 @@ func runFixtureCrash(_ args: [String]) throws -> Never {
     let model = URL(fileURLWithPath: args[4])
     let data = try Data(contentsOf: URL(fileURLWithPath: args[6]))
     let raw = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+    if let capability = raw["capability"] as? String, capability.hasPrefix("write.merge-") {
+        let plan = try JSONDecoder().decode(PayeeMergePlanV2.self, from: data)
+        try validatePayeeMergePlanV2(plan, raw: raw)
+        let container = try loadContainer(storeURL: store, modelURL: model,
+                                          expectedChecksum: plan.modelChecksum)
+        writerTestCrashPoint = args[0] == "--crash-before-save" ? .beforeSave : .afterSave
+        _ = try writePayeeMergeV2(plan, container: container, requireStopped: {})
+        throw HostError.message("W09 crash fixture did not stop at the requested boundary")
+    }
     let plan = try JSONDecoder().decode(WriterPlanV2.self, from: data)
     try validateWriterPlanV2(plan, rawPlan: raw)
     let container = try loadContainer(
@@ -163,6 +212,27 @@ func runFixtureWriter() throws {
     let arguments = try parseWriterArguments()
     let data = try Data(contentsOf: arguments.plan)
     let raw = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+    if let capability = raw["capability"] as? String, capability.hasPrefix("write.merge-") {
+        let plan = try JSONDecoder().decode(PayeeMergePlanV2.self, from: data)
+        try validatePayeeMergePlanV2(plan, raw: raw)
+        let container = try loadContainer(
+            storeURL: arguments.store, modelURL: arguments.model,
+            expectedChecksum: plan.modelChecksum, readOnly: arguments.recoverOnly
+        )
+        if !arguments.recoverOnly {
+            switch ProcessInfo.processInfo.environment["MONEYWIZ_TEST_CRASH_POINT"] {
+            case "before-save": writerTestCrashPoint = .beforeSave
+            case "after-save": writerTestCrashPoint = .afterSave
+            default: writerTestCrashPoint = nil
+            }
+        }
+        let result = try arguments.recoverOnly
+            ? recoverPayeeMergeV2(plan, container: container)
+            : writePayeeMergeV2(plan, container: container, requireStopped: {})
+        FileHandle.standardOutput.write(try JSONEncoder().encode(result))
+        FileHandle.standardOutput.write(Data([10]))
+        return
+    }
     let plan = try JSONDecoder().decode(WriterPlanV2.self, from: data)
     try validateWriterPlanV2(plan, rawPlan: raw)
     let container = try loadContainer(
@@ -197,6 +267,16 @@ func runFixtureWriter() throws {
                 try runFixtureInspection(args)
                 return
             }
+            if args.first == "--inspect-w09" {
+                try runFixturePayeeInspection(args)
+                return
+            }
+            if args.first == "--coredata-payee-inventory" {
+                let inventory = try inspectPayeeInventory(args)
+                FileHandle.standardOutput.write(try JSONEncoder().encode(inventory))
+                FileHandle.standardOutput.write(Data([10]))
+                return
+            }
             if args.first?.hasPrefix("--crash-") == true {
                 try runFixtureCrash(args)
             }
@@ -204,7 +284,8 @@ func runFixtureWriter() throws {
                   args.count == 4 || ["--unmarked", "--w06", "--w06-unmarked", "--w06-linked",
                     "--w07-source", "--w07-paired", "--w07-reverse", "--w07-ambiguous",
                     "--w07-unmarked", "--w07-voided", "--w08-aggregate",
-                    "--w08-units", "--w08-unmarked"].contains(args[4]) else {
+                    "--w08-units", "--w08-unmarked", "--w09-exact",
+                    "--w09-fuzzy", "--w09-unmarked"].contains(args[4]) else {
                 throw HostError.message("usage")
             }
             let store = URL(fileURLWithPath: args[1]), modelURL = URL(fileURLWithPath: args[3])
@@ -217,7 +298,8 @@ func runFixtureWriter() throws {
             guard let persistentStore = container.persistentStoreCoordinator.persistentStores.first else { throw HostError.message("fixture has no persistent store") }
             if args.count == 4 || ["--w06", "--w06-linked", "--w07-source",
                 "--w07-paired", "--w07-reverse", "--w07-ambiguous",
-                "--w07-voided", "--w08-aggregate", "--w08-units"].contains(args[4]) {
+                "--w07-voided", "--w08-aggregate", "--w08-units",
+                "--w09-exact", "--w09-fuzzy"].contains(args[4]) {
                 var storeMetadata = persistentStore.metadata ?? [:]
                 storeMetadata["MoneyWizToolsDisposableFixture"] = "W01-v1"
                 container.persistentStoreCoordinator.setMetadata(storeMetadata, for: persistentStore)
@@ -227,6 +309,46 @@ func runFixtureWriter() throws {
             try fixtureSet(user, "syncLogin", "w01-fixture@example.invalid")
             let foreignUser = try fixtureObject("User", c)
             try fixtureSet(foreignUser, "syncLogin", "w01-foreign@example.invalid")
+            if args.count == 5 && args[4].hasPrefix("--w09-") {
+                let account = try fixtureAccount("CashAccount", gid: "w09-account",
+                    name: "W09 account", opening: 100, balance: 90, user: user, context: c)
+                let source = try fixtureObject("Payee", c)
+                try fixtureSet(source, "GID", "w09-source")
+                try fixtureSet(source, "name", args[4] == "--w09-fuzzy" ? "Merchant East" : "MERCHANT")
+                try fixtureSet(source, "objectCreationDate", Date())
+                try fixtureSet(source, "user", user)
+                let survivor = try fixtureObject("Payee", c)
+                try fixtureSet(survivor, "GID", "w09-survivor")
+                try fixtureSet(survivor, "name", "Merchant")
+                try fixtureSet(survivor, "objectCreationDate", Date())
+                try fixtureSet(survivor, "user", user)
+                let unrelated = try fixtureObject("Payee", c)
+                try fixtureSet(unrelated, "GID", "w09-unrelated")
+                try fixtureSet(unrelated, "name", "Unrelated")
+                try fixtureSet(unrelated, "user", user)
+                let transaction = try fixtureWithdrawal("w09-transaction", account: account, context: c)
+                try fixtureSet(transaction, "payee", source)
+                let history = try fixtureObject("StringHistoryItem", c)
+                try fixtureSet(history, "payee", source)
+                let scheduled = try fixtureObject("ScheduledWithdrawTransactionHandler", c)
+                try fixtureSet(scheduled, "payee", source)
+                let paymentPlan = try fixtureObject("PaymentPlan", c)
+                try fixtureSet(paymentPlan, "payee", source)
+                let card = try fixtureObject("InfoCard", c)
+                try fixtureSet(card, "payees", NSSet(objects: source, unrelated))
+                try c.save()
+                let metadata = try NSPersistentStoreCoordinator.metadataForPersistentStore(
+                    ofType: NSSQLiteStoreType, at: store, options: nil)
+                let inventory = try payeeInventory(sourceGID: "w09-source",
+                                                   survivorGID: "w09-survivor", context: c)
+                let encoded = try JSONEncoder().encode(inventory)
+                var result = try JSONSerialization.jsonObject(with: encoded) as! [String: Any]
+                result["store_uuid"] = metadata[NSStoreUUIDKey] as! String
+                FileHandle.standardOutput.write(try JSONSerialization.data(
+                    withJSONObject: result, options: [.sortedKeys]))
+                FileHandle.standardOutput.write(Data([10]))
+                return
+            }
             if args.count == 5 && args[4].hasPrefix("--w07-") {
                 let reverse = args[4] == "--w07-reverse"
                 let paired = args[4] == "--w07-paired"

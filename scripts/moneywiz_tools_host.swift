@@ -4307,6 +4307,442 @@ func withWriterLock<T>(storeURL: URL, body: () throws -> T) throws -> T {
     return try body()
 }
 
+struct PayeeInventoryItem: Codable, Equatable {
+    let relationship: String
+    let entity: String
+    let objectURI: String
+    enum CodingKeys: String, CodingKey {
+        case relationship, entity
+        case objectURI = "object_uri"
+    }
+}
+
+struct PayeeInventoryIdentity: Codable, Equatable {
+    let gid: String
+    let numericID: String
+    let name: String
+    let objectURI: String
+    enum CodingKeys: String, CodingKey {
+        case gid, name
+        case numericID = "numeric_id", objectURI = "object_uri"
+    }
+}
+
+struct PayeeInventory: Codable {
+    let ownerURI: String
+    let source: PayeeInventoryIdentity
+    let survivor: PayeeInventoryIdentity
+    let references: [PayeeInventoryItem]
+    enum CodingKeys: String, CodingKey {
+        case ownerURI = "owner_uri", source, survivor, references
+    }
+}
+
+struct PayeeMergeApproval: Decodable {
+    let userID: Int
+    let leftID: String
+    let leftName: String
+    let rightID: String
+    let rightName: String
+    let reviewDecision: String
+    let approvedCanonicalID: String
+    let reviewNotes: String
+    let mapSHA256: String
+    enum CodingKeys: String, CodingKey {
+        case userID = "user_id", leftID = "left_id", leftName = "left_name"
+        case rightID = "right_id", rightName = "right_name"
+        case reviewDecision = "review_decision"
+        case approvedCanonicalID = "approved_canonical_id"
+        case reviewNotes = "review_notes", mapSHA256 = "map_sha256"
+    }
+}
+
+struct PayeeMergeOperationV2: Decodable {
+    let operationID: String
+    let kind: String
+    let source: PayeeInventoryIdentity
+    let survivor: PayeeInventoryIdentity
+    let expectedReferences: [PayeeInventoryItem]
+    let evidenceNote: String
+    let approval: PayeeMergeApproval?
+    enum CodingKeys: String, CodingKey {
+        case operationID = "operation_id", kind, source, survivor
+        case expectedReferences = "expected_references"
+        case evidenceNote = "evidence_note", approval
+    }
+}
+
+struct PayeeMergePlanV2: Decodable {
+    let contractVersion: Int
+    let operationSchemaVersion: Int
+    let planID: String
+    let planDigest: String
+    let profileID: String
+    let modelChecksum: String
+    let storeIdentity: StoreIdentity
+    let ownerURI: String
+    let appIdentity: AppIdentity
+    let capability: String
+    let createdAt: String
+    let sourceEventID: String
+    let merge: PayeeMergeOperationV2
+    enum CodingKeys: String, CodingKey {
+        case contractVersion = "contract_version"
+        case operationSchemaVersion = "operation_schema_version"
+        case planID = "plan_id", planDigest = "plan_digest"
+        case profileID = "profile_id", modelChecksum = "model_checksum"
+        case storeIdentity = "store_identity", ownerURI = "owner_uri"
+        case appIdentity = "app_identity", capability, createdAt = "created_at"
+        case sourceEventID = "source_event_id", merge
+    }
+}
+
+struct PayeeMergeOperationResultV2: Encodable {
+    let operationID: String
+    let status: String
+    let sourcePayeeGID: String
+    let survivorPayeeGID: String
+    let movedReferences: [PayeeInventoryItem]
+    let sourceAbsent: Bool
+    let survivorPresent: Bool
+    enum CodingKeys: String, CodingKey {
+        case operationID = "operation_id", status
+        case sourcePayeeGID = "source_payee_gid"
+        case survivorPayeeGID = "survivor_payee_gid"
+        case movedReferences = "moved_references"
+        case sourceAbsent = "source_absent", survivorPresent = "survivor_present"
+    }
+}
+
+struct PayeeMergeResultV2: Encodable {
+    let contractVersion = 2
+    let planID: String
+    let planDigest: String
+    let classification: String
+    let verified: Bool
+    let operations: [PayeeMergeOperationResultV2]
+    enum CodingKeys: String, CodingKey {
+        case contractVersion = "contract_version", planID = "plan_id"
+        case planDigest = "plan_digest", classification, verified, operations
+    }
+}
+
+func validatePayeeMergePlanV2(_ plan: PayeeMergePlanV2, raw: [String: Any]) throws {
+    let keys: Set<String> = [
+        "contract_version", "operation_schema_version", "plan_id", "plan_digest",
+        "profile_id", "model_checksum", "store_identity", "owner_uri",
+        "app_identity", "capability", "created_at", "source_event_id", "merge",
+    ]
+    guard Set(raw.keys) == keys,
+          let store = raw["store_identity"] as? [String: Any], Set(store.keys) == ["store_uuid"],
+          let app = raw["app_identity"] as? [String: Any],
+          Set(app.keys) == ["bundle_id", "version", "path", "model_path"],
+          let merge = raw["merge"] as? [String: Any],
+          Set(merge.keys) == ["operation_id", "kind", "source", "survivor",
+                              "expected_references", "evidence_note", "approval"],
+          plan.contractVersion == 2, plan.operationSchemaVersion == 1,
+          plan.profileID == supportedWriterPolicy.profileID,
+          plan.modelChecksum == supportedWriterPolicy.modelChecksum,
+          ["write.merge-exact-payees", "write.merge-approved-fuzzy-payees"].contains(plan.capability),
+          moneyWizBundleIdentifiers.contains(plan.appIdentity.bundleID),
+          !isBlank(plan.planID), !isBlank(plan.sourceEventID),
+          !isBlank(plan.ownerURI), !isBlank(plan.merge.operationID),
+          !isBlank(plan.merge.evidenceNote),
+          plan.planDigest == (try canonicalV2Digest(raw)) else {
+        throw HostError.message("W09 plan has an invalid envelope or digest")
+    }
+    _ = try planTimestamp(plan.createdAt)
+    let expectedOwnerPrefix = "x-coredata://\(plan.storeIdentity.storeUUID)/User/p"
+    guard plan.ownerURI.hasPrefix(expectedOwnerPrefix),
+          Int(plan.ownerURI.dropFirst(expectedOwnerPrefix.count)).map({ $0 > 0 }) == true else {
+        throw HostError.message("W09 owner does not identify the reviewed store")
+    }
+    for (name, payee) in [("source", plan.merge.source), ("survivor", plan.merge.survivor)] {
+        guard let rawPayee = merge[name] as? [String: Any],
+              Set(rawPayee.keys) == ["gid", "numeric_id", "name", "object_uri"],
+              !isBlank(payee.gid), !isBlank(payee.name),
+              Int(payee.numericID).map({ $0 > 0 }) == true,
+              payee.objectURI == "x-coredata://\(plan.storeIdentity.storeUUID)/Payee/p\(payee.numericID)" else {
+            throw HostError.message("W09 payee identity is incomplete")
+        }
+    }
+    guard plan.merge.source.gid != plan.merge.survivor.gid,
+          plan.merge.source.numericID != plan.merge.survivor.numericID else {
+        throw HostError.message("W09 requires distinct source and survivor")
+    }
+    let exact = plan.merge.source.name.precomposedStringWithCompatibilityMapping
+        .split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+        .folding(options: .caseInsensitive, locale: Locale(identifier: "en_US_POSIX")) ==
+        plan.merge.survivor.name.precomposedStringWithCompatibilityMapping
+        .split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+        .folding(options: .caseInsensitive, locale: Locale(identifier: "en_US_POSIX"))
+    guard (plan.capability == "write.merge-exact-payees") == exact,
+          plan.merge.kind == (exact ? "merge_exact_payee" : "merge_approved_fuzzy_payee") else {
+        throw HostError.message("W09 merge kind differs from current names")
+    }
+    let allowed: Set<String> = ["transactions", "stringHistoryItems",
+                                "scheduledTransactions", "connectedPaymentPlans", "infoCards"]
+    var keysSeen: [String] = []
+    for (index, reference) in plan.merge.expectedReferences.enumerated() {
+        guard let rawReferences = merge["expected_references"] as? [[String: Any]],
+              rawReferences.count == plan.merge.expectedReferences.count,
+              Set(rawReferences[index].keys) == ["relationship", "entity", "object_uri"],
+              allowed.contains(reference.relationship),
+              !isBlank(reference.entity),
+              reference.objectURI.hasPrefix("x-coredata://\(plan.storeIdentity.storeUUID)/\(reference.entity)/p") else {
+            throw HostError.message("W09 reference inventory has an invalid member")
+        }
+        keysSeen.append("\(reference.relationship)\u{0000}\(reference.entity)\u{0000}\(reference.objectURI)")
+    }
+    guard keysSeen == Array(Set(keysSeen)).sorted() else {
+        throw HostError.message("W09 reference inventory must be unique and sorted")
+    }
+    if exact {
+        guard merge["approval"] is NSNull, plan.merge.approval == nil else {
+            throw HostError.message("W09 exact merge cannot carry fuzzy approval")
+        }
+    } else {
+        guard let rawApproval = merge["approval"] as? [String: Any],
+              Set(rawApproval.keys) == ["user_id", "left_id", "left_name", "right_id",
+                                       "right_name", "review_decision", "approved_canonical_id",
+                                       "review_notes", "map_sha256"],
+              let approval = plan.merge.approval,
+              approval.userID == Int(plan.ownerURI.split(separator: "p").last ?? ""),
+              Set([approval.leftID, approval.rightID]) ==
+                  Set([plan.merge.source.numericID, plan.merge.survivor.numericID]),
+              approval.leftName == (approval.leftID == plan.merge.source.numericID
+                                    ? plan.merge.source.name : plan.merge.survivor.name),
+              approval.rightName == (approval.rightID == plan.merge.source.numericID
+                                     ? plan.merge.source.name : plan.merge.survivor.name),
+              approval.reviewDecision == "approved",
+              approval.approvedCanonicalID == plan.merge.survivor.numericID,
+              !isBlank(approval.reviewNotes),
+              approval.mapSHA256.range(of: "^[0-9a-f]{64}$", options: .regularExpression) != nil else {
+            throw HostError.message("W09 fuzzy merge lacks an exact approved review row")
+        }
+    }
+}
+
+func optionalPayee(gid: String, context: NSManagedObjectContext) throws -> NSManagedObject? {
+    let request = NSFetchRequest<NSManagedObject>(entityName: "Payee")
+    request.predicate = NSPredicate(format: "GID == %@", gid)
+    request.fetchLimit = 2
+    let matches = try context.fetch(request)
+    guard matches.count <= 1 else { throw HostError.message("W09 payee GID is ambiguous") }
+    return matches.first
+}
+
+func payeeMergeResult(_ plan: PayeeMergePlanV2, classification: String,
+                      references: [PayeeInventoryItem]) -> PayeeMergeResultV2 {
+    PayeeMergeResultV2(
+        planID: plan.planID, planDigest: plan.planDigest, classification: classification,
+        verified: classification == "applied" || classification == "noop",
+        operations: [PayeeMergeOperationResultV2(
+            operationID: plan.merge.operationID, status: classification,
+            sourcePayeeGID: plan.merge.source.gid,
+            survivorPayeeGID: plan.merge.survivor.gid,
+            movedReferences: references,
+            sourceAbsent: classification == "applied" || classification == "noop",
+            survivorPresent: true
+        )]
+    )
+}
+
+func resolvePayeeReference(_ reference: PayeeInventoryItem,
+                           context: NSManagedObjectContext) throws -> NSManagedObject {
+    guard let url = URL(string: reference.objectURI),
+          let objectID = context.persistentStoreCoordinator?.managedObjectID(forURIRepresentation: url),
+          objectID.entity.name == reference.entity else {
+        throw HostError.message("W09 reference URI does not resolve in the reviewed store")
+    }
+    return try context.existingObject(with: objectID)
+}
+
+func inspectPayeeMerge(_ plan: PayeeMergePlanV2,
+                       context: NSManagedObjectContext) throws -> PayeeMergeResultV2 {
+    let source = try optionalPayee(gid: plan.merge.source.gid, context: context)
+    guard let survivor = try optionalPayee(gid: plan.merge.survivor.gid, context: context),
+          survivor.objectID.uriRepresentation().absoluteString == plan.merge.survivor.objectURI,
+          survivor.value(forKey: "name") as? String == plan.merge.survivor.name,
+          (survivor.value(forKey: "user") as? NSManagedObject)?.objectID
+              .uriRepresentation().absoluteString == plan.ownerURI else {
+        throw HostError.message("W09 survivor changed or disappeared")
+    }
+    if let source {
+        let current = try payeeInventory(sourceGID: plan.merge.source.gid,
+                                         survivorGID: plan.merge.survivor.gid, context: context)
+        guard current.ownerURI == plan.ownerURI,
+              current.source == plan.merge.source,
+              current.survivor == plan.merge.survivor,
+              current.references == plan.merge.expectedReferences,
+              source.objectID.uriRepresentation().absoluteString == plan.merge.source.objectURI else {
+            throw HostError.message("W09 reviewed payee or complete reference inventory is stale")
+        }
+        return payeeMergeResult(plan, classification: "retry_safe", references: [])
+    }
+    for reference in plan.merge.expectedReferences {
+        let object = try resolvePayeeReference(reference, context: context)
+        guard let relation = survivor.entity.relationshipsByName[reference.relationship],
+              let inverse = relation.inverseRelationship,
+              (inverse.isToMany
+                  ? (object.value(forKey: inverse.name) as? NSSet)?.contains(survivor) == true
+                  : (object.value(forKey: inverse.name) as? NSManagedObject)?.objectID == survivor.objectID) else {
+            throw HostError.message("W09 deleted source has an incomplete reference migration")
+        }
+    }
+    return payeeMergeResult(plan, classification: "noop",
+                            references: plan.merge.expectedReferences)
+}
+
+func recoverPayeeMergeV2(_ plan: PayeeMergePlanV2,
+                         container: NSPersistentContainer) throws -> PayeeMergeResultV2 {
+    let context = container.newBackgroundContext()
+    var result: Result<PayeeMergeResultV2, Error> = .failure(HostError.message("W09 recovery did not run"))
+    context.performAndWait { result = Result { try inspectPayeeMerge(plan, context: context) } }
+    return try result.get()
+}
+
+func writePayeeMergeV2(_ plan: PayeeMergePlanV2, container: NSPersistentContainer,
+                       requireStopped: () throws -> Void = requireMoneyWizStopped) throws -> PayeeMergeResultV2 {
+    guard container.persistentStoreCoordinator.persistentStores.count == 1,
+          container.persistentStoreCoordinator.persistentStores[0]
+              .metadata["MoneyWizToolsDisposableFixture"] as? String == "W01-v1" else {
+        throw HostError.message("W09 live merge remains blocked; marked disposable fixture required")
+    }
+    let context = container.newBackgroundContext()
+    context.transactionAuthor = transactionAuthor
+    var result: Result<PayeeMergeResultV2, Error> = .failure(HostError.message("W09 merge did not run"))
+    context.performAndWait {
+        result = Result {
+            try requireStopped()
+            let state = try inspectPayeeMerge(plan, context: context)
+            if state.classification == "noop" { return state }
+            guard let source = try optionalPayee(gid: plan.merge.source.gid, context: context),
+                  let survivor = try optionalPayee(gid: plan.merge.survivor.gid, context: context) else {
+                throw HostError.message("W09 payee disappeared after preflight")
+            }
+            for reference in plan.merge.expectedReferences {
+                let object = try resolvePayeeReference(reference, context: context)
+                guard let relation = source.entity.relationshipsByName[reference.relationship],
+                      let inverse = relation.inverseRelationship else {
+                    throw HostError.message("W09 reference relationship changed")
+                }
+                if inverse.isToMany {
+                    let members = object.mutableSetValue(forKey: inverse.name)
+                    members.remove(source)
+                    members.add(survivor)
+                } else {
+                    object.setValue(survivor, forKey: inverse.name)
+                }
+            }
+            context.delete(source)
+            try requireStopped()
+#if MONEYWIZ_TOOLS_TESTING
+            if writerTestCrashPoint == .beforeSave { _exit(86) }
+#endif
+            try context.save()
+#if MONEYWIZ_TOOLS_TESTING
+            if writerTestCrashPoint == .afterSave { _exit(87) }
+#endif
+            let readback = NSManagedObjectContext(concurrencyType: .privateQueueConcurrencyType)
+            readback.persistentStoreCoordinator = context.persistentStoreCoordinator
+            var verified: Result<PayeeMergeResultV2, Error> =
+                .failure(HostError.message("W09 fresh-context read-back did not run"))
+            readback.performAndWait {
+                verified = Result { try inspectPayeeMerge(plan, context: readback) }
+            }
+            guard try verified.get().classification == "noop" else {
+                throw HostError.message("W09 fresh-context read-back differs from reviewed merge")
+            }
+            return payeeMergeResult(plan, classification: "applied",
+                                    references: plan.merge.expectedReferences)
+        }
+    }
+    return try result.get()
+}
+
+func payeeInventory(sourceGID: String, survivorGID: String,
+                    context: NSManagedObjectContext) throws -> PayeeInventory {
+    guard sourceGID != survivorGID, !isBlank(sourceGID), !isBlank(survivorGID) else {
+        throw HostError.message("W09 inventory requires two distinct payees")
+    }
+            let source = try fetchExactObject(entityName: "Payee", gid: sourceGID, context: context)
+            let survivor = try fetchExactObject(entityName: "Payee", gid: survivorGID, context: context)
+            guard let owner = source.value(forKey: "user") as? NSManagedObject,
+                  (survivor.value(forKey: "user") as? NSManagedObject)?.objectID == owner.objectID,
+                  owner.entity.name == "User" else {
+                throw HostError.message("W09 payees must belong to one user")
+            }
+            let relationshipNames: Set<String> = [
+                "transactions", "stringHistoryItems", "scheduledTransactions",
+                "connectedPaymentPlans", "infoCards", "user",
+            ]
+            guard Set(source.entity.relationshipsByName.keys) == relationshipNames else {
+                throw HostError.message("W09 model has an unreviewed payee relationship")
+            }
+            func identity(_ payee: NSManagedObject) throws -> PayeeInventoryIdentity {
+                guard let gid = payee.value(forKey: "GID") as? String,
+                      let name = payee.value(forKey: "name") as? String,
+                      !isBlank(gid), !isBlank(name) else {
+                    throw HostError.message("W09 payee identity is incomplete")
+                }
+                return PayeeInventoryIdentity(
+                    gid: gid, numericID: durableNumericID(payee.objectID), name: name,
+                    objectURI: payee.objectID.uriRepresentation().absoluteString
+                )
+            }
+            var references: [PayeeInventoryItem] = []
+            for relationship in relationshipNames.subtracting(["user"]).sorted() {
+                guard let objects = source.value(forKey: relationship) as? NSSet else {
+                    throw HostError.message("W09 payee reference inventory is incomplete")
+                }
+                for case let object as NSManagedObject in objects {
+                    guard let entity = object.entity.name,
+                          let inverse = source.entity.relationshipsByName[relationship]?.inverseRelationship,
+                          (inverse.isToMany
+                              ? (object.value(forKey: inverse.name) as? NSSet)?.contains(source) == true
+                              : (object.value(forKey: inverse.name) as? NSManagedObject)?.objectID == source.objectID) else {
+                        throw HostError.message("W09 payee inverse relationship is inconsistent")
+                    }
+                    references.append(PayeeInventoryItem(
+                        relationship: relationship, entity: entity,
+                        objectURI: object.objectID.uriRepresentation().absoluteString
+                    ))
+                }
+            }
+            references.sort {
+                ($0.relationship, $0.entity, $0.objectURI) <
+                    ($1.relationship, $1.entity, $1.objectURI)
+            }
+            return PayeeInventory(
+                ownerURI: owner.objectID.uriRepresentation().absoluteString,
+                source: try identity(source), survivor: try identity(survivor),
+                references: references
+            )
+}
+
+func inspectPayeeInventory(_ arguments: [String]) throws -> PayeeInventory {
+    guard arguments.count == 9,
+          arguments[0] == "--coredata-payee-inventory",
+          arguments[1] == "--store", arguments[3] == "--model",
+          arguments[5] == "--source", arguments[7] == "--survivor" else {
+        throw HostError.message("usage: MoneyWizTools --coredata-payee-inventory --store PATH --model PATH --source GID --survivor GID")
+    }
+    let container = try loadContainer(
+        storeURL: URL(fileURLWithPath: arguments[2]),
+        modelURL: URL(fileURLWithPath: arguments[4]),
+        expectedChecksum: supportedWriterPolicy.modelChecksum, readOnly: true
+    )
+    let context = container.newBackgroundContext()
+    var result: Result<PayeeInventory, Error> = .failure(HostError.message("W09 inventory did not run"))
+    context.performAndWait {
+        result = Result {
+            try payeeInventory(sourceGID: arguments[6], survivorGID: arguments[8], context: context)
+        }
+    }
+    return try result.get()
+}
+
 func run() throws {
     let invocation = Array(CommandLine.arguments.dropFirst())
     if invocation.first == "--model-checksum" {
@@ -4319,6 +4755,13 @@ func run() throws {
     }
     guard Bundle.main.bundleIdentifier == expectedBundleIdentifier else {
         throw HostError.message("host must run from the installed MoneyWiz Tools.app bundle")
+    }
+    if invocation.first == "--coredata-payee-inventory" {
+        configureTransformers()
+        let inventory = try inspectPayeeInventory(invocation)
+        FileHandle.standardOutput.write(try JSONEncoder().encode(inventory))
+        FileHandle.standardOutput.write(Data([0x0A]))
+        return
     }
     let arguments = try parseWriterArguments()
     guard FileManager.default.fileExists(atPath: arguments.store.path) else {
@@ -4348,6 +4791,37 @@ func run() throws {
         )
         return try JSONEncoder().encode(try writePlan(plan, container: container))
     case 2:
+        if let capability = rawPlan["capability"] as? String,
+           ["write.merge-exact-payees", "write.merge-approved-fuzzy-payees"].contains(capability) {
+            let plan = try JSONDecoder().decode(PayeeMergePlanV2.self, from: data)
+            try validatePayeeMergePlanV2(plan, raw: rawPlan)
+            let appURL = URL(fileURLWithPath: plan.appIdentity.path).standardizedFileURL
+            guard let app = Bundle(url: appURL),
+                  app.bundleIdentifier == "com.moneywiz.personalfinance",
+                  app.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String == "2026.37.1",
+                  app.object(forInfoDictionaryKey: "CFBundleVersion") as? String == "449",
+                  plan.appIdentity.bundleID == app.bundleIdentifier,
+                  plan.appIdentity.version == "2026.37.1",
+                  arguments.model.standardizedFileURL.path == plan.appIdentity.modelPath,
+                  plan.appIdentity.modelPath.hasPrefix(appURL.path + "/"),
+                  plan.storeIdentity.storeUUID == (try storeIdentity(at: arguments.store)) else {
+                throw HostError.message("W09 runtime app, model or store differs from the reviewed disposable profile")
+            }
+            let metadata = try NSPersistentStoreCoordinator.metadataForPersistentStore(
+                ofType: NSSQLiteStoreType, at: arguments.store, options: nil)
+            guard metadata["MoneyWizToolsDisposableFixture"] as? String == "W01-v1" else {
+                throw HostError.message("W09 live merge remains blocked; marked disposable fixture required")
+            }
+            let container = try loadContainer(
+                storeURL: arguments.store, modelURL: arguments.model,
+                expectedChecksum: plan.modelChecksum, readOnly: arguments.recoverOnly
+            )
+            return try JSONEncoder().encode(
+                arguments.recoverOnly
+                    ? recoverPayeeMergeV2(plan, container: container)
+                    : writePayeeMergeV2(plan, container: container)
+            )
+        }
         let plan = try JSONDecoder().decode(WriterPlanV2.self, from: data)
         try validateWriterPlanV2(plan, rawPlan: rawPlan)
         let appURL = URL(fileURLWithPath: plan.appIdentity.path).standardizedFileURL

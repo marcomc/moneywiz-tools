@@ -6,6 +6,7 @@ import hashlib
 import json
 import math
 import re
+import unicodedata
 import uuid
 from collections.abc import Mapping
 from copy import deepcopy
@@ -41,6 +42,10 @@ INVESTMENT_POLICIES = {
     "investment_sell": ("write.investment-sell", "InvestmentSellTransaction", 1),
 }
 INVESTMENT_CAPABILITIES = frozenset(item[0] for item in INVESTMENT_POLICIES.values())
+PAYEE_MERGE_CAPABILITIES = {
+    "merge_exact_payee": "write.merge-exact-payees",
+    "merge_approved_fuzzy_payee": "write.merge-approved-fuzzy-payees",
+}
 EDIT_ENTITIES = frozenset(
     {"DepositTransaction", "WithdrawTransaction", "RefundTransaction"}
 )
@@ -1256,11 +1261,125 @@ def _validate_source_scope(scope: object, plan: dict[str, Any]) -> list[str]:
     return validated
 
 
+def _payee_merge_key(name: str) -> str:
+    return " ".join(unicodedata.normalize("NFKC", name).split()).casefold()
+
+
+def _validate_payee_merge_plan(plan: dict[str, Any]) -> dict[str, Any]:
+    """Validate one reviewed W09 graph mutation without account placeholders."""
+    required = {
+        "contract_version", "operation_schema_version", "plan_id", "plan_digest",
+        "profile_id", "model_checksum", "store_identity", "owner_uri",
+        "app_identity", "capability", "created_at", "source_event_id", "merge",
+    }
+    if set(plan) not in (required, required - {"plan_digest"}):
+        raise PlanValidationError("W09 plan has unknown or missing fields")
+    if (plan.get("contract_version") != CONTRACT_VERSION
+            or plan.get("operation_schema_version") != OPERATION_SCHEMA_VERSION
+            or plan.get("profile_id") != "moneywiz-2026-model-48"
+            or plan.get("model_checksum") != "+6BY8eaTke2jfAd5Bzt5D49JRMZld5o8ZoUW+4G2ElQ="):
+        raise PlanValidationError("W09 requires the exact model-48 contract")
+    for field in ("plan_id", "owner_uri", "source_event_id"):
+        _text(plan.get(field), field)
+    _timestamp(plan.get("created_at"), "created_at")
+    store = plan.get("store_identity")
+    if not isinstance(store, Mapping) or set(store) != {"store_uuid"}:
+        raise PlanValidationError("W09 store identity is incomplete")
+    store_uuid = _text(store["store_uuid"], "store_identity.store_uuid")
+    owner_uri = _text(plan["owner_uri"], "owner_uri")
+    if not re.fullmatch(rf"x-coredata://{re.escape(store_uuid)}/User/p[1-9][0-9]*", owner_uri):
+        raise PlanValidationError("W09 owner URI differs from the selected store")
+    app = plan.get("app_identity")
+    if not isinstance(app, Mapping) or set(app) != {"bundle_id", "version", "path", "model_path"}:
+        raise PlanValidationError("W09 app identity is incomplete")
+    for field in app:
+        _text(app[field], f"app_identity.{field}")
+    merge = plan.get("merge")
+    if not isinstance(merge, Mapping) or set(merge) != {
+        "operation_id", "kind", "source", "survivor", "expected_references",
+        "evidence_note", "approval",
+    }:
+        raise PlanValidationError("W09 merge has unknown or missing fields")
+    _text(merge["operation_id"], "merge.operation_id")
+    _text(merge["evidence_note"], "merge.evidence_note")
+    kind = merge["kind"]
+    if kind not in PAYEE_MERGE_CAPABILITIES or plan["capability"] != PAYEE_MERGE_CAPABILITIES[kind]:
+        raise PlanValidationError("W09 merge kind and capability disagree")
+    identities = []
+    for role in ("source", "survivor"):
+        value = merge[role]
+        if not isinstance(value, Mapping) or set(value) != {"gid", "numeric_id", "name", "object_uri"}:
+            raise PlanValidationError(f"W09 {role} identity is incomplete")
+        for field in ("gid", "name", "object_uri"):
+            _text(value[field], f"merge.{role}.{field}")
+        numeric_id = value["numeric_id"]
+        if (not isinstance(numeric_id, str) or not numeric_id.isascii()
+                or not numeric_id.isdigit() or int(numeric_id) <= 0
+                or value["object_uri"] != f"x-coredata://{store_uuid}/Payee/p{numeric_id}"):
+            raise PlanValidationError(f"W09 {role} URI differs from its ID")
+        identities.append(value)
+    source, survivor = identities
+    if source["gid"] == survivor["gid"] or source["numeric_id"] == survivor["numeric_id"]:
+        raise PlanValidationError("W09 source and survivor must differ")
+    same_name = _payee_merge_key(source["name"]) == _payee_merge_key(survivor["name"])
+    if (kind == "merge_exact_payee") != same_name:
+        raise PlanValidationError("W09 exact/fuzzy classification differs from payee names")
+    references = merge["expected_references"]
+    if not isinstance(references, list):
+        raise PlanValidationError("W09 references must be a complete list")
+    allowed = {"transactions", "stringHistoryItems", "scheduledTransactions",
+               "connectedPaymentPlans", "infoCards"}
+    keys = []
+    for item in references:
+        if not isinstance(item, Mapping) or set(item) != {"relationship", "entity", "object_uri"}:
+            raise PlanValidationError("W09 reference has unknown or missing fields")
+        relationship = _text(item["relationship"], "reference.relationship")
+        entity = _text(item["entity"], "reference.entity")
+        uri = _text(item["object_uri"], "reference.object_uri")
+        if (relationship not in allowed or
+                not re.fullmatch(rf"x-coredata://{re.escape(store_uuid)}/{re.escape(entity)}/p[1-9][0-9]*", uri)):
+            raise PlanValidationError("W09 reference has an unexpected identity")
+        keys.append((relationship, entity, uri))
+    if keys != sorted(set(keys)):
+        raise PlanValidationError("W09 references must be unique and sorted")
+    approval = merge["approval"]
+    if kind == "merge_exact_payee":
+        if approval is not None:
+            raise PlanValidationError("W09 exact merge has no fuzzy approval")
+    else:
+        if not isinstance(approval, Mapping) or set(approval) != {
+            "user_id", "left_id", "left_name", "right_id", "right_name",
+            "review_decision", "approved_canonical_id", "review_notes", "map_sha256",
+        }:
+            raise PlanValidationError("W09 fuzzy approval is incomplete")
+        pair = {(str(approval["left_id"]), approval["left_name"]),
+                (str(approval["right_id"]), approval["right_name"])}
+        if (type(approval["user_id"]) is not int
+                or approval["user_id"] != int(owner_uri.rsplit("/p", 1)[1])
+                or pair != {(source["numeric_id"], source["name"]),
+                            (survivor["numeric_id"], survivor["name"])}
+                or approval["review_decision"] != "approved"
+                or str(approval["approved_canonical_id"]) != survivor["numeric_id"]
+                or not isinstance(approval["review_notes"], str)
+                or not approval["review_notes"].strip()
+                or not isinstance(approval["map_sha256"], str)
+                or not _HEX_DIGEST.fullmatch(approval["map_sha256"])):
+            raise PlanValidationError("W09 fuzzy map does not approve this exact pair")
+    digest = compute_digest(plan)
+    supplied = plan.get("plan_digest")
+    if supplied is not None and supplied != digest:
+        raise PlanValidationError("plan_digest does not match canonical plan bytes")
+    plan["plan_digest"] = digest
+    return plan
+
+
 def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
     """Validate the complete v2 envelope and its strict operation union."""
     if not isinstance(payload, Mapping):
         raise PlanValidationError("plan must be a JSON object")
     plan = deepcopy(dict(payload))
+    if plan.get("capability") in PAYEE_MERGE_CAPABILITIES.values():
+        return _validate_payee_merge_plan(plan)
     required = {
         "contract_version",
         "operation_schema_version",
@@ -1476,6 +1595,29 @@ def validate_result(plan: dict[str, Any], result: object) -> dict[str, Any]:
         raise PlanValidationError(
             "native result verification contradicts its classification"
         )
+    if plan["capability"] in PAYEE_MERGE_CAPABILITIES.values():
+        receipts = result.get("operations")
+        if not isinstance(receipts, list) or len(receipts) != 1 or not isinstance(receipts[0], Mapping):
+            raise PlanValidationError("W09 receipt must identify one merge")
+        receipt = receipts[0]
+        merge = plan["merge"]
+        if (set(receipt) != {"operation_id", "status", "source_payee_gid",
+                             "survivor_payee_gid", "moved_references",
+                             "source_absent", "survivor_present"}
+                or receipt["operation_id"] != merge["operation_id"]
+                or receipt["source_payee_gid"] != merge["source"]["gid"]
+                or receipt["survivor_payee_gid"] != merge["survivor"]["gid"]
+                or receipt["status"] != classification
+                or receipt["survivor_present"] is not True):
+            raise PlanValidationError("W09 receipt differs from reviewed identities")
+        if success:
+            if (receipt["source_absent"] is not True
+                    or receipt["moved_references"] != merge["expected_references"]):
+                raise PlanValidationError("W09 receipt does not prove the complete merge")
+        elif (receipt["source_absent"] is not False
+              or receipt["moved_references"] != []):
+            raise PlanValidationError("W09 unresolved receipt claims a completed merge")
+        return result
     receipts = result.get("operations")
     if not isinstance(receipts, list) or len(receipts) != len(plan["operations"]):
         raise PlanValidationError("native result omits operation receipts")

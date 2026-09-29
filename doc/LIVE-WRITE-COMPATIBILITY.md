@@ -11,8 +11,8 @@ compatibility is defined per write path.
 | Generic SQL mutation | Not a product capability | Do not infer iCloud compatibility from SQL success. |
 | Reassign a payee to an existing destination | Verified | Bundled Core Data writer. |
 | Reassign a payee and create its destination | Verified | Bundled Core Data writer. |
-| Merge exact-normalized duplicate payees | Blocked | Requires independent Core Data acceptance evidence. |
-| Merge similar-name payees | Not implemented | Requires an approved map and a separate reviewed contract. |
+| Merge exact-normalized duplicate payees | Blocked | W09 is limited to marked disposable stores; live application and sync acceptance are pending. |
+| Merge similar-name payees | Blocked | W09 requires one approved review-map row and is limited to marked disposable stores. |
 | W08 investment cash events and Buy/Sell | Blocked | Marked disposable stores only; application and sync acceptance are pending. |
 
 No backup requirement is imposed by the command. The operator remains
@@ -51,8 +51,8 @@ different `ZSYNCOBJECT` row cannot satisfy the ownership check accidentally.
 The tool refuses ambiguous normalized payee names. Resolve or consolidate those
 duplicates through the MoneyWiz GUI while
 `write.merge-duplicate-payees` remains blocked. Export similar pairs with
-`--fuzzy-map PATH`; they remain pending until an explicitly approved workflow
-exists.
+`--fuzzy-map PATH`; W09 can use an explicitly approved row only on a marked
+disposable store.
 
 ## Compatibility profile
 

@@ -222,6 +222,7 @@ Writes (dry-run by default; add --apply to commit):
   transaction delete-adjustment --help  Build a guarded W06 deletion plan for that variant.
   transaction transfer --help           Build a guarded W07 transfer replacement plan.
   transaction investment --help         Build a guarded W08 investment transaction plan.
+  payee merge --help                     Build a guarded W09 exact or approved fuzzy merge plan.
   write validate|apply|recover --plan FILE
                                       Inspect or execute a reviewed versioned plan.
   write locations|journal|cleanup [--apply]
@@ -352,6 +353,9 @@ case "${SUBCMD}" in
   reassign-payees-by-id|merge-duplicate-payees)
     script_name="${SUBCMD//-/_}.py"
     run_python_script "${SCRIPT_DIR}/scripts/${script_name}" "${BASE_DB_ARG[@]}" "$@"
+    ;;
+  payee)
+    run_python_script "${SCRIPT_DIR}/scripts/write_payees.py" "${BASE_DB_ARG[@]}" "$@"
     ;;
   compatibility)
     run_python_script "${SCRIPT_DIR}/scripts/compatibility.py" "${BASE_DB_ARG[@]}" "$@"
