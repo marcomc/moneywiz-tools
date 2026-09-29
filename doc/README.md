@@ -23,7 +23,7 @@ design documents explain implementation constraints after the task is clear.
 | W02 guarded scalar edits and disposable validation | [Transaction Editing](TRANSACTION-EDITING.md) |
 | W03 payee/category replacement and disposable validation | [Transaction Assignment](TRANSACTION-ASSIGNMENT.md) |
 | W04 reconciliation flags and disposable validation | [Transaction Reconciliation](TRANSACTION-RECONCILIATION.md) |
-| W05 Adjust Balance reference evidence and entry gates | [Transaction Adjust Balance](TRANSACTION-ADJUST-BALANCE.md) |
+| W05/W06 investment-total adjustment creation and guarded deletion | [Transaction Adjust Balance](TRANSACTION-ADJUST-BALANCE.md) |
 | Versioned plans, interrupted writes and private journal retention | [Writer Recovery](WRITER-RECOVERY.md) |
 | Exact duplicate consolidation and fuzzy-map review | [Payee Consolidation](PAYEE-CONSOLIDATION.md) |
 | Verified MoneyWiz 2026 payee and transaction mapping | [Live Payee Structure](LIVE-PAYEE-STRUCTURE.md) |

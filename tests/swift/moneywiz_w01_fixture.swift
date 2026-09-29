@@ -201,7 +201,9 @@ func runFixtureWriter() throws {
                 try runFixtureCrash(args)
             }
             guard (args.count == 4 || args.count == 5), args[0] == "--store", args[2] == "--model",
-                  args.count == 4 || args[4] == "--unmarked" else { throw HostError.message("usage") }
+                  args.count == 4 || ["--unmarked", "--w06", "--w06-unmarked", "--w06-linked"].contains(args[4]) else {
+                throw HostError.message("usage")
+            }
             let store = URL(fileURLWithPath: args[1]), modelURL = URL(fileURLWithPath: args[3])
             guard !FileManager.default.fileExists(atPath: store.path), let model = NSManagedObjectModel(contentsOf: modelURL) else { throw HostError.message("invalid disposable fixture inputs") }
             configureTransformers()
@@ -210,7 +212,7 @@ func runFixtureWriter() throws {
             container.persistentStoreDescriptions = [description]
             var error: Error?; container.loadPersistentStores { _, value in error = value }; if let error { throw error }
             guard let persistentStore = container.persistentStoreCoordinator.persistentStores.first else { throw HostError.message("fixture has no persistent store") }
-            if args.count == 4 {
+            if args.count == 4 || ["--w06", "--w06-linked"].contains(args[4]) {
                 var storeMetadata = persistentStore.metadata ?? [:]
                 storeMetadata["MoneyWizToolsDisposableFixture"] = "W01-v1"
                 container.persistentStoreCoordinator.setMetadata(storeMetadata, for: persistentStore)
@@ -220,6 +222,59 @@ func runFixtureWriter() throws {
             try fixtureSet(user, "syncLogin", "w01-fixture@example.invalid")
             let foreignUser = try fixtureObject("User", c)
             try fixtureSet(foreignUser, "syncLogin", "w01-foreign@example.invalid")
+            if args.count == 5 && ["--w06", "--w06-unmarked", "--w06-linked"].contains(args[4]) {
+                let account = try fixtureObject("InvestmentAccount", c)
+                try fixtureSet(account, "GID", "w06-investment")
+                try fixtureSet(account, "name", "W06 investment")
+                try fixtureSet(account, "objectCreationDate", Date())
+                try fixtureSet(account, "openingBalance", 100.0)
+                try fixtureSet(account, "ballance", 0.0)
+                try fixtureSet(account, "currencyName", "GBP")
+                try fixtureSet(account, "archived", false)
+                try fixtureSet(account, "user", user)
+                func adjustment(_ gid: String, amount: Double, total: Double, date: String) throws -> NSManagedObject {
+                    let row = try fixtureObject("ReconcileTransaction", c)
+                    try fixtureSet(row, "GID", gid)
+                    try fixtureSet(row, "amount", amount)
+                    try fixtureSet(row, "reconcileAmount", total)
+                    try fixtureSet(row, "date", precisePlanTimestamp(date))
+                    try fixtureSet(row, "objectCreationDate", Date())
+                    try fixtureSet(row, "desc", "New balance")
+                    try fixtureSet(row, "notes", "")
+                    try fixtureSet(row, "status", 2)
+                    try fixtureSet(row, "flags", 0)
+                    try fixtureSet(row, "voidCheque", 0)
+                    try fixtureSet(row, "reconciled", false)
+                    try fixtureSet(row, "account", account)
+                    if row.entity.propertiesByName["user"] != nil {
+                        try fixtureSet(row, "user", user)
+                    }
+                    return row
+                }
+                _ = try adjustment("w06-older", amount: 10, total: 110,
+                                   date: "2026-09-10T12:00:00Z")
+                let targetDate = "2026-09-11T12:00:00.408332Z"
+                let target = try adjustment("w06-target", amount: -2, total: 108, date: targetDate)
+                if args[4] == "--w06-linked" {
+                    let payee = try fixtureObject("Payee", c)
+                    try fixtureSet(payee, "GID", "w06-dependent-payee")
+                    try fixtureSet(payee, "name", "Dependent")
+                    try fixtureSet(payee, "user", user)
+                    try fixtureSet(target, "payee", payee)
+                }
+                try c.save()
+                let finalMetadata = try NSPersistentStoreCoordinator.metadataForPersistentStore(
+                    ofType: NSSQLiteStoreType, at: store, options: nil)
+                let result: [String: Any] = [
+                    "store_uuid": finalMetadata[NSStoreUUIDKey] as! String,
+                    "owner_uri": user.objectID.uriRepresentation().absoluteString,
+                    "target_numeric_id": durableNumericID(target.objectID),
+                    "target_date": targetDate,
+                ]
+                FileHandle.standardOutput.write(try JSONSerialization.data(withJSONObject: result, options: [.sortedKeys]))
+                FileHandle.standardOutput.write(Data([10]))
+                return
+            }
             let account = try fixtureObject("CashAccount", c)
             try fixtureSet(account,"GID","w01-account"); try fixtureSet(account,"name","W01"); try fixtureSet(account,"objectCreationDate",Date()); try fixtureSet(account,"openingBalance",10.0); try fixtureSet(account,"ballance",0.0); try fixtureSet(account,"currencyName","EUR"); try fixtureSet(account,"user",user)
             let payee = try fixtureObject("Payee", c); try fixtureSet(payee,"GID","w01-payee"); try fixtureSet(payee,"name","W01"); try fixtureSet(payee,"objectCreationDate",Date()); try fixtureSet(payee,"user",user)

@@ -8,10 +8,11 @@ from pathlib import Path
 import pytest
 from test_transaction_create import request
 from test_adjust_balance import request as adjust_balance_request
+from test_delete_adjustment import request as delete_adjustment_request
 from test_write_plan import plan
 from write_journal import store_lock
 from write_plan import validate_plan
-from write_transactions import build_adjust_balance_plan, build_plan
+from write_transactions import build_adjust_balance_plan, build_delete_adjustment_plan, build_plan
 
 
 @pytest.fixture(scope="module")
@@ -121,6 +122,22 @@ def test_python_w05_plan_validates_natively(
 ) -> None:
     validated = build_adjust_balance_plan(adjust_balance_request())
     source = tmp_path / "adjust-plan.json"
+    source.write_text(json.dumps(validated))
+    completed = subprocess.run(
+        [str(native_plan_validator), str(source)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.strip() == validated["plan_digest"]
+
+
+def test_python_w06_plan_validates_natively(
+    native_plan_validator: Path, tmp_path: Path
+) -> None:
+    validated = build_delete_adjustment_plan(delete_adjustment_request())
+    source = tmp_path / "delete-adjustment-plan.json"
     source.write_text(json.dumps(validated))
     completed = subprocess.run(
         [str(native_plan_validator), str(source)],

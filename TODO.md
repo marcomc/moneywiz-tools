@@ -130,8 +130,30 @@ and sync acceptance remains a separate promotion gate.
 | P2-W05-02 | Typed plan and no-op contract | Bind unit, account, target, prior, delta, date/timezone and source identity; reject stale state | Implemented for the observed variant |
 | P2-W05-03 | Native creation and recovery | One save, app-matching fields, unchanged opening balance, durable ID and replay recovery | Verified on a private copy and an authorized live replacement |
 | P2-W05-04 | Store-copy and bundle validation | Positive, stale, duplicate and backdated checks; rebuilt and relocated bundle | Local evidence complete; focused regression gate passed |
-| P2-W05-05 | Independent PR review | Local READY and current-head clean review against `release/0.3.0`; leave PR open for user inspection | [PR #10](https://github.com/marcomc/moneywiz-tools/pull/10) open; local READY, new-head remote review pending |
+| P2-W05-05 | Independent PR review | Local READY and current-head clean review against `release/0.3.0`; leave PR open for user inspection | [PR #10](https://github.com/marcomc/moneywiz-tools/pull/10) merged at `29864f1` |
 | P2-W05-06 | Application and sync acceptance | Reopen a tool-written row in MoneyWiz and verify sync for the supported variant | Live app read-back and iCloud export observed; investment-total capability verified |
+
+## P2 preparation: W06 guarded deletion
+
+Entry: W05 merged into `release/0.3.0` at `29864f1`. The first W06 variant is
+deletion of one specifically identified `ReconcileTransaction` from the observed
+no-holdings GBP investment-total account shape. Private before/after snapshots
+of an authorized MoneyWiz deletion show the target row removed and the account
+version changed. Other shared `ZSYNCOBJECT` rows did not change; CloudKit history
+and metadata changed, and an unrelated report row appeared during the interval.
+These snapshots do not establish deletion semantics for other transaction types.
+
+| ID | Deliverable | Acceptance | State |
+| --- | --- | --- | --- |
+| P2-W06-01 | Native reference and dependencies | Inventory the target, account, linked records and CloudKit effects from the existing private snapshots | Private before/after reference inspected; observed target has no dependent business links |
+| P2-W06-02 | Typed deletion preview | Bind exact target GID/entity/account, amount, date, currency, expected balance and reason; show the resulting balance | Implemented for the latest GBP investment-total adjustment |
+| P2-W06-03 | Guarded native deletion | Recheck app/model/store identity and all target/dependency preconditions before one save; preserve unrelated rows | Applied on marked private copy; only target row removed and account version changed |
+| P2-W06-04 | Recovery and refusal | Classify a present target as retry-safe and a verified prior deletion as no-op; refuse ambiguous absence, stale state and unsupported links | Private-copy recovery and replay passed; synthetic crash and refusal checks passed |
+| P2-W06-05 | Local and bundle validation | Check before/after store copies, interruption recovery, relocated bundle, lint and independent review | Copy comparison, recovery, lint and local independent review passed; rebuilt relocated bundle suite: 662 passed, 2 skipped; GitHub review pending |
+| P2-W06-06 | Application and sync acceptance | Verify a tool-written deletion in MoneyWiz and its operation-specific sync evidence | Pending separate live-write authorization |
+
+Linked transfers, scheduled records, holdings and ordinary transaction types
+remain outside this first variant until their native deletion behavior is known.
 
 ## Propositions
 
