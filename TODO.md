@@ -169,7 +169,7 @@ they do not establish nonzero-fee or live conversion acceptance.
 | P2-W07-02 | Typed replacement plan | Bind old GIDs/numeric IDs, both accounts/balances, amounts, currencies, dates, rate and source event | Implemented; Python/native contract tests passed |
 | P2-W07-03 | Atomic native replacement | Recheck identity and old rows; create reciprocal legs in one save; read back IDs, links and balances | Disposable production-host and relocated-bundle tests passed |
 | P2-W07-04 | Recovery and refusal | No-op verified replay; refuse stale, ambiguous, partial and unsupported state | Before/after-save and negative fixture checks passed |
-| P2-W07-05 | Local validation and review | Integrated suite, bundle privacy, lint and independent review | 684 passed, 2 skipped; fresh bundle scan clean; independent local review pending |
+| P2-W07-05 | Local validation and review | Integrated suite, bundle privacy, lint and independent review | 691 passed; fresh bundle file/link scan clean; independent local review clean |
 | P2-W07-06 | Application and sync acceptance | MoneyWiz reopen/history and operation-specific sync evidence | Pending separate live-write authorization; capability blocked |
 
 ## Propositions
