@@ -155,6 +155,23 @@ These snapshots do not establish deletion semantics for other transaction types.
 Linked transfers, scheduled records, holdings and ordinary transaction types
 remain outside this first variant until their native deletion behavior is known.
 
+## P2 preparation: W07 transfer replacement
+
+Entry: W06 merged into `release/0.3.0` at `54606bb`. W07 covers a marked
+disposable model-48 store: one imported withdrawal and an optional explicitly
+identified deposit become two reciprocal, zero-fee transfer legs. The observed
+private reference pairs establish the link and FX fields and separate dates;
+they do not establish nonzero-fee or live conversion acceptance.
+
+| ID | Deliverable | Acceptance | State |
+| --- | --- | --- | --- |
+| P2-W07-01 | Native reference and scope | Bind the two account/leg relationships, observed FX direction and zero-fee fields | Model-48 and private reference evidence inspected; unsupported variants remain blocked |
+| P2-W07-02 | Typed replacement plan | Bind old GIDs/numeric IDs, both accounts/balances, amounts, currencies, dates, rate and source event | Implemented; Python/native contract tests passed |
+| P2-W07-03 | Atomic native replacement | Recheck identity and old rows; create reciprocal legs in one save; read back IDs, links and balances | Disposable production-host and relocated-bundle tests passed |
+| P2-W07-04 | Recovery and refusal | No-op verified replay; refuse stale, ambiguous, partial and unsupported state | Before/after-save and negative fixture checks passed |
+| P2-W07-05 | Local validation and review | Integrated suite, bundle privacy, lint and independent review | 691 passed; fresh bundle file/link scan clean; independent local review clean |
+| P2-W07-06 | Application and sync acceptance | MoneyWiz reopen/history and operation-specific sync evidence | Pending separate live-write authorization; capability blocked |
+
 ## Propositions
 
 - [ ] **Audit redundant read compatibility after integrating the new API pin.**
@@ -315,6 +332,19 @@ records. A failed partial batch must identify the completed and untouched IDs.
     neither it nor the earlier two-save workaround belongs in the writer protocol.
   - Return both transaction IDs and reciprocal links. Preserve cleared status,
     notes, tags and reconciliation state unless explicitly changed.
+  - [x] W07 fixture scope: replace one imported withdrawal and, optionally, its
+    independently identified imported deposit with two new native transfer legs.
+    Bind both original GIDs and numeric IDs, both account GIDs and balances, both
+    currencies, amounts, dates and the directional exchange rate in one plan.
+  - [x] Verify the new sender/recipient GIDs and numeric IDs, reciprocal links,
+    account references and both resulting balances after one atomic save. Recover
+    from either side of the save boundary without repeating the replacement.
+  - [x] Cover GBP-to-EUR and EUR-to-GBP fixture conversions, separate Send/Receive
+    dates, source-only and paired-import replacement, stale rows, ambiguous
+    counterparts, existing transfers and duplicate source events.
+  - [x] Keep nonzero-fee conversion blocked until a native before/after example
+    establishes the fee currency and amount rules; observed reference pairs have
+    zero fee. Keep live capability blocked until application and sync acceptance.
 
 - [ ] **Create an Adjust Balance transaction.**
   Portfolio valuation updates need a dated adjustment after itemizing fees,

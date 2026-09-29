@@ -27,6 +27,10 @@
 - W06 exact-ID deletion of the latest GBP investment-total adjustment on marked
   disposable stores, with history and relationship guards, fresh read-back and
   interruption recovery. Live deletion remains blocked.
+- W07 guarded replacement of an imported withdrawal and optional identified
+  deposit with reciprocal zero-fee transfer legs on marked disposable stores.
+  Both account balances, old/new identities, links and replay are verified;
+  live conversion and nonzero fees remain blocked.
 - Private recovery journals, consistent pre-write snapshots, durable results,
   source-event retry guards and explicit retention cleanup.
 - Read-only runtime identity discovery binding the application edition/build,

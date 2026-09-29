@@ -16,6 +16,7 @@ from write_journal import JournalError, JournalStore, store_lock
 from write_plan import (
     ADJUST_BALANCE_CAPABILITY,
     DELETE_ADJUSTMENT_CAPABILITY,
+    TRANSFER_CAPABILITY,
     ASSIGN_CAPABILITY,
     CREATE_CAPABILITIES,
     EDIT_CAPABILITY,
@@ -280,6 +281,7 @@ class WriterClient:
         if plan["capability"] not in {
             *CREATE_CAPABILITIES, EDIT_CAPABILITY, ASSIGN_CAPABILITY,
             DELETE_ADJUSTMENT_CAPABILITY,
+            TRANSFER_CAPABILITY,
             *(policy[0] for policy in RECONCILE_CAPABILITIES.values()),
         }:
             return
@@ -304,11 +306,15 @@ class WriterClient:
             self._require_operation_capability(validated)
             record = self._matching_record(validated, journal)
             if record is None:
-                if validated["capability"] == DELETE_ADJUSTMENT_CAPABILITY:
+                if validated["capability"] in {
+                    DELETE_ADJUSTMENT_CAPABILITY, TRANSFER_CAPABILITY
+                }:
                     inspection = self._invoke(validated, recover=True, lock_fd=lock_fd)
                     if inspection["classification"] != "retry_safe":
                         raise WriterClientError(
                             "W06 requires the exact target to exist before preparing a deletion"
+                            if validated["capability"] == DELETE_ADJUSTMENT_CAPABILITY
+                            else "W07 requires exact imported rows before preparing a replacement"
                         )
                 journal.prepare(validated, self.store)
             else:

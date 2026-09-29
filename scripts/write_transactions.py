@@ -17,6 +17,7 @@ from write_plan import (
     CONTRACT_VERSION,
     ADJUST_BALANCE_CAPABILITY,
     DELETE_ADJUSTMENT_CAPABILITY,
+    TRANSFER_CAPABILITY,
     ASSIGN_CAPABILITY,
     CREATE_OPERATION_POLICIES,
     EDIT_CAPABILITY,
@@ -26,6 +27,7 @@ from write_plan import (
     deterministic_transaction_gid,
     edit_changed_fields,
     normalize_decimal,
+    transfer_postcondition,
     validate_plan,
 )
 
@@ -422,6 +424,59 @@ def build_delete_adjustment_plan(request: Mapping[str, Any]) -> dict[str, Any]:
     })
 
 
+def build_transfer_plan(request: Mapping[str, Any]) -> dict[str, Any]:
+    """Plan one atomic, zero-fee replacement of imported rows with a transfer."""
+    raw = _mapping(request, "request")
+    if set(raw) != _ENVELOPE_FIELDS | {"destination_account", "operation"}:
+        raise PlanValidationError("request has unknown or missing W07 fields")
+    operation = _mapping(raw.pop("operation"), "operation")
+    if set(operation) != {
+        "operation_id", "kind", "source_old", "destination_old", "send_at",
+        "receive_at", "sender_amount", "recipient_amount", "exchange_rate",
+        "fee_amount",
+    } or operation.get("kind") != "replace_import_with_transfer":
+        raise PlanValidationError("operation has unknown or missing W07 fields")
+    raw["destination_account"] = _mapping(raw["destination_account"], "destination_account")
+    if "expected_cached_balance" in raw["destination_account"]:
+        raw["destination_account"]["expected_cached_balance"] = normalize_decimal(
+            raw["destination_account"]["expected_cached_balance"],
+            "destination_account.expected_cached_balance",
+        )
+    for name in ("source_old", "destination_old"):
+        if operation[name] is None:
+            continue
+        row = _mapping(operation[name], name)
+        if "amount" in row:
+            row["amount"] = normalize_decimal(row["amount"], f"{name}.amount")
+        operation[name] = row
+    for name in ("sender_amount", "recipient_amount", "exchange_rate", "fee_amount"):
+        operation[name] = normalize_decimal(operation[name], name)
+    store = _mapping(raw["store_identity"], "store_identity")
+    operation.update(
+        capability=TRANSFER_CAPABILITY,
+        transaction_entity="TransferWithdrawTransaction",
+        transaction_gid=deterministic_transaction_gid(
+            store_uuid=store.get("store_uuid"), owner_uri=raw["owner_uri"],
+            source_event_id=raw["source_event_id"] + ":withdraw",
+        ),
+        recipient_transaction_gid=deterministic_transaction_gid(
+            store_uuid=store.get("store_uuid"), owner_uri=raw["owner_uri"],
+            source_event_id=raw["source_event_id"] + ":deposit",
+        ),
+        owner_uri=raw["owner_uri"],
+        source_event_id=raw["source_event_id"],
+    )
+    plan = {
+        "contract_version": CONTRACT_VERSION,
+        "operation_schema_version": OPERATION_SCHEMA_VERSION,
+        **raw,
+        "capability": TRANSFER_CAPABILITY,
+        "operations": [operation],
+    }
+    operation["expected_postcondition"] = transfer_postcondition(plan, operation)
+    return validate_plan(plan)
+
+
 def _load_request(path: Path) -> dict[str, Any]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -462,7 +517,7 @@ def make_parser() -> argparse.ArgumentParser:
         help=argparse.SUPPRESS,
     )
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ("create", "edit", "assign", "reconcile", "unreconcile", "adjust-balance", "delete-adjustment"):
+    for name in ("create", "edit", "assign", "reconcile", "unreconcile", "adjust-balance", "delete-adjustment", "transfer"):
         command = commands.add_parser(name)
         command.add_argument("--request", type=Path, required=True)
         command.add_argument(
@@ -478,7 +533,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         builders = {"create": build_plan, "edit": build_edit_plan,
                     "assign": build_assign_plan, "adjust-balance": build_adjust_balance_plan,
-                    "delete-adjustment": build_delete_adjustment_plan}
+                    "delete-adjustment": build_delete_adjustment_plan,
+                    "transfer": build_transfer_plan}
         request = _load_request(args.request)
         plan = (builders[args.command](request)
                 if args.command in builders else build_reconcile_plan(

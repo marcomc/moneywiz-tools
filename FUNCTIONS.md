@@ -74,6 +74,8 @@ investment-total creation and deletion variants. W05's model-48 live creation
 capability is verified for the no-holdings account shape; W06 deletion remains
 limited to marked disposable stores. See
 [Writer Recovery](doc/WRITER-RECOVERY.md) for journals.
+W07 transfer replacement is also limited to marked disposable stores; see
+[Transaction Transfer](doc/TRANSACTION-TRANSFER.md) for its paired-leg contract.
 
 | Command | Behavior |
 | --- | --- |
@@ -84,6 +86,7 @@ limited to marked disposable stores. See
 | `transaction unreconcile --request FILE --plan FILE` | Build a guarded W04 correction plan without opening a store |
 | `transaction adjust-balance --request FILE --plan FILE` | Build a W05 GBP investment-total plan without opening a store |
 | `transaction delete-adjustment --request FILE --plan FILE` | Build a W06 plan for one exact latest GBP investment-total adjustment without opening a store |
+| `transaction transfer --request FILE --plan FILE` | Build a W07 plan to replace one or two imported rows with a zero-fee paired transfer without opening a store |
 | `write validate --plan FILE` | Validate and display the exact plan and canonical digest |
 | `write apply --plan FILE` | Inspect without mutation |
 | `write apply --plan FILE --reviewed-digest SHA --apply` | Apply the reviewed coherent unit with durable recovery evidence |

@@ -201,7 +201,9 @@ func runFixtureWriter() throws {
                 try runFixtureCrash(args)
             }
             guard (args.count == 4 || args.count == 5), args[0] == "--store", args[2] == "--model",
-                  args.count == 4 || ["--unmarked", "--w06", "--w06-unmarked", "--w06-linked"].contains(args[4]) else {
+                  args.count == 4 || ["--unmarked", "--w06", "--w06-unmarked", "--w06-linked",
+                    "--w07-source", "--w07-paired", "--w07-reverse", "--w07-ambiguous",
+                    "--w07-unmarked", "--w07-voided"].contains(args[4]) else {
                 throw HostError.message("usage")
             }
             let store = URL(fileURLWithPath: args[1]), modelURL = URL(fileURLWithPath: args[3])
@@ -212,7 +214,9 @@ func runFixtureWriter() throws {
             container.persistentStoreDescriptions = [description]
             var error: Error?; container.loadPersistentStores { _, value in error = value }; if let error { throw error }
             guard let persistentStore = container.persistentStoreCoordinator.persistentStores.first else { throw HostError.message("fixture has no persistent store") }
-            if args.count == 4 || ["--w06", "--w06-linked"].contains(args[4]) {
+            if args.count == 4 || ["--w06", "--w06-linked", "--w07-source",
+                "--w07-paired", "--w07-reverse", "--w07-ambiguous",
+                "--w07-voided"].contains(args[4]) {
                 var storeMetadata = persistentStore.metadata ?? [:]
                 storeMetadata["MoneyWizToolsDisposableFixture"] = "W01-v1"
                 container.persistentStoreCoordinator.setMetadata(storeMetadata, for: persistentStore)
@@ -222,6 +226,90 @@ func runFixtureWriter() throws {
             try fixtureSet(user, "syncLogin", "w01-fixture@example.invalid")
             let foreignUser = try fixtureObject("User", c)
             try fixtureSet(foreignUser, "syncLogin", "w01-foreign@example.invalid")
+            if args.count == 5 && args[4].hasPrefix("--w07-") {
+                let reverse = args[4] == "--w07-reverse"
+                let paired = args[4] == "--w07-paired"
+                let sourceCurrency = reverse ? "EUR" : "GBP"
+                let destinationCurrency = reverse ? "GBP" : "EUR"
+                let sourceAmount = reverse ? -23.0 : -20.0
+                let destinationAmount = reverse ? 20.0 : 23.0
+                let source = try fixtureAccount("CashAccount", gid: "w07-source",
+                    name: "W07 source", opening: 100, balance: 80, user: user, context: c)
+                let destination = try fixtureAccount("CashAccount", gid: "w07-destination",
+                    name: "W07 destination", opening: 50, balance: paired ? 73 : 50,
+                    user: user, context: c)
+                try fixtureSet(source, "currencyName", sourceCurrency)
+                try fixtureSet(destination, "currencyName", destinationCurrency)
+                func imported(_ entity: String, gid: String, amount: Double,
+                              currency: String, date: String,
+                              account: NSManagedObject) throws -> NSManagedObject {
+                    let row = try fixtureObject(entity, c)
+                    try fixtureSet(row, "GID", gid)
+                    try fixtureSet(row, "amount", amount)
+                    try fixtureSet(row, "originalAmount", amount)
+                    try fixtureSet(row, "originalCurrency", currency)
+                    try fixtureSet(row, "originalExchangeRate", 1.0)
+                    try fixtureSet(row, "currencyExchangeRate", 1.0)
+                    try fixtureSet(row, "objectCreationDate", Date())
+                    try fixtureSet(row, "date", precisePlanTimestamp(date))
+                    try fixtureSet(row, "status", 2)
+                    try fixtureSet(row, "flags", 4)
+                    try fixtureSet(row, "reconciled", false)
+                    try fixtureSet(row, "notes", "Imported fixture")
+                    try fixtureSet(row, "desc", "Synthetic conversion")
+                    try fixtureSet(row, "voidCheque", 0)
+                    try fixtureSet(row, "account", account)
+                    return row
+                }
+                let sourceRow = try imported("WithdrawTransaction", gid: "w07-import-source",
+                    amount: sourceAmount, currency: sourceCurrency,
+                    date: "2026-09-13T09:30:00+02:00", account: source)
+                if args[4] == "--w07-voided" { try fixtureSet(sourceRow, "voidCheque", 1) }
+                let tag = try fixtureObject("Tag", c)
+                try fixtureSet(tag, "GID", "w07-tag")
+                try fixtureSet(tag, "name", "W07")
+                try fixtureSet(tag, "objectCreationDate", Date())
+                try fixtureSet(tag, "user", user)
+                try fixtureSet(sourceRow, "tags", NSSet(object: tag))
+                let payee = try fixtureObject("Payee", c)
+                try fixtureSet(payee, "GID", "w07-payee")
+                try fixtureSet(payee, "name", "W07")
+                try fixtureSet(payee, "objectCreationDate", Date())
+                try fixtureSet(payee, "user", user)
+                try fixtureSet(sourceRow, "payee", payee)
+                let category = try fixtureObject("Category", c)
+                try fixtureSet(category, "GID", "w07-category")
+                try fixtureSet(category, "name", "W07")
+                try fixtureSet(category, "objectCreationDate", Date())
+                try fixtureSet(category, "type", 1)
+                try fixtureSet(category, "user", user)
+                let assignment = try fixtureObject("CategoryAssigment", c)
+                try fixtureSet(assignment, "amount", sourceAmount)
+                try fixtureSet(assignment, "assigmentNumber", 0)
+                try fixtureSet(assignment, "category", category)
+                try fixtureSet(assignment, "transaction", sourceRow)
+                let destinationRow = try paired ? imported("DepositTransaction", gid: "w07-import-destination",
+                    amount: destinationAmount, currency: destinationCurrency,
+                    date: "2026-09-13T09:31:00+02:00", account: destination) : nil
+                if args[4] == "--w07-ambiguous" {
+                    _ = try imported("DepositTransaction", gid: "w07-ambiguous",
+                        amount: destinationAmount, currency: destinationCurrency,
+                        date: "2026-09-13T09:31:00+02:00", account: destination)
+                }
+                try c.save()
+                let metadata = try NSPersistentStoreCoordinator.metadataForPersistentStore(
+                    ofType: NSSQLiteStoreType, at: store, options: nil)
+                let result: [String: Any] = [
+                    "store_uuid": metadata[NSStoreUUIDKey] as! String,
+                    "owner_uri": user.objectID.uriRepresentation().absoluteString,
+                    "source_numeric_id": durableNumericID(sourceRow.objectID),
+                    "destination_numeric_id": destinationRow.map { durableNumericID($0.objectID) } ?? NSNull(),
+                    "source_assignment_uri": assignment.objectID.uriRepresentation().absoluteString,
+                ]
+                FileHandle.standardOutput.write(try JSONSerialization.data(withJSONObject: result, options: [.sortedKeys]))
+                FileHandle.standardOutput.write(Data([10]))
+                return
+            }
             if args.count == 5 && ["--w06", "--w06-unmarked", "--w06-linked"].contains(args[4]) {
                 let account = try fixtureObject("InvestmentAccount", c)
                 try fixtureSet(account, "GID", "w06-investment")

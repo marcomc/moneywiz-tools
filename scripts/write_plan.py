@@ -33,6 +33,7 @@ RECONCILE_CAPABILITIES = {
 }
 ADJUST_BALANCE_CAPABILITY = "write.adjust-balance-investment-total"
 DELETE_ADJUSTMENT_CAPABILITY = "write.delete-adjust-balance-investment-total"
+TRANSFER_CAPABILITY = "write.replace-import-with-transfer"
 EDIT_ENTITIES = frozenset(
     {"DepositTransaction", "WithdrawTransaction", "RefundTransaction"}
 )
@@ -233,6 +234,28 @@ class DeleteAdjustmentOperation(TypedDict):
     expected_postcondition: dict[str, Any]
 
 
+class TransferReplacementOperation(TypedDict):
+    """Replace one or two imported rows with a reciprocal zero-fee transfer."""
+
+    operation_id: str
+    kind: str
+    capability: str
+    transaction_entity: str
+    transaction_gid: str
+    recipient_transaction_gid: str
+    owner_uri: str
+    source_event_id: str
+    source_old: dict[str, Any]
+    destination_old: dict[str, Any] | None
+    send_at: str
+    receive_at: str
+    sender_amount: str
+    recipient_amount: str
+    exchange_rate: str
+    fee_amount: str
+    expected_postcondition: dict[str, Any]
+
+
 class WritePlan(TypedDict):
     """Version-two envelope, intentionally closed until W01-W04 are evidenced."""
 
@@ -255,6 +278,7 @@ class WritePlan(TypedDict):
     expected_cached_account_balance: str
     currency_unit: str
     source_scope: NotRequired[dict[str, Any]]
+    destination_account: NotRequired[dict[str, str]]
     operations: list[
         PayeeReassignmentOperation
         | CreateTransactionOperation
@@ -263,6 +287,7 @@ class WritePlan(TypedDict):
         | ReconcileTransactionOperation
         | AdjustBalanceOperation
         | DeleteAdjustmentOperation
+        | TransferReplacementOperation
     ]
 
 
@@ -954,6 +979,136 @@ def _validate_delete_adjustment_operation(
     return operation["transaction_gid"]
 
 
+def _transfer_old_row(value: object, field: str, *, account_gid: str,
+                      currency_unit: str, entity: str) -> dict[str, Any]:
+    required = {
+        "transaction_entity", "transaction_gid", "transaction_numeric_id",
+        "account_gid", "amount", "currency_unit", "occurred_at", "status",
+        "flags", "reconciled", "note", "description", "payee_gid",
+        "tag_gids", "category_assignment_uris",
+    }
+    if not isinstance(value, Mapping) or set(value) != required:
+        raise PlanValidationError(f"{field} has unknown or missing fields")
+    row = dict(value)
+    if row["transaction_entity"] != entity or row["account_gid"] != account_gid:
+        raise PlanValidationError(f"{field} entity or account differs from the plan")
+    _text(row["transaction_gid"], f"{field}.transaction_gid")
+    numeric_id = row["transaction_numeric_id"]
+    if (not isinstance(numeric_id, str) or not numeric_id.isascii()
+            or not numeric_id.isdigit() or int(numeric_id) <= 0
+            or str(int(numeric_id)) != numeric_id):
+        raise PlanValidationError(f"{field}.transaction_numeric_id must be positive")
+    if row["currency_unit"] != currency_unit:
+        raise PlanValidationError(f"{field}.currency_unit differs from the account")
+    _canonical_decimal(row["amount"], f"{field}.amount")
+    _timestamp(row["occurred_at"], f"{field}.occurred_at")
+    if type(row["status"]) is not int or row["status"] != 2:
+        raise PlanValidationError(f"{field}.status must be the observed cleared state")
+    if type(row["flags"]) is not int or row["flags"] < 0:
+        raise PlanValidationError(f"{field}.flags must be a nonnegative native integer")
+    if type(row["reconciled"]) is not bool:
+        raise PlanValidationError(f"{field}.reconciled must be boolean")
+    for optional in ("note", "description", "payee_gid"):
+        if row[optional] is not None and not isinstance(row[optional], str):
+            raise PlanValidationError(f"{field}.{optional} must be text or null")
+    for name in ("tag_gids", "category_assignment_uris"):
+        items = row[name]
+        if (not isinstance(items, list) or not all(isinstance(item, str)
+                and item.strip() == item and item for item in items)
+                or items != sorted(set(items))):
+            raise PlanValidationError(f"{field}.{name} must be unique sorted strings")
+    return row
+
+
+def transfer_postcondition(plan: Mapping[str, Any], operation: Mapping[str, Any]) -> dict[str, Any]:
+    """The stable part of W07 read-back; new numeric IDs belong in the receipt."""
+    sender = operation["source_old"]
+    receiver = operation["destination_old"]
+    destination = plan["destination_account"]
+    recipient_prior = Decimal(destination["expected_cached_balance"])
+    recipient_final = recipient_prior if receiver else recipient_prior + Decimal(operation["recipient_amount"])
+    return {
+        "old_sender_gid": sender["transaction_gid"],
+        "old_sender_numeric_id": sender["transaction_numeric_id"],
+        "old_recipient_gid": receiver["transaction_gid"] if receiver else None,
+        "old_recipient_numeric_id": receiver["transaction_numeric_id"] if receiver else None,
+        "sender_gid": operation["transaction_gid"],
+        "recipient_gid": operation["recipient_transaction_gid"],
+        "sender_account_gid": plan["expected_account_gid"],
+        "recipient_account_gid": destination["account_gid"],
+        "sender_amount": operation["sender_amount"],
+        "recipient_amount": operation["recipient_amount"],
+        "send_at": operation["send_at"],
+        "receive_at": operation["receive_at"],
+        "exchange_rate": operation["exchange_rate"],
+        "fee_amount": operation["fee_amount"],
+        "sender_balance": normalize_decimal(plan["expected_cached_account_balance"], "sender_balance"),
+        "recipient_balance": normalize_decimal(format(recipient_final, "f"), "recipient_balance"),
+    }
+
+
+def _validate_transfer_operation(
+    operation: Mapping[str, Any], prefix: str, plan: dict[str, Any]
+) -> str:
+    required = {
+        "operation_id", "kind", "capability", "transaction_entity",
+        "transaction_gid", "recipient_transaction_gid", "owner_uri",
+        "source_event_id", "source_old", "destination_old", "send_at",
+        "receive_at", "sender_amount", "recipient_amount", "exchange_rate",
+        "fee_amount", "expected_postcondition",
+    }
+    if set(operation) != required or operation["kind"] != "replace_import_with_transfer":
+        raise PlanValidationError(f"{prefix} has unknown or missing W07 fields")
+    if (operation["capability"] != TRANSFER_CAPABILITY
+            or plan["capability"] != TRANSFER_CAPABILITY
+            or operation["transaction_entity"] != "TransferWithdrawTransaction"
+            or operation["owner_uri"] != plan["owner_uri"]
+            or operation["source_event_id"] != plan["source_event_id"]):
+        raise PlanValidationError("W07 operation differs from its envelope")
+    destination = plan["destination_account"]
+    sender = _transfer_old_row(
+        operation["source_old"], f"{prefix}.source_old",
+        account_gid=plan["expected_account_gid"],
+        currency_unit=plan["currency_unit"], entity="WithdrawTransaction",
+    )
+    receiver = None
+    if operation["destination_old"] is not None:
+        receiver = _transfer_old_row(
+            operation["destination_old"], f"{prefix}.destination_old",
+            account_gid=destination["account_gid"],
+            currency_unit=destination["currency_unit"], entity="DepositTransaction",
+        )
+        if (receiver["transaction_gid"] == sender["transaction_gid"]
+                or receiver["transaction_numeric_id"] == sender["transaction_numeric_id"]):
+            raise PlanValidationError("W07 old leg identities must be distinct")
+    for name in ("send_at", "receive_at"):
+        occurred = _timestamp(operation[name], f"{prefix}.{name}")
+        _validate_timezone_offset(occurred, plan["timezone"], f"{prefix}.{name}")
+    sender_amount = Decimal(_canonical_decimal(operation["sender_amount"], f"{prefix}.sender_amount"))
+    recipient_amount = Decimal(_canonical_decimal(operation["recipient_amount"], f"{prefix}.recipient_amount"))
+    rate = Decimal(_canonical_decimal(operation["exchange_rate"], f"{prefix}.exchange_rate"))
+    fee = Decimal(_canonical_decimal(operation["fee_amount"], f"{prefix}.fee_amount"))
+    if (sender_amount >= 0 or recipient_amount <= 0 or rate <= 0 or fee != 0
+            or sender_amount != Decimal(sender["amount"])
+            or (receiver is not None and recipient_amount != Decimal(receiver["amount"]))
+            or abs(-sender_amount * rate - recipient_amount) > Decimal("0.01")):
+        raise PlanValidationError("W07 amount, rate or zero-fee equation differs")
+    expected_sender = deterministic_transaction_gid(
+        store_uuid=plan["store_identity"]["store_uuid"], owner_uri=plan["owner_uri"],
+        source_event_id=plan["source_event_id"] + ":withdraw",
+    )
+    expected_receiver = deterministic_transaction_gid(
+        store_uuid=plan["store_identity"]["store_uuid"], owner_uri=plan["owner_uri"],
+        source_event_id=plan["source_event_id"] + ":deposit",
+    )
+    if (operation["transaction_gid"] != expected_sender
+            or operation["recipient_transaction_gid"] != expected_receiver):
+        raise PlanValidationError("W07 new GIDs differ from the source event")
+    if operation["expected_postcondition"] != transfer_postcondition(plan, operation):
+        raise PlanValidationError("W07 postcondition differs from the reviewed pair")
+    return operation["transaction_gid"]
+
+
 def _validate_source_scope(scope: object, plan: dict[str, Any]) -> list[str]:
     required = {
         "scope", "read_status", "external_source_verified", "account_gid",
@@ -1012,6 +1167,9 @@ def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
     w04 = plan.get("capability") in {policy[0] for policy in RECONCILE_CAPABILITIES.values()}
     if w04:
         required.add("source_scope")
+    w07 = plan.get("capability") == TRANSFER_CAPABILITY
+    if w07:
+        required.add("destination_account")
     if set(plan) != required and set(plan) != required - {"plan_digest"}:
         raise PlanValidationError("plan has unknown or missing fields")
     if (
@@ -1041,6 +1199,7 @@ def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
     capability = plan.get("capability")
     if capability not in {PAYEE_CAPABILITY, EDIT_CAPABILITY, ASSIGN_CAPABILITY,
                           ADJUST_BALANCE_CAPABILITY, DELETE_ADJUSTMENT_CAPABILITY,
+                          TRANSFER_CAPABILITY,
                           *(policy[0] for policy in RECONCILE_CAPABILITIES.values()),
                           *CREATE_CAPABILITIES}:
         raise PlanValidationError("capability is not enabled")
@@ -1076,6 +1235,21 @@ def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
         plan.get("expected_cached_account_balance"), "expected_cached_account_balance"
     )
     _text(plan.get("currency_unit"), "currency_unit")
+    if w07:
+        destination = plan["destination_account"]
+        if not isinstance(destination, Mapping) or set(destination) != {
+            "account_gid", "currency_unit", "expected_cached_balance"
+        }:
+            raise PlanValidationError("W07 destination_account has unknown or missing fields")
+        _text(destination["account_gid"], "destination_account.account_gid")
+        _currency(destination["currency_unit"], "destination_account.currency_unit")
+        _canonical_decimal(destination["expected_cached_balance"],
+                           "destination_account.expected_cached_balance")
+        if destination["account_gid"] == plan["expected_account_gid"]:
+            raise PlanValidationError("W07 source and destination accounts must differ")
+        _currency(plan["currency_unit"], "currency_unit")
+        _canonical_decimal(plan["expected_cached_account_balance"],
+                           "expected_cached_account_balance")
     scope_gids = _validate_source_scope(plan["source_scope"], plan) if w04 else []
     operations = plan.get("operations")
     if not isinstance(operations, list) or not operations:
@@ -1115,6 +1289,8 @@ def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
         elif kind == "delete_investment_total_adjustment":
             delete_operations += 1
             transaction_gid = _validate_delete_adjustment_operation(operation, prefix, plan)
+        elif kind == "replace_import_with_transfer":
+            transaction_gid = _validate_transfer_operation(operation, prefix, plan)
         else:
             raise PlanValidationError(f"{prefix}.kind is not enabled")
         if transaction_gid in transaction_gids:
@@ -1122,7 +1298,7 @@ def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
         transaction_gids.add(transaction_gid)
         if w04 and transaction_gid not in scope_gids:
             raise PlanValidationError("W04 target is absent from complete account scope")
-    if (create_operations or adjust_operations or delete_operations) and len(operations) != 1:
+    if (create_operations or adjust_operations or delete_operations or w07) and len(operations) != 1:
         raise PlanValidationError(
             "a creation or deletion source event must contain exactly one operation"
         )
@@ -1134,6 +1310,7 @@ def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
         ASSIGN_CAPABILITY,
         ADJUST_BALANCE_CAPABILITY,
         DELETE_ADJUSTMENT_CAPABILITY,
+        TRANSFER_CAPABILITY,
         *(policy[0] for policy in RECONCILE_CAPABILITIES.values()),
     }:
         raise PlanValidationError("create capability requires a create operation")
@@ -1218,6 +1395,11 @@ def validate_result(plan: dict[str, Any], result: object) -> dict[str, Any]:
             operation["kind"] in CREATE_OPERATION_POLICIES
             and classification == "retry_safe"
         )
+        transfer_without_pair = (
+            operation["kind"] == "replace_import_with_transfer"
+            and classification in {"retry_safe", "unknown"}
+            and numeric_id is None and uri is None
+        )
         adjust_without_row = (
             operation["kind"] == "adjust_investment_total"
             and classification in {"noop", "retry_safe", "unknown"}
@@ -1233,7 +1415,7 @@ def validate_result(plan: dict[str, Any], result: object) -> dict[str, Any]:
             operation["expected_prior_balance"] != operation["target_balance"]
         ):
             raise PlanValidationError("W05 no-row noop requires an already matching target")
-        if creation_retry_safe:
+        if creation_retry_safe or transfer_without_pair:
             if numeric_id is not None or uri is not None:
                 raise PlanValidationError(
                     "retry-safe creation receipt must not claim a durable identity"
@@ -1247,7 +1429,7 @@ def validate_result(plan: dict[str, Any], result: object) -> dict[str, Any]:
             raise PlanValidationError(
                 "native operation receipt has no durable numeric identity"
             )
-        if not creation_retry_safe and not adjust_without_row:
+        if not creation_retry_safe and not adjust_without_row and not transfer_without_pair:
             if (
                 not isinstance(uri, str)
                 or not uri.startswith(
@@ -1268,6 +1450,33 @@ def validate_result(plan: dict[str, Any], result: object) -> dict[str, Any]:
             )
         ):
             raise PlanValidationError("W06 receipt does not identify the deleted target")
+        if operation["kind"] == "replace_import_with_transfer":
+            details = receipt.get("transfer_details")
+            if success:
+                if not isinstance(details, Mapping) or set(details) != {
+                    "recipient_gid", "recipient_numeric_id", "recipient_uri",
+                    "old_sender_numeric_id", "old_recipient_numeric_id",
+                    "reciprocal_links_verified",
+                }:
+                    raise PlanValidationError("W07 receipt omits the paired identity map")
+                recipient_id = details["recipient_numeric_id"]
+                if (not isinstance(recipient_id, str) or not recipient_id.isascii()
+                        or not recipient_id.isdigit() or int(recipient_id) <= 0
+                        or details["recipient_gid"] != operation["recipient_transaction_gid"]
+                        or details["recipient_uri"] != (
+                            f"x-coredata://{plan['store_identity']['store_uuid']}/"
+                            f"TransferDepositTransaction/p{recipient_id}"
+                        )
+                        or details["old_sender_numeric_id"] !=
+                        operation["source_old"]["transaction_numeric_id"]
+                        or details["old_recipient_numeric_id"] != (
+                            operation["destination_old"]["transaction_numeric_id"]
+                            if operation["destination_old"] else None
+                        )
+                        or details["reciprocal_links_verified"] is not True):
+                    raise PlanValidationError("W07 receipt pair differs from the reviewed transfer")
+            elif details is not None:
+                raise PlanValidationError("unverified W07 receipt claims a paired identity")
         if operation["kind"] == "reassign_payee":
             if (
                 success
