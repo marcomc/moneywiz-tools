@@ -37,3 +37,23 @@ iCloud up to date after completed uploads, and Core Data CloudKit metadata for
 the new row recorded export with no pending upload. The model-48 capability is
 verified for this variant. Ordinary account balance, investment cash and holding
 quantity have separate native semantics and no W05 writer capability here.
+
+## W06 deletion of the observed adjustment
+
+W06 deletes one exactly identified, latest `ReconcileTransaction` from the same
+no-holdings GBP investment-total shape. The reviewed request binds its GID,
+numeric Core Data ID, account, amount, `reconcileAmount`, timestamp including
+fractional seconds, current balance, currency and deletion reason. The preview
+computes the balance after removing that amount. The native host checks the
+entire ordered adjustment history and rejects stale values, older targets,
+dependent relationships, holdings and other transaction types before one save.
+It reads the target's absence and the resulting balance in a fresh context.
+The client requires the exact target to exist before preparing a new journal;
+recovery and replay of a prepared deletion leave an absent target unchanged.
+
+The app-created deletion reference removed only the selected business row and
+changed the account version in private before/after snapshots. A writer trial
+on a separately marked copy reproduced the balance change and `noop` replay.
+The `write.delete-adjust-balance-investment-total` live capability remains
+blocked: the Python client and native host require the disposable-store marker.
+Live app and sync acceptance needs separate authorization and evidence.

@@ -32,6 +32,7 @@ RECONCILE_CAPABILITIES = {
     "unreconcile_transaction": ("write.unreconcile", True, False),
 }
 ADJUST_BALANCE_CAPABILITY = "write.adjust-balance-investment-total"
+DELETE_ADJUSTMENT_CAPABILITY = "write.delete-adjust-balance-investment-total"
 EDIT_ENTITIES = frozenset(
     {"DepositTransaction", "WithdrawTransaction", "RefundTransaction"}
 )
@@ -207,6 +208,31 @@ class AdjustBalanceOperation(TypedDict):
     expected_postcondition: dict[str, str]
 
 
+class DeleteAdjustmentOperation(TypedDict):
+    """Delete one exact, latest aggregate investment adjustment."""
+
+    operation_id: str
+    kind: str
+    capability: str
+    transaction_entity: str
+    transaction_gid: str
+    transaction_numeric_id: str
+    account_gid: str
+    owner_uri: str
+    source_event_id: str
+    balance_unit: str
+    expected_amount: str
+    expected_reconcile_amount: str
+    expected_prior_balance: str
+    target_balance: str
+    expected_balance_delta: str
+    currency_unit: str
+    occurred_at: str
+    timezone: str
+    deletion_reason: str
+    expected_postcondition: dict[str, Any]
+
+
 class WritePlan(TypedDict):
     """Version-two envelope, intentionally closed until W01-W04 are evidenced."""
 
@@ -236,6 +262,7 @@ class WritePlan(TypedDict):
         | AssignTransactionOperation
         | ReconcileTransactionOperation
         | AdjustBalanceOperation
+        | DeleteAdjustmentOperation
     ]
 
 
@@ -864,6 +891,69 @@ def _validate_adjust_balance_operation(
     return operation["transaction_gid"]
 
 
+def _validate_delete_adjustment_operation(
+    operation: Mapping[str, Any], prefix: str, plan: dict[str, Any]
+) -> str:
+    required = {
+        "operation_id", "kind", "capability", "transaction_entity",
+        "transaction_gid", "transaction_numeric_id", "account_gid", "owner_uri",
+        "source_event_id", "balance_unit", "expected_amount",
+        "expected_reconcile_amount", "expected_prior_balance", "target_balance",
+        "expected_balance_delta", "currency_unit", "occurred_at", "timezone",
+        "deletion_reason", "expected_postcondition",
+    }
+    if set(operation) != required:
+        raise PlanValidationError(f"{prefix} has unknown or missing W06 fields")
+    if (
+        operation["kind"] != "delete_investment_total_adjustment"
+        or operation["capability"] != DELETE_ADJUSTMENT_CAPABILITY
+        or plan["capability"] != DELETE_ADJUSTMENT_CAPABILITY
+        or operation["transaction_entity"] != "ReconcileTransaction"
+        or operation["balance_unit"] != "investment_total"
+    ):
+        raise PlanValidationError(f"{prefix} is not the observed W06 variant")
+    for field, envelope in (
+        ("account_gid", "expected_account_gid"), ("owner_uri", "owner_uri"),
+        ("source_event_id", "source_event_id"), ("currency_unit", "currency_unit"),
+        ("timezone", "timezone"),
+    ):
+        if operation[field] != plan[envelope]:
+            raise PlanValidationError(f"{prefix}.{field} must match the envelope")
+    _text(operation["transaction_gid"], f"{prefix}.transaction_gid")
+    numeric_id = operation["transaction_numeric_id"]
+    if (not isinstance(numeric_id, str) or not numeric_id.isascii()
+            or not numeric_id.isdigit() or int(numeric_id) <= 0
+            or str(int(numeric_id)) != numeric_id):
+        raise PlanValidationError(f"{prefix}.transaction_numeric_id must be positive")
+    _text(operation["deletion_reason"], f"{prefix}.deletion_reason")
+    values = {
+        name: _canonical_decimal(operation[name], f"{prefix}.{name}")
+        for name in ("expected_amount", "expected_reconcile_amount",
+                     "expected_prior_balance", "target_balance", "expected_balance_delta")
+    }
+    if (Decimal(values["expected_amount"]) == 0
+            or Decimal(values["expected_reconcile_amount"]) != Decimal(values["expected_prior_balance"])
+            or Decimal(values["target_balance"]) !=
+            Decimal(values["expected_prior_balance"]) - Decimal(values["expected_amount"])
+            or Decimal(values["expected_balance_delta"]) != -Decimal(values["expected_amount"])):
+        raise PlanValidationError("W06 target, prior balance and deletion delta disagree")
+    if plan["currency_unit"] != "GBP" or any(
+        Decimal(value).as_tuple().exponent < -2 for value in values.values()
+    ) or plan["expected_cached_account_balance"] != "0":
+        raise PlanValidationError("W06 is limited to observed GBP investment totals")
+    occurred_at = _timestamp(operation["occurred_at"], f"{prefix}.occurred_at")
+    _validate_timezone_offset(occurred_at, plan["timezone"], f"{prefix}.occurred_at")
+    expected_postcondition = {
+        "transaction_absent": True,
+        "transaction_gid": operation["transaction_gid"],
+        "account_gid": operation["account_gid"],
+        "target_balance": operation["target_balance"],
+    }
+    if operation["expected_postcondition"] != expected_postcondition:
+        raise PlanValidationError("W06 postcondition differs from the reviewed deletion")
+    return operation["transaction_gid"]
+
+
 def _validate_source_scope(scope: object, plan: dict[str, Any]) -> list[str]:
     required = {
         "scope", "read_status", "external_source_verified", "account_gid",
@@ -950,7 +1040,7 @@ def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
         raise PlanValidationError("timezone must be an IANA timezone") from exc
     capability = plan.get("capability")
     if capability not in {PAYEE_CAPABILITY, EDIT_CAPABILITY, ASSIGN_CAPABILITY,
-                          ADJUST_BALANCE_CAPABILITY,
+                          ADJUST_BALANCE_CAPABILITY, DELETE_ADJUSTMENT_CAPABILITY,
                           *(policy[0] for policy in RECONCILE_CAPABILITIES.values()),
                           *CREATE_CAPABILITIES}:
         raise PlanValidationError("capability is not enabled")
@@ -994,6 +1084,7 @@ def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
     transaction_gids: set[str] = set()
     create_operations = 0
     adjust_operations = 0
+    delete_operations = 0
     for index, operation in enumerate(operations):
         prefix = f"operations[{index}]"
         if not isinstance(operation, Mapping):
@@ -1021,6 +1112,9 @@ def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
         elif kind == "adjust_investment_total":
             adjust_operations += 1
             transaction_gid = _validate_adjust_balance_operation(operation, prefix, plan)
+        elif kind == "delete_investment_total_adjustment":
+            delete_operations += 1
+            transaction_gid = _validate_delete_adjustment_operation(operation, prefix, plan)
         else:
             raise PlanValidationError(f"{prefix}.kind is not enabled")
         if transaction_gid in transaction_gids:
@@ -1028,9 +1122,9 @@ def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
         transaction_gids.add(transaction_gid)
         if w04 and transaction_gid not in scope_gids:
             raise PlanValidationError("W04 target is absent from complete account scope")
-    if (create_operations or adjust_operations) and len(operations) != 1:
+    if (create_operations or adjust_operations or delete_operations) and len(operations) != 1:
         raise PlanValidationError(
-            "a creation source event must contain exactly one operation"
+            "a creation or deletion source event must contain exactly one operation"
         )
     if create_operations or adjust_operations:
         _whole_timestamp(plan["created_at"], "created_at")
@@ -1039,6 +1133,7 @@ def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
         EDIT_CAPABILITY,
         ASSIGN_CAPABILITY,
         ADJUST_BALANCE_CAPABILITY,
+        DELETE_ADJUSTMENT_CAPABILITY,
         *(policy[0] for policy in RECONCILE_CAPABILITIES.values()),
     }:
         raise PlanValidationError("create capability requires a create operation")
@@ -1165,6 +1260,14 @@ def validate_result(plan: dict[str, Any], result: object) -> dict[str, Any]:
                     "native operation receipt has no matching durable store identity"
                 )
             uris.add(uri)
+        if operation["kind"] == "delete_investment_total_adjustment" and (
+            numeric_id != operation["transaction_numeric_id"]
+            or uri != (
+                f"x-coredata://{plan['store_identity']['store_uuid']}/"
+                f"ReconcileTransaction/p{numeric_id}"
+            )
+        ):
+            raise PlanValidationError("W06 receipt does not identify the deleted target")
         if operation["kind"] == "reassign_payee":
             if (
                 success

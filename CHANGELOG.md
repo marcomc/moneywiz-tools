@@ -24,6 +24,9 @@
   no-holdings account shape, with native `ReconcileTransaction` creation,
   history checks and replay recovery. The observed GBP investment-total variant
   passed live app read-back and iCloud export acceptance.
+- W06 exact-ID deletion of the latest GBP investment-total adjustment on marked
+  disposable stores, with history and relationship guards, fresh read-back and
+  interruption recovery. Live deletion remains blocked.
 - Private recovery journals, consistent pre-write snapshots, durable results,
   source-event retry guards and explicit retention cleanup.
 - Read-only runtime identity discovery binding the application edition/build,

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build immutable W01-W05 transaction plans from explicit JSON requests."""
+"""Build immutable transaction plans from explicit JSON requests."""
 
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ from typing import Any
 from write_plan import (
     CONTRACT_VERSION,
     ADJUST_BALANCE_CAPABILITY,
+    DELETE_ADJUSTMENT_CAPABILITY,
     ASSIGN_CAPABILITY,
     CREATE_OPERATION_POLICIES,
     EDIT_CAPABILITY,
@@ -370,6 +371,57 @@ def build_adjust_balance_plan(request: Mapping[str, Any]) -> dict[str, Any]:
     })
 
 
+def build_delete_adjustment_plan(request: Mapping[str, Any]) -> dict[str, Any]:
+    """Plan deletion of one observed latest investment-total adjustment."""
+    raw = _mapping(request, "request")
+    if set(raw) != _ENVELOPE_FIELDS | {"operation"}:
+        raise PlanValidationError("request has unknown or missing W06 fields")
+    operation = _mapping(raw.pop("operation"), "operation")
+    if set(operation) != {
+        "operation_id", "kind", "transaction_gid", "transaction_numeric_id",
+        "account_gid", "balance_unit", "expected_amount",
+        "expected_reconcile_amount", "expected_prior_balance", "occurred_at",
+        "deletion_reason",
+    } or operation.get("kind") != "delete_investment_total_adjustment":
+        raise PlanValidationError("operation has unknown or missing W06 fields")
+    amount = normalize_decimal(operation["expected_amount"], "expected_amount")
+    prior = normalize_decimal(operation["expected_prior_balance"], "expected_prior_balance")
+    reconcile = normalize_decimal(
+        operation["expected_reconcile_amount"], "expected_reconcile_amount"
+    )
+    target = normalize_decimal(
+        format(Decimal(prior) - Decimal(amount), "f"), "target_balance"
+    )
+    operation.update(
+        capability=DELETE_ADJUSTMENT_CAPABILITY,
+        transaction_entity="ReconcileTransaction",
+        owner_uri=raw["owner_uri"],
+        source_event_id=raw["source_event_id"],
+        expected_amount=amount,
+        expected_reconcile_amount=reconcile,
+        expected_prior_balance=prior,
+        target_balance=target,
+        expected_balance_delta=normalize_decimal(
+            format(-Decimal(amount), "f"), "expected_balance_delta"
+        ),
+        currency_unit=raw["currency_unit"],
+        timezone=raw["timezone"],
+    )
+    operation["expected_postcondition"] = {
+        "transaction_absent": True,
+        "transaction_gid": operation["transaction_gid"],
+        "account_gid": operation["account_gid"],
+        "target_balance": target,
+    }
+    return validate_plan({
+        "contract_version": CONTRACT_VERSION,
+        "operation_schema_version": OPERATION_SCHEMA_VERSION,
+        **raw,
+        "capability": DELETE_ADJUSTMENT_CAPABILITY,
+        "operations": [operation],
+    })
+
+
 def _load_request(path: Path) -> dict[str, Any]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -410,7 +462,7 @@ def make_parser() -> argparse.ArgumentParser:
         help=argparse.SUPPRESS,
     )
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ("create", "edit", "assign", "reconcile", "unreconcile", "adjust-balance"):
+    for name in ("create", "edit", "assign", "reconcile", "unreconcile", "adjust-balance", "delete-adjustment"):
         command = commands.add_parser(name)
         command.add_argument("--request", type=Path, required=True)
         command.add_argument(
@@ -425,7 +477,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = make_parser().parse_args(argv)
     try:
         builders = {"create": build_plan, "edit": build_edit_plan,
-                    "assign": build_assign_plan, "adjust-balance": build_adjust_balance_plan}
+                    "assign": build_assign_plan, "adjust-balance": build_adjust_balance_plan,
+                    "delete-adjustment": build_delete_adjustment_plan}
         request = _load_request(args.request)
         plan = (builders[args.command](request)
                 if args.command in builders else build_reconcile_plan(
