@@ -70,6 +70,36 @@ def test_exact_plan_and_receipt() -> None:
         validate_result(expected, receipt)
 
 
+@pytest.mark.parametrize("fuzzy,source_name", [
+    (False, " MERCHANT "), (True, " Merchant East "),
+])
+def test_plan_preserves_untrimmed_payee_names(fuzzy: bool, source_name: str) -> None:
+    selected = inventory(fuzzy=fuzzy)
+    selected["source"]["name"] = source_name
+    approval = fuzzy_approval() if fuzzy else None
+    if approval is not None:
+        approval["left_name"] = source_name
+    expected = build_merge_plan(
+        selected, store_uuid="fixture-store",
+        app_identity={"bundle_id": "com.moneywiz.personalfinance",
+                      "version": "2026.37.1", "path": "/Applications/MoneyWiz.app",
+                      "model_path": "/Applications/MoneyWiz.app/model-48.mom"},
+        model_checksum="+6BY8eaTke2jfAd5Bzt5D49JRMZld5o8ZoUW+4G2ElQ=",
+        kind="merge_approved_fuzzy_payee" if fuzzy else "merge_exact_payee",
+        evidence_note="Reviewed synthetic pair", approval=approval,
+    )
+    assert validate_plan(expected)["merge"]["source"]["name"] == source_name
+
+
+@pytest.mark.parametrize("role", ["source", "survivor"])
+def test_plan_rejects_whitespace_only_payee_name(role: str) -> None:
+    changed = deepcopy(plan())
+    changed.pop("plan_digest")
+    changed["merge"][role]["name"] = " \t "
+    with pytest.raises(PlanValidationError, match=f"merge.{role}.name must be a nonblank"):
+        validate_plan(changed)
+
+
 @pytest.mark.parametrize("change", [
     lambda value: value["merge"]["source"].update(name="Other"),
     lambda value: value["merge"]["source"].update(object_uri="x-coredata://other/Payee/p2"),

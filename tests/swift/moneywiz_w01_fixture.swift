@@ -285,7 +285,7 @@ func runFixtureWriter() throws {
                     "--w07-source", "--w07-paired", "--w07-reverse", "--w07-ambiguous",
                     "--w07-unmarked", "--w07-voided", "--w08-aggregate",
                     "--w08-units", "--w08-unmarked", "--w09-exact",
-                    "--w09-fuzzy", "--w09-unmarked"].contains(args[4]) else {
+                    "--w09-fuzzy", "--w09-untrimmed", "--w09-unmarked"].contains(args[4]) else {
                 throw HostError.message("usage")
             }
             let store = URL(fileURLWithPath: args[1]), modelURL = URL(fileURLWithPath: args[3])
@@ -299,7 +299,7 @@ func runFixtureWriter() throws {
             if args.count == 4 || ["--w06", "--w06-linked", "--w07-source",
                 "--w07-paired", "--w07-reverse", "--w07-ambiguous",
                 "--w07-voided", "--w08-aggregate", "--w08-units",
-                "--w09-exact", "--w09-fuzzy"].contains(args[4]) {
+                "--w09-exact", "--w09-fuzzy", "--w09-untrimmed"].contains(args[4]) {
                 var storeMetadata = persistentStore.metadata ?? [:]
                 storeMetadata["MoneyWizToolsDisposableFixture"] = "W01-v1"
                 container.persistentStoreCoordinator.setMetadata(storeMetadata, for: persistentStore)
@@ -314,7 +314,9 @@ func runFixtureWriter() throws {
                     name: "W09 account", opening: 100, balance: 90, user: user, context: c)
                 let source = try fixtureObject("Payee", c)
                 try fixtureSet(source, "GID", "w09-source")
-                try fixtureSet(source, "name", args[4] == "--w09-fuzzy" ? "Merchant East" : "MERCHANT")
+                let sourceName = args[4] == "--w09-fuzzy" ? "Merchant East" :
+                    (args[4] == "--w09-untrimmed" ? "MERCHANT " : "MERCHANT")
+                try fixtureSet(source, "name", sourceName)
                 try fixtureSet(source, "objectCreationDate", Date())
                 try fixtureSet(source, "user", user)
                 let survivor = try fixtureObject("Payee", c)

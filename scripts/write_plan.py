@@ -1310,8 +1310,10 @@ def _validate_payee_merge_plan(plan: dict[str, Any]) -> dict[str, Any]:
         value = merge[role]
         if not isinstance(value, Mapping) or set(value) != {"gid", "numeric_id", "name", "object_uri"}:
             raise PlanValidationError(f"W09 {role} identity is incomplete")
-        for field in ("gid", "name", "object_uri"):
+        for field in ("gid", "object_uri"):
             _text(value[field], f"merge.{role}.{field}")
+        if not isinstance(value["name"], str) or not value["name"].strip():
+            raise PlanValidationError(f"merge.{role}.name must be a nonblank string")
         numeric_id = value["numeric_id"]
         if (not isinstance(numeric_id, str) or not numeric_id.isascii()
                 or not numeric_id.isdigit() or int(numeric_id) <= 0

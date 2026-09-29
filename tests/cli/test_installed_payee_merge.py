@@ -33,7 +33,7 @@ def test_relocated_bundle_merges_all_payee_references(
                             capture_output=True, check=False)
     assert denied.returncode != 0
 
-    db, seeded = store(w01_runtime, tmp_path)
+    db, seeded = store(w01_runtime, tmp_path, "--w09-untrimmed")
     owner = seeded["owner_uri"].rsplit("/p", 1)[1]
     environment = dict(w01_runtime.environment)
     environment["MONEYWIZ_JOURNAL_DIR"] = str(tmp_path / "journal")

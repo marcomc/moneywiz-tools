@@ -63,11 +63,13 @@ def inspect(runtime: W01Runtime, db: Path, directory: Path) -> dict:
     return json.loads(result.stdout)
 
 
-@pytest.mark.parametrize("fuzzy", [False, True])
+@pytest.mark.parametrize("fuzzy,flag", [
+    (False, "--w09-exact"), (False, "--w09-untrimmed"), (True, "--w09-fuzzy"),
+])
 def test_w09_applies_replays_and_recovers_all_relationships(
-    w01_runtime: W01Runtime, tmp_path: Path, fuzzy: bool
+    w01_runtime: W01Runtime, tmp_path: Path, fuzzy: bool, flag: str
 ) -> None:
-    db, seeded = store(w01_runtime, tmp_path, "--w09-fuzzy" if fuzzy else "--w09-exact")
+    db, seeded = store(w01_runtime, tmp_path, flag)
     reviewed = plan(w01_runtime, seeded, fuzzy=fuzzy)
     before = _invoke(w01_runtime, db, reviewed, tmp_path, recover=True)
     assert before.returncode == 0, before.stderr
