@@ -106,7 +106,7 @@ interface has four command groups:
 | Group | Commands | Access |
 | --- | --- | --- |
 | Reads | `users`, `accounts`, `categories`, `payees`, `tags`, `transactions`, `holdings`, `snapshot` | Read-only database access |
-| Writes and plans | `reassign-payees-by-id`, `merge-duplicate-payees` | Dry-run by default; live apply is capability-gated |
+| Writes and plans | `reassign-payees-by-id`, `merge-duplicate-payees`, `payee`, `transaction`, `write` | Reviewed plans; live apply is capability-gated |
 | Introspection | `identity`, `compatibility`, `schema`, `summary`, `stats`, `record` | Read-only inspection and reports |
 | Interactive | `shell` | Read-only API shell |
 
@@ -150,11 +150,12 @@ moneywiz merge-duplicate-payees --show-plan \
   --fuzzy-map "$HOME/payee-fuzzy-review.csv"
 ~~~
 
-The corresponding live merge capability is currently blocked pending separate
-Core Data acceptance evidence. The native host does not implement relationship
-migration or source-payee deletion. Use MoneyWiz 2026's
-`Preferences > Payees > Edit` merge action for approved pairs. The fuzzy CSV
-is review-only; see [Functions Reference](FUNCTIONS.md) for the decision flow.
+The legacy group command's apply path remains blocked. `moneywiz payee merge`
+builds a reviewed exact or individually approved fuzzy plan using the complete
+native reference inventory. It migrates references and deletes the source only
+on marked disposable model-48 stores; live merge capabilities remain blocked
+pending application and sync acceptance. See [Functions Reference](FUNCTIONS.md)
+for the decision flow.
 
 The reassignment command can reuse an existing destination payee or create one
 from the transaction description. It refuses ambiguous normalized matches

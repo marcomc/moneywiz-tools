@@ -35,6 +35,8 @@
         "read.core": "supported",
         "write.reassign-payees-by-id": "verified",
         "write.merge-duplicate-payees": "blocked",
+        "write.merge-exact-payees": "blocked",
+        "write.merge-approved-fuzzy-payees": "blocked",
         "write.create-income": "blocked",
         "write.create-expense": "blocked",
         "write.create-refund": "blocked",
