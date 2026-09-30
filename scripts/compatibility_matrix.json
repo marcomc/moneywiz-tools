@@ -49,6 +49,7 @@
         "write.adjust-investment-cash": "enabled",
         "write.adjust-asset-quantity": "enabled",
         "write.delete-adjust-balance-investment-total": "enabled",
+        "write.delete-supported-transactions": "enabled",
         "write.replace-import-with-transfer": "enabled",
         "write.investment-income": "enabled",
         "write.investment-expense": "enabled",

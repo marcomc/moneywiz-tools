@@ -4,6 +4,13 @@ Use the documents below by task rather than reading the design history first.
 The README and command reference are the quickest path to a working CLI;
 design documents explain implementation constraints after the task is clear.
 
+## Contents
+
+- [Operator guides](#operator-guides)
+- [Live writer and schema evidence](#live-writer-and-schema-evidence)
+- [Design and maintenance](#design-and-maintenance)
+- [Developer documentation workflow](#developer-documentation-workflow)
+
 ## Operator guides
 
 | Task | Document |
@@ -24,6 +31,7 @@ design documents explain implementation constraints after the task is clear.
 | W03 payee/category replacement and disposable validation | [Transaction Assignment](TRANSACTION-ASSIGNMENT.md) |
 | W04 reconciliation flags and disposable validation | [Transaction Reconciliation](TRANSACTION-RECONCILIATION.md) |
 | W05/W06 investment-total adjustment creation and guarded deletion | [Transaction Adjust Balance](TRANSACTION-ADJUST-BALANCE.md) |
+| W06 supported transaction deletion and native dependency closure | [Supported Transaction Deletion](TRANSACTION-DELETION.md) |
 | W07 imported-row replacement with paired transfer legs | [Transaction Transfer](TRANSACTION-TRANSFER.md) |
 | W08 investment cash events and existing-holding Buy/Sell | [Investment Transactions](TRANSACTION-INVESTMENT.md) |
 | Versioned plans, interrupted writes and private journal retention | [Writer Recovery](WRITER-RECOVERY.md) |

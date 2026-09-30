@@ -40,6 +40,12 @@ ADJUST_BALANCE_POLICIES = {
 }
 EXTENDED_ADJUST_CAPABILITIES = frozenset(item[0] for item in ADJUST_BALANCE_POLICIES.values())
 DELETE_ADJUSTMENT_CAPABILITY = "write.delete-adjust-balance-investment-total"
+SUPPORTED_DELETION_CAPABILITY = "write.delete-supported-transactions"
+SUPPORTED_DELETION_ENTITIES = frozenset({
+    "DepositTransaction", "WithdrawTransaction", "RefundTransaction",
+    "TransferWithdrawTransaction", "TransferDepositTransaction", "ReconcileTransaction",
+    "InvestmentBuyTransaction", "InvestmentSellTransaction",
+})
 TRANSFER_CAPABILITY = "write.replace-import-with-transfer"
 INVESTMENT_POLICIES = {
     "investment_income": ("write.investment-income", "DepositTransaction", 1),
@@ -978,6 +984,162 @@ def _validate_adjust_balance_operation(
     return operation["transaction_gid"]
 
 
+def supported_deletion_postcondition(inventory: Mapping[str, Any]) -> dict[str, Any]:
+    """The exact absence, retained-state and financial proof required by W06."""
+    return {
+        "deleted_object_uris": sorted(
+            [target["object"]["object_uri"] for target in inventory["targets"]]
+            + [child["object_uri"] for child in inventory["dependents"]]
+        ),
+        "retained_verified": True,
+        "accounts": [{"gid": item["gid"], "balance": item["final_balance"],
+                      "cache": item["final_cache"]} for item in inventory["accounts"]],
+        "holdings": [{"gid": item["gid"], "units": item["final_units"]}
+                     for item in inventory["holdings"]],
+    }
+
+
+def _validate_supported_deletion_operation(
+    operation: Mapping[str, Any], prefix: str, plan: dict[str, Any],
+) -> str:
+    required = {"operation_id", "kind", "capability", "transaction_entity",
+                "transaction_gid", "owner_uri", "source_event_id", "deletion_reason",
+                "deletion_inventory", "expected_postcondition"}
+    if (set(operation) != required or operation["kind"] != "delete_supported_transactions"
+            or operation["capability"] != SUPPORTED_DELETION_CAPABILITY
+            or plan["capability"] != SUPPORTED_DELETION_CAPABILITY):
+        raise PlanValidationError(f"{prefix} has an invalid supported-deletion contract")
+    for field in ("owner_uri", "source_event_id"):
+        if operation[field] != plan[field]:
+            raise PlanValidationError(f"{prefix}.{field} differs from the envelope")
+    _text(operation["deletion_reason"], f"{prefix}.deletion_reason")
+    inventory = operation["deletion_inventory"]
+    if (not isinstance(inventory, Mapping)
+            or set(inventory) != {"owner_uri", "targets", "dependents", "retained", "accounts", "holdings"}
+            or inventory["owner_uri"] != plan["owner_uri"]):
+        raise PlanValidationError("W06 inventory owner or shape differs")
+    for field in ("targets", "dependents", "retained", "accounts", "holdings"):
+        if not isinstance(inventory[field], list):
+            raise PlanValidationError(f"W06 inventory {field} must be a list")
+    if not inventory["targets"] or not inventory["accounts"] or not inventory["retained"]:
+        raise PlanValidationError("W06 inventory lacks targets, accounts or retained state")
+    store_prefix = f"x-coredata://{plan['store_identity']['store_uuid']}/"
+
+    def object_uri(value: Any, entity: str | None = None) -> str:
+        uri = _text(value, "W06 object URI")
+        suffix = uri.removeprefix(store_prefix)
+        match = re.fullmatch(r"([A-Za-z][A-Za-z0-9]*)/p([1-9][0-9]*)", suffix)
+        if not uri.startswith(store_prefix) or not match or (entity is not None and match[1] != entity):
+            raise PlanValidationError("W06 object URI has a different store, entity or numeric identity")
+        return uri
+
+    seen: set[str] = set()
+    gids: set[str] = set()
+
+    def object_state(item: Any, *, retained: bool) -> None:
+        required = {"entity", "object_uri", "fingerprint"}
+        if retained:
+            required.add("final_fingerprint")
+        if not isinstance(item, Mapping) or set(item) not in (required, required | {"gid"}):
+            raise PlanValidationError("W06 object state has unknown or missing fields")
+        entity = _text(item["entity"], "W06 entity")
+        uri = object_uri(item["object_uri"], entity)
+        if uri in seen:
+            raise PlanValidationError("W06 object appears more than once in the closure")
+        seen.add(uri)
+        if "gid" in item:
+            gid = _text(item["gid"], "W06 GID")
+            if gid in gids:
+                raise PlanValidationError("W06 inventory contains duplicate GIDs")
+            gids.add(gid)
+        for field in ("fingerprint", "final_fingerprint") if retained else ("fingerprint",):
+            value = item[field]
+            if not isinstance(value, str) or not _HEX_DIGEST.fullmatch(value):
+                raise PlanValidationError("W06 fingerprint must be a SHA-256 digest")
+
+    for target in inventory["targets"]:
+        required = {"object", "account_gid", "amount", "signed_units", "description"}
+        if not isinstance(target, Mapping) or set(target) not in (required, required | {"holding_gid"}):
+            raise PlanValidationError("W06 target has unknown or missing fields")
+        object_state(target["object"], retained=False)
+        if target["object"]["entity"] not in SUPPORTED_DELETION_ENTITIES or "gid" not in target["object"]:
+            raise PlanValidationError("W06 target is outside supported transaction entities")
+        _text(target["account_gid"], "W06 target account GID")
+        for field in ("amount", "signed_units"):
+            _canonical_decimal(target[field], f"W06 target {field}")
+        if "holding_gid" in target:
+            _text(target["holding_gid"], "W06 target holding GID")
+        elif target["signed_units"] != "0":
+            raise PlanValidationError("W06 quantity effect requires a holding")
+        if not isinstance(target["description"], str):
+            raise PlanValidationError("W06 target description must be text")
+    for child in inventory["dependents"]:
+        object_state(child, retained=False)
+        if child["entity"] not in {"CategoryAssigment", "TransactionBudgetLink", "Image", "WithdrawRefundTransactionLink"}:
+            raise PlanValidationError("W06 dependent entity is unsupported")
+    for item in inventory["retained"]:
+        object_state(item, retained=True)
+    for field, nested_key in (("targets", "object"), ("dependents", None), ("retained", None)):
+        uris = [(item[nested_key] if nested_key else item)["object_uri"] for item in inventory[field]]
+        if uris != sorted(uris):
+            raise PlanValidationError("W06 object inventories must use canonical URI order")
+    retained = {item["object_uri"]: item for item in inventory["retained"]}
+    account_gids: set[str] = set()
+    for item in inventory["accounts"]:
+        if not isinstance(item, Mapping) or set(item) != {
+            "object_uri", "gid", "currency", "prior_balance", "final_balance", "prior_cache", "final_cache",
+        }:
+            raise PlanValidationError("W06 account projection has unknown or missing fields")
+        uri = object_uri(item["object_uri"])
+        gid = _text(item["gid"], "W06 account GID")
+        if (uri not in retained or retained[uri].get("gid") != gid or gid in account_gids
+                or retained[uri]["entity"] not in {
+                    "CashAccount", "BankChequeAccount", "BankSavingAccount", "CreditCardAccount",
+                    "LoanAccount", "InvestmentAccount", "ForexAccount",
+                } or item["currency"] not in {"GBP", "EUR", "USD", "CAD"}):
+            raise PlanValidationError("W06 account projection has a different retained identity")
+        account_gids.add(gid)
+        for field in ("prior_balance", "final_balance", "prior_cache", "final_cache"):
+            _canonical_decimal(item[field], f"W06 {field}")
+    if account_gids != {item["account_gid"] for item in inventory["targets"]}:
+        raise PlanValidationError("W06 projections omit or add affected accounts")
+    holding_gids: set[str] = set()
+    for item in inventory["holdings"]:
+        if not isinstance(item, Mapping) or set(item) != {
+            "object_uri", "gid", "account_gid", "symbol", "asset_type", "prior_units", "final_units",
+        }:
+            raise PlanValidationError("W06 holding projection has unknown or missing fields")
+        uri = object_uri(item["object_uri"], "InvestmentHolding")
+        gid = _text(item["gid"], "W06 holding GID")
+        _text(item["symbol"], "W06 holding symbol")
+        if (uri not in retained or retained[uri].get("gid") != gid or gid in holding_gids
+                or item["account_gid"] not in account_gids
+                or type(item["asset_type"]) is not int or item["asset_type"] not in {0, 1}):
+            raise PlanValidationError("W06 holding projection has a different retained identity")
+        holding_gids.add(gid)
+        for field in ("prior_units", "final_units"):
+            if Decimal(_canonical_decimal(item[field], f"W06 {field}")) < 0:
+                raise PlanValidationError("W06 projected holding quantity is negative")
+    if holding_gids != {item["holding_gid"] for item in inventory["targets"] if "holding_gid" in item}:
+        raise PlanValidationError("W06 projections omit or add affected holdings")
+    for field in ("accounts", "holdings"):
+        if [item["object_uri"] for item in inventory[field]] != sorted(item["object_uri"] for item in inventory[field]):
+            raise PlanValidationError("W06 financial projections must use canonical URI order")
+    primary = inventory["targets"][0]
+    account = next(item for item in inventory["accounts"] if item["gid"] == primary["account_gid"])
+    if (operation["transaction_gid"] != primary["object"]["gid"]
+            or operation["transaction_entity"] != primary["object"]["entity"]
+            or plan["expected_account_gid"] != account["gid"]
+            or plan["currency_unit"] != account["currency"]
+            or plan["expected_cached_account_balance"] != account["prior_cache"]):
+        raise PlanValidationError("W06 primary target or account differs from envelope")
+    post = operation["expected_postcondition"]
+    if (not isinstance(post, Mapping) or post.get("retained_verified") is not True
+            or dict(post) != supported_deletion_postcondition(inventory)):
+        raise PlanValidationError("W06 postcondition differs from the complete reviewed deletion")
+    return primary["object"]["gid"]
+
+
 def _validate_delete_adjustment_operation(
     operation: Mapping[str, Any], prefix: str, plan: dict[str, Any]
 ) -> str:
@@ -1500,7 +1662,7 @@ def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
         raise PlanValidationError("timezone must be an IANA timezone") from exc
     capability = plan.get("capability")
     if capability not in {PAYEE_CAPABILITY, EDIT_CAPABILITY, ASSIGN_CAPABILITY,
-                          ADJUST_BALANCE_CAPABILITY, *EXTENDED_ADJUST_CAPABILITIES, DELETE_ADJUSTMENT_CAPABILITY,
+                          ADJUST_BALANCE_CAPABILITY, *EXTENDED_ADJUST_CAPABILITIES, DELETE_ADJUSTMENT_CAPABILITY, SUPPORTED_DELETION_CAPABILITY,
                           TRANSFER_CAPABILITY,
                           *INVESTMENT_CAPABILITIES,
                           *(policy[0] for policy in RECONCILE_CAPABILITIES.values()),
@@ -1594,6 +1756,9 @@ def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
         elif kind == "delete_investment_total_adjustment":
             delete_operations += 1
             transaction_gid = _validate_delete_adjustment_operation(operation, prefix, plan)
+        elif kind == "delete_supported_transactions":
+            delete_operations += 1
+            transaction_gid = _validate_supported_deletion_operation(operation, prefix, plan)
         elif kind == "replace_import_with_transfer":
             transaction_gid = _validate_transfer_operation(operation, prefix, plan)
         elif kind in INVESTMENT_POLICIES:
@@ -1619,6 +1784,7 @@ def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
         ADJUST_BALANCE_CAPABILITY,
         *EXTENDED_ADJUST_CAPABILITIES,
         DELETE_ADJUSTMENT_CAPABILITY,
+        SUPPORTED_DELETION_CAPABILITY,
         TRANSFER_CAPABILITY,
         *INVESTMENT_CAPABILITIES,
         *(policy[0] for policy in RECONCILE_CAPABILITIES.values()),
@@ -1783,6 +1949,13 @@ def validate_result(plan: dict[str, Any], result: object) -> dict[str, Any]:
             )
         ):
             raise PlanValidationError("W06 receipt does not identify the deleted target")
+        if operation["kind"] == "delete_supported_transactions":
+            primary = operation["deletion_inventory"]["targets"][0]["object"]
+            if uri != primary["object_uri"]:
+                raise PlanValidationError("W06 receipt does not identify the reviewed deletion closure")
+            if success and (not isinstance(receipt.get("postcondition"), Mapping)
+                            or receipt["postcondition"].get("retained_verified") is not True):
+                raise PlanValidationError("W06 receipt lacks exact retained-state verification")
         if operation["kind"] == "replace_import_with_transfer":
             details = receipt.get("transfer_details")
             if success:

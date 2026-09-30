@@ -31,6 +31,11 @@
 - W06 exact-ID deletion of the latest GBP investment-total adjustment on marked
   disposable stores and the reviewed live Setapp runtime, with history and
   relationship guards, fresh read-back and interruption recovery.
+- W06 native-inventory plans and atomic deletion of supported ordinary and
+  investment transactions, with explicit transfer/refund closure, owned
+  dependency cleanup, retained-object guards, cash/quantity projections and
+  journal replay/recovery. Authorized Setapp live trials verified application
+  read-back, operation-specific iCloud export/deletion and exact cleanup.
 - W07 guarded replacement of an imported withdrawal and optional identified
   deposit with reciprocal zero-fee transfer legs on marked disposable stores
   and the reviewed live Setapp runtime. Both account balances, old/new identities,
