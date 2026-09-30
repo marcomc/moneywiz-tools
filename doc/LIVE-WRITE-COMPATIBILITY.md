@@ -11,9 +11,37 @@ compatibility is defined per write path.
 | Generic SQL mutation | Not a product capability | Do not infer iCloud compatibility from SQL success. |
 | Reassign a payee to an existing destination | Verified | Bundled Core Data writer. |
 | Reassign a payee and create its destination | Verified | Bundled Core Data writer. |
-| Merge exact-normalized duplicate payees | Blocked | W09 is limited to marked disposable stores; live application and sync acceptance are pending. |
-| Merge similar-name payees | Blocked | W09 requires one approved review-map row and is limited to marked disposable stores. |
-| W08 investment cash events and Buy/Sell | Blocked | Marked disposable stores only; application and sync acceptance are pending. |
+| W01 income, expense and linked refund | Enabled; live trial accepted | Exact reviewed Setapp app, model and store identity. |
+| W02 edit, W03 assignment, W04 reconcile/unreconcile | Enabled; live trial accepted | Exact reviewed Setapp app, model and store identity. |
+| W05 Adjust Balance investment total | Verified | Setapp MoneyWiz 2026.37.1 build 449, exact model and reviewed store identity. |
+| W06 delete one investment-total adjustment | Enabled for authorized trials | Setapp MoneyWiz 2026.37.1 build 449, exact model and reviewed store identity. |
+| W08 investment cash events and Buy/Sell | Enabled for authorized trials | Setapp MoneyWiz 2026.37.1 build 449, exact model and reviewed store identity. |
+| Merge exact-normalized duplicate payees | Enabled for authorized trials | Exact reviewed model, app, store and complete reference inventory. |
+| Merge similar-name payees | Enabled for authorized trials | W09 requires one approved review-map row and the complete reference inventory. |
+
+### Account coverage and acceptance, 30 September 2026
+
+The installed model has seven concrete account subtypes: `CashAccount`,
+`BankChequeAccount`, `BankSavingAccount`, `CreditCardAccount`, `LoanAccount`,
+`InvestmentAccount` and `ForexAccount`. Ordinary creation, editing, assignment,
+reconciliation and transfer replacement admit all seven. Native regression
+stores exercise each subtype, preserving its metadata and account relationships.
+An online-banking connection does not exclude the account from these operations.
+
+Authorized synthetic W01–W09 trials passed on a private copy and the live Setapp
+store. Each applied plan passed replay and recovery without duplication.
+MoneyWiz displayed the bank rows, reciprocal FX transfer, investment cash and
+Buy/Sell events, payee migration and balance adjustment. Temporary investment,
+transfer and merge-reference rows were removed; three labelled bank TEST rows
+were retained as requested. Original financial fields were unchanged.
+CloudKit recorded export without pending upload for the trial rows; after final
+cleanup MoneyWiz reported **Up to Date**. A second-device read was not performed.
+Private plans, receipts and comparisons remain outside the repository.
+
+Account coverage does not expand operation-specific semantics: W05/W06 retain
+the reviewed no-holdings GBP investment-total adjustment contract, and W08
+Buy/Sell requires an existing owned holding. Runtime capability entries remain
+enabled until the current implementation change completes independent review.
 
 No backup requirement is imposed by the command. The operator remains
 responsible for deciding their own recovery posture before modifying
@@ -51,8 +79,7 @@ different `ZSYNCOBJECT` row cannot satisfy the ownership check accidentally.
 The tool refuses ambiguous normalized payee names. Resolve or consolidate those
 duplicates through the MoneyWiz GUI while
 `write.merge-duplicate-payees` remains blocked. Export similar pairs with
-`--fuzzy-map PATH`; W09 can use an explicitly approved row only on a marked
-disposable store.
+`--fuzzy-map PATH`; W09 requires an explicitly approved row.
 
 ## Compatibility profile
 

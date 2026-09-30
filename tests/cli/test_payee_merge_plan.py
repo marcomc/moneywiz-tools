@@ -132,7 +132,7 @@ def test_plan_rejects_noninteger_schema_versions(field: str, value: object) -> N
     changed = deepcopy(plan())
     changed.pop("plan_digest")
     changed[field] = value
-    with pytest.raises(PlanValidationError, match="exact model-48 contract"):
+    with pytest.raises(PlanValidationError, match="exact JSON integers"):
         validate_plan(changed)
 
 

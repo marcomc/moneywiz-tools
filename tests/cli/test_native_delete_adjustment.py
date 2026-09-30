@@ -163,3 +163,46 @@ def test_w06_crash_boundary_recovers_without_duplicate_deletion(
     assert recovered.returncode == 0, recovered.stderr
     assert validate_result(plan, json.loads(recovered.stdout))["classification"] == expected
     assert _target_count(store) == (1 if crash == "before-save" else 0)
+
+
+def test_backdated_cash_history_allows_adjustment_and_exact_deletion(
+    w01_runtime: W01Runtime, tmp_path: Path
+) -> None:
+    from test_adjust_balance import request as adjustment_request
+    from write_transactions import build_adjust_balance_plan
+
+    runtime = w01_runtime
+    store = tmp_path / "backdated.sqlite"
+    built = subprocess.run(
+        [str(runtime.fixture_builder), "--store", str(store), "--model",
+         str(runtime.model), "--w06-backdated"],
+        capture_output=True, text=True, env=runtime.environment, check=False,
+    )
+    assert built.returncode == 0, built.stderr
+    identity = json.loads(built.stdout)
+    raw = adjustment_request()
+    raw.update(store_identity={"store_uuid": identity["store_uuid"]},
+               owner_uri=identity["owner_uri"], app_identity=runtime.app_identity,
+               expected_account_gid="w06-investment", timezone="UTC")
+    raw["operation"].update(account_gid="w06-investment",
+                            expected_prior_balance="108.01", target_balance="108.02",
+                            occurred_at="2026-09-13T12:00:00Z")
+    plan = build_adjust_balance_plan(raw)
+    applied = _invoke(runtime, store, plan, tmp_path)
+    assert applied.returncode == 0, applied.stderr
+    receipt = validate_result(plan, json.loads(applied.stdout))
+    assert receipt["classification"] == "applied"
+    deletion = _request(runtime, identity)
+    deletion["operation"].update(
+        transaction_gid=plan["operations"][0]["transaction_gid"],
+        transaction_numeric_id=receipt["operations"][0]["durable_numeric_id"],
+        expected_amount="0.01", expected_reconcile_amount="108.02",
+        expected_prior_balance="108.02", occurred_at="2026-09-13T12:00:00Z",
+    )
+    deletion_plan = build_delete_adjustment_plan(deletion)
+    deleted = _invoke(runtime, store, deletion_plan, tmp_path)
+    assert deleted.returncode == 0, deleted.stderr
+    assert validate_result(deletion_plan, json.loads(deleted.stdout))["classification"] == "applied"
+    replay = _invoke(runtime, store, deletion_plan, tmp_path, recover=True)
+    assert replay.returncode == 0, replay.stderr
+    assert json.loads(replay.stdout)["classification"] == "noop"

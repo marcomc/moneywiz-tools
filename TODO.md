@@ -1,5 +1,18 @@
 # TODO
 
+## Authorized live validation checkpoint — 30 September 2026
+
+W01–W09 synthetic trials passed on a private copy and the reviewed live Setapp
+store, including replay, recovery, application display and observed iCloud export.
+Cleanup restored the investment balances and removed temporary transfers and
+merge-reference rows; three labelled bank TEST transactions remain as requested.
+Ordinary operations now cover all seven concrete account subtypes.
+See [Live Write Compatibility](doc/LIVE-WRITE-COMPATIBILITY.md) for exact scope.
+Historical phase rows below retain their original implementation checkpoints;
+their pending live authorization statements are superseded by this trial.
+Second-device consumption and independent review of these current changes remain
+separate from the observed app and export evidence.
+
 - [ ] Extend the sanitization pipeline to spot-check new columns (attachments, free-form notes) so `--sanitize-test-db` keeps pace with future MoneyWiz schema updates.
 
 ## Active release 0.3.0 tasks

@@ -1,9 +1,9 @@
 # Transaction assignment
 
 W03 replaces a payee and category splits on exact existing transaction IDs.
-It runs only against newly invented, marked model-48 disposable stores using
-the TestFlight 2026.37.1 build 449 model. Live capability
-`write.assign-payee-categories` remains blocked in the compatibility register.
+Its model-48 capability is enabled for authorized Setapp MoneyWiz 2026.37.1
+build 449 live execution. TestFlight regression stores require the disposable
+metadata marker. Ordinary transactions use all seven supported account types.
 
 ## Contract
 
@@ -52,7 +52,7 @@ moneywiz --db /private/path/disposable.sqlite write recover \
 The Python builder opens no store. The native host independently checks the
 reviewed plan digest, exact account/owner/currency/amount, expected old
 relationships and target ownership. Only ordinary unreconciled income,
-expense and linked refund transactions in the disposable CashAccount fixture
+expense and linked refund transactions in the supported account family
 are supported. Category type must match income or expense; existing budget,
 scheduled or history links refuse replacement. Transfers, adjustments,
 investment and special records remain blocked.

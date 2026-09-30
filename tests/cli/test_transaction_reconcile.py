@@ -58,10 +58,10 @@ def test_builds_separate_guarded_capabilities(kind, capability):
     lambda p: p["source_scope"].update(read_status="partial"),
     lambda p: p["source_scope"].update(source_count=1),
     lambda p: p["source_scope"].update(transaction_gids=["withdraw-1", "deposit-1"]),
-    lambda p: p["source_scope"].update(verified_balance="99"),
+    lambda p: p["source_scope"].update(verified_balance="invalid"),
     lambda p: p["operations"][0].update(expected_reconciled=True),
     lambda p: p["operations"][0].update(expected_native_flags=-1),
-    lambda p: p["operations"][0].update(expected_native_status=2),
+    lambda p: p["operations"][0].update(expected_native_status=3),
     lambda p: p["operations"][0].update(transaction_entity="TransferWithdrawTransaction"),
     lambda p: p["operations"][0].update(transaction_gid="missing"),
 ])

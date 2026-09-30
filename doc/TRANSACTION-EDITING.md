@@ -3,15 +3,12 @@
 ## Capability and supported variants
 
 W02 edits exact existing transaction entity/GID pairs through the version-2
-native writer. Experiments require newly invented disposable stores using the
-same `MoneyWizToolsDisposableFixture: W01-v1` metadata boundary and invented
-fixture owner/account identity as W01, the exact model-48 checksum and installed
-TestFlight `2026.37.1` build `449`.
-`write.edit-transaction` remains blocked for live stores in the capability
-register. Neither a request nor an environment variable can promote it.
+native writer. The model-48 capability is enabled for authorized live execution
+on Setapp MoneyWiz 2026.37.1 build 449, with exact app and store identity checks.
+TestFlight regression stores require the disposable metadata marker.
 
 Supported entities are `DepositTransaction`, `WithdrawTransaction` and linked
-`RefundTransaction` in the evidenced same-currency `CashAccount` variant,
+`RefundTransaction` in all seven [supported account types](TRANSACTION-CREATION.md),
 including rows created by W01. The entity, GID, object identity, import/source
 metadata, owner and account stay unchanged. Reconciled records fail closed;
 `correction_mode` must explicitly be `reject_reconciled`. No alternative
@@ -32,7 +29,8 @@ MoneyWiz application processing or remote synchronization.
 
 Every changed field requires its exact prior value, including explicit null.
 Requests cannot contain unchanged fields, arbitrary native attributes, currency
-or exchange-rate changes. Text and date edits preserve existing category, tag,
+or exchange-rate changes. Live amount edits preserve the account cache and
+reporting exchange rate while changing the ledger. Text and date edits preserve existing category, tag,
 payee and refund relationships. Amount edits reject category/budget assignments
 because their numeric allocations require W03 ownership. They do not rescale
 or remove assignments implicitly.

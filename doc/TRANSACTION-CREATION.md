@@ -3,25 +3,21 @@
 ## Capability boundary
 
 W01 adds typed income, expense and refund creation to the version-2 writer.
-Experiments are restricted to invented disposable stores using the exact
-`moneywiz-2026-model-48` profile. The live capability register keeps
-`write.create-income`, `write.create-expense` and `write.create-refund` blocked.
-The initial disposable account variant is `CashAccount`. Other account classes
-require their own evidence before admission. Linked same-account withdrawal
-refunds are the W01 refund variant; unlinked refunds, card-specific reversals
-and cross-account/FX refunds remain excluded.
+The model-48 capabilities are enabled for authorized live execution on Setapp
+MoneyWiz 2026.37.1 build 449, with exact app, model, owner and store identity
+checks in both clients. TestFlight regression stores require the native
+`MoneyWizToolsDisposableFixture: W01-v1` marker.
 
-W02 scalar editing and W03 post-create assignment replacement have separate
-disposable-only contracts: [editing](TRANSACTION-EDITING.md) and
-[assignment](TRANSACTION-ASSIGNMENT.md). W04 reconciliation and P2/P3 variants
-remain disabled.
+Ordinary transactions support all seven concrete account types: `CashAccount`,
+`BankChequeAccount`, `BankSavingAccount`, `CreditCardAccount`, `LoanAccount`,
+`InvestmentAccount` and `ForexAccount`. Bank connection and account subtype
+metadata are preserved. Linked same-account withdrawal refunds are supported;
+unlinked, cross-account and FX refunds require separate contracts.
 
-The Python client and production native host independently require Core Data
-store metadata `MoneyWizToolsDisposableFixture` equal to `W01-v1`. The fixture
-builder sets it only when constructing a new invented store. A plan cannot
-self-declare a store disposable, and there is no product command to mark an
-existing database. This marker is an experiment boundary, not evidence that
-MoneyWiz accepted the resulting objects.
+W02 editing, W03 assignment and W04 reconciliation use the same account family.
+Investment cash and Buy/Sell retain the additional W08 holding and ledger checks.
+Enabled capabilities admit the authorized trials; they do not assert completed
+MoneyWiz application or sync acceptance for every operation.
 
 ## Plan and apply
 
@@ -45,7 +41,7 @@ writers; it cannot stop an external launch of MoneyWiz.
 
 One W01 plan represents one source event and creates one transaction. Its
 category assignments, tag relationships, supported refund link and account
-balance change are part of the same atomic save. Existing payee plans may still
+ledger delta are part of the same atomic save. Existing payee plans may still
 contain multiple operations.
 
 ## Typed fields
@@ -62,7 +58,9 @@ contain multiple operations.
 | Tags | Sorted unique existing tag GIDs; owner must match |
 | Note | Trimmed nonblank text or null |
 | Refund | Explicit original withdrawal entity/GID; other kinds require null |
-| Expected balance | Native cached `Account.ballance` before mutation; delta equals the signed amount |
+| Expected balance | Native cached `Account.ballance` guard; live writes preserve the cache and change the ledger |
+| Description | Optional trimmed nonblank text |
+| Reporting exchange rate | Positive canonical Decimal text; required for live creation and independent of original-currency conversion |
 
 Unknown fields, unsupported kinds and mismatched per-operation capabilities are
 errors. The schemas do not expose arbitrary Core Data attributes, flag edits or
@@ -72,10 +70,11 @@ changing their decimal value.
 Native initialization sets `amount` and `originalAmount` to the same signed
 value, `originalCurrency` to the account currency, and `originalExchangeRate`
 to `1`. `date` comes from `occurred_at`; `objectCreationDate` comes from
-`created_at`. Other transaction attributes retain compiled-model defaults,
-including status `1`, flags `0`, unreconciled and non-void state. Category
-assignment order is zero-based. Persisted verification checks these fields,
-all requested relationships, and unchanged fields on existing objects.
+`created_at`. Live creation sets native status `2`, flags `0`, unreconciled
+and non-void state, empty optional native text, and the explicit reviewed
+reporting exchange rate. Disposable fixtures retain their original defaults and
+cache-delta behavior. Category assignment order is zero-based. Persisted
+verification checks requested fields, relationships and unchanged existing objects.
 
 ## Request example
 
@@ -146,13 +145,13 @@ private paths, source reservations and retention.
 
 ## Acceptance evidence
 
-The target installed bundle inspected during implementation is MoneyWiz
-TestFlight `2026.37.1` build `449`, model 48. The production host enforces this
-exact build for disposable W01 execution. Compiled-model inspection and
-invented Core Data stores establish only local schema and persistence evidence.
-Application initialization semantics, reopening/history consumption and remote
-sync require direct acceptance in a separately authorized session. No live
-financial database is used by this implementation workflow.
+Native regression stores cover income, expense and linked refunds on all seven
+concrete account subtypes. On 30 September 2026, authorized synthetic trials
+also exercised the live Setapp `2026.37.1` build `449`, model 48 store. MoneyWiz
+displayed the created and edited bank rows, and CloudKit exported the trial
+records without pending uploads. Three labelled bank TEST transactions remain
+at the user's request. See [Live Write Compatibility](LIVE-WRITE-COMPATIBILITY.md)
+for the shared W01–W09 acceptance and cleanup evidence boundary.
 
 The [W01 task ledger](../TODO.md#p1-w01-transaction-creation) separates
 implementation, required validation, independent review and future application

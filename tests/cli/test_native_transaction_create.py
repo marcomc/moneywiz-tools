@@ -143,7 +143,8 @@ def w01_runtime(tmp_path_factory: pytest.TempPathFactory) -> W01Runtime:
 
 
 def _new_store(
-    runtime: W01Runtime, tmp_path: Path, *, marked: bool = True
+    runtime: W01Runtime, tmp_path: Path, *, marked: bool = True,
+    account_entity: str = "CashAccount"
 ) -> tuple[Path, dict[str, str]]:
     store = tmp_path / "disposable-w01.sqlite"
     arguments = [
@@ -158,7 +159,7 @@ def _new_store(
     completed = subprocess.run(
         arguments,
         cwd=tmp_path,
-        env=runtime.environment,
+        env={**runtime.environment, "MONEYWIZ_TEST_ACCOUNT_ENTITY": account_entity},
         capture_output=True,
         text=True,
         check=False,
@@ -449,30 +450,25 @@ def test_creation_rejects_wrong_owner_and_stale_balance(
     assert "balance is stale" in rejected_stale.stderr
 
 
-@pytest.mark.parametrize("account_gid", ["w01-bank-account", "w01-investment-account"])
-def test_creation_rejects_non_cash_account_variants_before_insertion(
-    w01_runtime: W01Runtime, tmp_path: Path, account_gid: str
+ACCOUNT_ENTITIES = (
+    "CashAccount", "BankChequeAccount", "BankSavingAccount", "CreditCardAccount",
+    "LoanAccount", "InvestmentAccount", "ForexAccount",
+)
+
+
+@pytest.mark.parametrize("account_entity", ACCOUNT_ENTITIES)
+@pytest.mark.parametrize("kind,amount", [("create_income", "2"), ("create_expense", "-2"), ("create_refund", "2")])
+def test_creation_supports_every_concrete_account_type(
+    w01_runtime: W01Runtime, tmp_path: Path, account_entity: str, kind: str, amount: str
 ) -> None:
-    store, identity = _new_store(w01_runtime, tmp_path)
-    source_event = f"unsupported-{account_gid}"
-    plan = _plan(w01_runtime, identity, source_event=source_event)
-    plan.pop("plan_digest")
-    plan["expected_account_gid"] = account_gid
-    operation = plan["operations"][0]
-    operation["account_gid"] = account_gid
-    operation["expected_postcondition"]["account_gid"] = account_gid
-    plan = validate_plan(plan)
-
-    rejected = _invoke(w01_runtime, store, plan, tmp_path)
-    assert rejected.returncode == 2
-    assert "CashAccount" in rejected.stderr
-
-    corrected = _plan(w01_runtime, identity, source_event=source_event)
-    applied = _invoke(w01_runtime, store, corrected, tmp_path)
+    store, identity = _new_store(w01_runtime, tmp_path, account_entity=account_entity)
+    plan = _plan(w01_runtime, identity, source_event="account-type", kind=kind, amount=amount)
+    applied = _invoke(w01_runtime, store, plan, tmp_path)
     assert applied.returncode == 0, applied.stderr
-    assert validate_result(corrected, json.loads(applied.stdout))["classification"] == (
-        "applied"
-    )
+    assert validate_result(plan, json.loads(applied.stdout))["classification"] == "applied"
+    replay = _invoke(w01_runtime, store, plan, tmp_path)
+    assert replay.returncode == 0, replay.stderr
+    assert validate_result(plan, json.loads(replay.stdout))["classification"] == "noop"
 
 
 def test_refund_rejects_missing_original_and_over_refund(

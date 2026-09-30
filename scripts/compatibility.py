@@ -237,7 +237,7 @@ def assess_database(db_path: Path) -> CompatibilityAssessment:
 
 
 def require_write_capability(db_path: Path, capability: str) -> CompatibilityAssessment:
-    """Refuse a live write unless its profile-operation pair is verified."""
+    """Refuse a live write unless its profile-operation pair is enabled or verified."""
     assessment = assess_database(db_path)
     if assessment.profile_id is None:
         known_profiles = ", ".join(sorted(assessment.missing_by_profile))
@@ -246,10 +246,10 @@ def require_write_capability(db_path: Path, capability: str) -> CompatibilityAss
             f"known profiles: {known_profiles}. Run: moneywiz compatibility"
         )
     state = assessment.capabilities.get(capability, "blocked")
-    if state != "verified":
+    if state not in {"enabled", "verified"}:
         raise CompatibilityError(
             f"{capability} is {state} for profile {assessment.profile_id}; "
-            "a verified Core Data capability is required before --apply"
+            "an enabled Core Data capability is required before --apply"
         )
     return assessment
 
@@ -349,7 +349,7 @@ def _outcome_status(assessment: CompatibilityAssessment, capability: str | None)
     if capability is None:
         return 0
     state = _requested_capability_state(assessment, capability)
-    return 0 if state in {"supported", "verified"} else 1
+    return 0 if state in {"supported", "enabled", "verified"} else 1
 
 
 def make_parser() -> argparse.ArgumentParser:

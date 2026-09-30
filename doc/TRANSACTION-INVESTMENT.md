@@ -1,11 +1,13 @@
 # Investment transactions
 
-W08 creates one investment cash event or one Buy/Sell transaction on a marked
-disposable model-48 store. The plan binds an InvestmentAccount, its owner and
-store identity, the account currency, a source-event ID, and the expected cash
-state. A Buy/Sell also binds an existing holding, its symbol and asset type,
-prior units, quantity, price and fee. The native host saves once and verifies
-the result in a fresh Core Data context. Live W08 capabilities remain blocked.
+W08 creates one investment cash event or one Buy/Sell transaction on the exact
+model-48 store. Live execution is admitted for Setapp MoneyWiz 2026.37.1 build
+449; the TestFlight build remains available for marked disposable fixtures.
+The plan binds an InvestmentAccount or ForexAccount, its owner and store identity, the account
+currency, a source-event ID, and the expected cash state. A Buy/Sell also binds
+an existing holding, its symbol and asset type, prior units, quantity, price and
+fee. The native host saves once and verifies the result in a fresh Core Data
+context.
 
 ## Plan and apply
 
@@ -26,6 +28,9 @@ Keep the request and plan private. The strict version-2 request has one
 `expected_prior_cash`, and explicit payee, category, tag and note fields.
 The reviewed account's cached balance is zero; the plan derives final cash
 from the prior cash and transaction amount.
+An optional `description` is persisted and checked in the receipt. Cash is
+rounded to cents when deriving the ledger balance, so historical floating-point
+residue does not affect the cents-based contract. Holding units remain unrounded.
 
 Income accepts `dividend`, `interest`, `sale_proceeds` or `other_income`;
 expense accepts `fee` or `other_expense`. Each has exactly one category split
@@ -44,5 +49,5 @@ The host verifies the account and holding ownership, cash and unit history,
 then checks the persisted transaction and derived state. Replay returns a
 verified no-op; recovery distinguishes an unchanged store from a completed
 save and refuses partial or ambiguous state. See [Writer Recovery](WRITER-RECOVERY.md)
-for journal handling. MoneyWiz reopen and sync acceptance are still required
-before any live capability can be enabled.
+for journal handling. Reopen MoneyWiz after a live write and confirm its balance,
+history and sync state.

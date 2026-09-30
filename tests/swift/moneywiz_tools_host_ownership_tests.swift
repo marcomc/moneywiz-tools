@@ -908,13 +908,13 @@ func testV2BridgeAtomicallyAppliesAndRecoversAsNoop() throws {
     try seed(container, users: ["user-one"], transactions: [("transaction-one", "user-one")], payees: [("payee-one", "user-one")])
     let owner = try ownerURI(for: "transaction-one", in: container)
     let (planV2, _) = try v2Payload(ownerURI: owner, expectedOldPayeeGID: nil)
-    let applied = try writePlanV2(planV2, container: container, requireStopped: {})
+    let applied = try writePlanV2(planV2, container: container, requireStopped: {}, requireRuntime: { _, _ in })
     try require(applied.classification == "applied" && applied.verified, "v2 bridge did not verify write")
     try require(applied.operations.first?.status == "applied", "v2 bridge did not report per-operation result")
     let persistedPayee = try payeeGID(for: "transaction-one", in: container)
     try require(persistedPayee == "payee-one", "v2 bridge did not persist target payee")
 
-    let recovered = try writePlanV2(planV2, container: container, requireStopped: {})
+    let recovered = try writePlanV2(planV2, container: container, requireStopped: {}, requireRuntime: { _, _ in })
     try require(recovered.classification == "noop", "post-save recovery did not classify as noop")
     try require(recovered.operations.first?.status == "noop", "post-save recovery did not return noop status")
 }
@@ -933,7 +933,7 @@ func testV2BridgeRefusesMixedRecoveryBeforeMutation() throws {
     let owner = try ownerURI(for: "transaction-one", in: container)
     let (planV2, _) = try v2Payload(ownerURI: owner, expectedOldPayeeGID: nil)
     do {
-        _ = try writePlanV2(planV2, container: container, requireStopped: {})
+        _ = try writePlanV2(planV2, container: container, requireStopped: {}, requireRuntime: { _, _ in })
         throw OwnershipTestError.failure("mixed v2 recovery state unexpectedly replayed")
     } catch let error as HostError {
         try require(error.localizedDescription.contains("mixed or unknown"), "mixed recovery returned wrong error")
@@ -952,7 +952,7 @@ func testV2BridgeSecondAppCheckRollsBackBeforeSave() throws {
         _ = try writePlanV2(planV2, container: container, requireStopped: {
             checks += 1
             if checks == 2 { throw HostError.message("MoneyWiz reopened") }
-        })
+        }, requireRuntime: { _, _ in })
         throw OwnershipTestError.failure("second app check unexpectedly saved")
     } catch is HostError {
         // Expected: complete preflight succeeds but save is refused before mutation.
@@ -972,14 +972,14 @@ func runSQLiteCrashProbe(storePath: String, point: WriterTestCrashPoint) throws 
     let owner = try ownerURI(for: "transaction-one", in: container)
     let (planV2, _) = try v2Payload(ownerURI: owner, expectedOldPayeeGID: nil)
     writerTestCrashPoint = point
-    _ = try writePlanV2(planV2, container: container, requireStopped: {})
+    _ = try writePlanV2(planV2, container: container, requireStopped: {}, requireRuntime: { _, _ in })
 }
 
 func runSQLiteRecoveryProbe(storePath: String) throws {
     let container = try makeSQLiteContainer(at: URL(fileURLWithPath: storePath))
     let owner = try ownerURI(for: "transaction-one", in: container)
     let (planV2, _) = try v2Payload(ownerURI: owner, expectedOldPayeeGID: nil)
-    let result = try recoverPlanV2(planV2, container: container)
+    let result = try recoverPlanV2(planV2, container: container, requireRuntime: { _, _ in })
     print(result.classification)
 }
 
@@ -993,9 +993,26 @@ func testV2RecoveryRefusesForeignTargetOwner() throws {
     let owner = try ownerURI(for: "transaction-one", in: container)
     let (plan, _) = try v2Payload(ownerURI: owner, expectedOldPayeeGID: nil)
     do {
-        _ = try recoverPlanV2(plan, container: container)
+        _ = try recoverPlanV2(plan, container: container, requireRuntime: { _, _ in })
         throw OwnershipTestError.failure("recovery verified a foreign payee owner")
     } catch is HostError { }
+}
+
+func testV2EntryPointsRequireReviewedRuntime() throws {
+    let container = try makeContainer()
+    try seed(container, users: ["user-one"], transactions: [("transaction-one", "user-one")],
+             payees: [("payee-one", "user-one")])
+    let owner = try ownerURI(for: "transaction-one", in: container)
+    let (plan, _) = try v2Payload(ownerURI: owner, expectedOldPayeeGID: nil)
+    for recover in [false, true] {
+        do {
+            if recover { _ = try recoverPlanV2(plan, container: container) }
+            else { _ = try writePlanV2(plan, container: container, requireStopped: {}) }
+            throw OwnershipTestError.failure("unreviewed direct v2 runtime was accepted")
+        } catch is HostError { }
+    }
+    let finalPayee = try payeeGID(for: "transaction-one", in: container)
+    try require(finalPayee == nil, "runtime refusal changed the transaction")
 }
 
 @main
@@ -1034,6 +1051,7 @@ struct MoneyWizToolsHostOwnershipTests {
         try testV2BridgeAtomicallyAppliesAndRecoversAsNoop()
         try testV2BridgeRefusesMixedRecoveryBeforeMutation()
         try testV2BridgeSecondAppCheckRollsBackBeforeSave()
+        try testV2EntryPointsRequireReviewedRuntime()
         try testV2RecoveryRefusesForeignTargetOwner()
         print("MoneyWiz Tools host ownership tests passed")
     }

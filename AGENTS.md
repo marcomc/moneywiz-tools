@@ -27,6 +27,11 @@ These rules do not apply outside of work under `moneywiz-tools/`.
 - Run integrated Python validation with
   `uv run --with pytest python -m pytest`; this keeps pytest and project
   dependencies on the same interpreter when pytest is not a declared dependency.
+- For cross-language native write plans, accept only exact supported scalar
+  types and apply the same whitespace-normalization predicate at every Python
+  ingress check and native decoding boundary. Capture input bytes once, then
+  parse and hash that same capture; cover cross-runtime boundary values plus
+  source changes between digest and parsing with positive and negative tests.
 
 ## Distributable bundle validation
 

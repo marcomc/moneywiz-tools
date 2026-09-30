@@ -1,4 +1,4 @@
-"""W01-W04 fixture admission must never promote the live capability register."""
+"""Disposable admission and explicit live capability admission are independent."""
 
 import plistlib
 import sqlite3
@@ -57,8 +57,9 @@ def test_fixture_admission_does_not_grant_live_clearance(
         ).profile_id
         == "moneywiz-2026-model-48"
     )
-    with pytest.raises(compatibility.CompatibilityError, match="blocked"):
-        compatibility.require_write_capability(disposable_store, capability)
+    assert compatibility.require_write_capability(
+        disposable_store, capability
+    ).profile_id == "moneywiz-2026-model-48"
 
 
 @pytest.mark.parametrize("marker", [None, "", "W01-v2", True, {"scope": "W01-v1"}])

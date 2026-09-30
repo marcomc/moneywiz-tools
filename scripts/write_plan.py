@@ -546,7 +546,10 @@ def _create_postcondition(operation: Mapping[str, Any]) -> dict[str, Any]:
         "refund_reference",
         "expected_balance_delta",
     )
-    return {field: deepcopy(operation[field]) for field in fields}
+    return {field: deepcopy(operation[field]) for field in (
+        *fields, *(field for field in ("description", "reporting_exchange_rate")
+                   if field in operation)
+    )}
 
 
 def _validate_create_operation(
@@ -573,8 +576,16 @@ def _validate_create_operation(
         "expected_balance_delta",
         "expected_postcondition",
     }
-    if set(operation) != expected_keys:
+    optional_fields = set(operation) & {"description", "reporting_exchange_rate"}
+    if set(operation) != expected_keys | optional_fields:
         raise PlanValidationError(f"{prefix} has unknown or missing fields")
+    if "description" in optional_fields:
+        _text(operation["description"], f"{prefix}.description")
+    if "reporting_exchange_rate" in optional_fields:
+        rate = _canonical_decimal(operation["reporting_exchange_rate"],
+                                  f"{prefix}.reporting_exchange_rate")
+        if Decimal(rate) <= 0:
+            raise PlanValidationError("reporting_exchange_rate must be positive")
     kind = operation.get("kind")
     if kind not in CREATE_OPERATION_POLICIES:
         raise PlanValidationError(f"{prefix}.kind is not enabled")
@@ -850,7 +861,7 @@ def _validate_reconcile_operation(
         value = operation[field]
         if type(value) is not int or value < 0 or value > 32767:
             raise PlanValidationError(f"{prefix}.{field} must be a native nonnegative integer")
-    if operation["expected_native_status"] != 1:
+    if operation["expected_native_status"] not in (1, 2):
         raise PlanValidationError("W04 requires an active native transaction status")
     reason = operation["correction_reason"]
     if operation["kind"] == "unreconcile_transaction":
@@ -1039,7 +1050,10 @@ def transfer_postcondition(plan: Mapping[str, Any], operation: Mapping[str, Any]
     receiver = operation["destination_old"]
     destination = plan["destination_account"]
     recipient_prior = Decimal(destination["expected_cached_balance"])
-    recipient_final = recipient_prior if receiver else recipient_prior + Decimal(operation["recipient_amount"])
+    recipient_final = (
+        recipient_prior if receiver or destination.get("balance_mode") == "ledger"
+        else recipient_prior + Decimal(operation["recipient_amount"])
+    )
     return {
         "old_sender_gid": sender["transaction_gid"],
         "old_sender_numeric_id": sender["transaction_numeric_id"],
@@ -1138,8 +1152,11 @@ def _validate_investment_operation(
         "expected_prior_cash", "expected_final_cash", "expected_prior_units",
         "expected_final_units",
     }
-    if set(operation) != base | extra:
+    optional = {"description"} if "description" in operation else set()
+    if set(operation) != base | extra | optional:
         raise PlanValidationError(f"{prefix} has unknown or missing W08 fields")
+    if "description" in optional:
+        _text(operation["description"], f"{prefix}.description")
     kind = operation.get("kind")
     if kind not in INVESTMENT_POLICIES:
         raise PlanValidationError(f"{prefix}.kind is not an investment operation")
@@ -1244,10 +1261,9 @@ def _validate_source_scope(scope: object, plan: dict[str, Any]) -> list[str]:
             or scope["external_source_verified"] is not True):
         raise PlanValidationError("W04 requires a complete, externally verified account scope")
     if (scope["account_gid"] != plan["expected_account_gid"]
-            or scope["currency_unit"] != plan["currency_unit"]
-            or Decimal(_canonical_decimal(scope["verified_balance"], "source_scope.verified_balance"))
-            != Decimal(_decimal(plan["expected_cached_account_balance"], "expected_cached_account_balance"))):
+            or scope["currency_unit"] != plan["currency_unit"]):
         raise PlanValidationError("W04 source scope differs from the reviewed account")
+    _canonical_decimal(scope["verified_balance"], "source_scope.verified_balance")
     gids = scope["transaction_gids"]
     if not isinstance(gids, list) or not gids:
         raise PlanValidationError("W04 source scope requires all account transaction GIDs")
@@ -1386,6 +1402,9 @@ def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
     if not isinstance(payload, Mapping):
         raise PlanValidationError("plan must be a JSON object")
     plan = deepcopy(dict(payload))
+    if (type(plan.get("contract_version")) is not int
+            or type(plan.get("operation_schema_version")) is not int):
+        raise PlanValidationError("contract and operation schema versions must be exact JSON integers")
     if plan.get("capability") in PAYEE_MERGE_CAPABILITIES.values():
         return _validate_payee_merge_plan(plan)
     required = {
@@ -1483,10 +1502,12 @@ def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
     _text(plan.get("currency_unit"), "currency_unit")
     if w07:
         destination = plan["destination_account"]
-        if not isinstance(destination, Mapping) or set(destination) != {
-            "account_gid", "currency_unit", "expected_cached_balance"
-        }:
+        required_destination = {"account_gid", "currency_unit", "expected_cached_balance"}
+        if (not isinstance(destination, Mapping)
+                or set(destination) not in (required_destination, required_destination | {"balance_mode"})):
             raise PlanValidationError("W07 destination_account has unknown or missing fields")
+        if "balance_mode" in destination and destination["balance_mode"] != "ledger":
+            raise PlanValidationError("W07 balance_mode must be ledger when supplied")
         _text(destination["account_gid"], "destination_account.account_gid")
         _currency(destination["currency_unit"], "destination_account.currency_unit")
         _canonical_decimal(destination["expected_cached_balance"],
