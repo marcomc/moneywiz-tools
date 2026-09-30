@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import sys
 from copy import deepcopy
 from pathlib import Path
@@ -178,3 +179,20 @@ def test_review_map_admits_only_approved_row(tmp_path: Path,
                          "review_notes": "Same merchant" if expected else ""})
     approval = _approval_from_map(path, inventory(fuzzy=True))
     assert (approval is not None) is expected
+
+
+def test_review_map_hashes_the_bytes_it_parses(tmp_path: Path,
+                                               monkeypatch: pytest.MonkeyPatch) -> None:
+    path = tmp_path / "review.csv"
+    header = ("user_id,similarity,reason,left_id,left_name,right_id,right_name,"
+              "review_decision,approved_canonical_id,review_notes\n")
+    approved = ("1,0.9,similarity,2,Merchant East,3,Merchant,approved,3,Same merchant\n")
+    pending = "1,0.9,similarity,2,Merchant East,3,Merchant,pending,,\n"
+    raw = (header + approved).encode()
+    path.write_bytes((header + pending).encode())
+    original_read_bytes = Path.read_bytes
+    monkeypatch.setattr(Path, "read_bytes", lambda self: raw if self == path else original_read_bytes(self))
+    approval = _approval_from_map(path, inventory(fuzzy=True))
+    assert approval is not None
+    assert approval["review_decision"] == "approved"
+    assert approval["map_sha256"] == hashlib.sha256(raw).hexdigest()

@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import csv
 import hashlib
+import io
 import json
 import subprocess
 import sys
@@ -23,7 +24,7 @@ from writer_client import WriterClientError, resolve_writer
 
 def _approval_from_map(path: Path, inventory: dict[str, Any]) -> dict[str, Any] | None:
     raw = path.read_bytes()
-    with path.open(newline="", encoding="utf-8-sig") as source:
+    with io.StringIO(raw.decode("utf-8-sig"), newline="") as source:
         reader = csv.DictReader(source)
         required = {
             "user_id", "similarity", "reason", "left_id", "left_name",
