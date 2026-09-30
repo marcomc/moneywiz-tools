@@ -306,6 +306,7 @@ def test_primary_schema_failure_wins_when_close_also_fails(
         ("write.investment-income", 0, "enabled"),
         ("write.investment-expense", 0, "enabled"),
         ("write.investment-buy", 0, "enabled"),
+        ("write.investment-buy-new-holding", 0, "enabled"),
         ("write.investment-sell", 0, "enabled"),
         ("write.unknown", 1, "blocked"),
     ],

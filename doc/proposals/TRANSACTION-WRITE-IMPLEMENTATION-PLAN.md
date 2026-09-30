@@ -15,10 +15,12 @@ Update (2026-09-30): the bounded W01–W09 contracts are integrated through
 ordinary balance, investment cash and existing-asset quantity variants are
 integrated through PR #16 at `d037afb`; ordinary/cash/stock live trials, app
 read-back, iCloud export and verified cleanup are complete. Forex quantity has
-disposable-store coverage. The W06 supported-record deletion extension has
-completed fictional live app/sync acceptance and exact cleanup; final publication
-gates remain tracked in TODO. First-Buy holding creation is the next separate W08
-extension. The active user goal authorizes squash merge after local READY and
+disposable-store coverage. The W06 supported-record deletion extension is
+integrated through PR #17 at `9ffc516`; installed validation, fictional live
+app/sync acceptance, exact cleanup and current-head Codex review are complete.
+First-Buy holding creation is implemented as a separate W08 extension; installed
+client trials, app/iCloud export and exact cleanup are complete. The active user
+goal authorizes squash merge after local READY and
 current-head clean Codex review. See the current
 [Adjust Balance contract](../TRANSACTION-ADJUST-BALANCE.md) and TODO for gates.
 

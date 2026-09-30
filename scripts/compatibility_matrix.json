@@ -54,6 +54,7 @@
         "write.investment-income": "enabled",
         "write.investment-expense": "enabled",
         "write.investment-buy": "enabled",
+        "write.investment-buy-new-holding": "enabled",
         "write.investment-sell": "enabled"
       }
     },

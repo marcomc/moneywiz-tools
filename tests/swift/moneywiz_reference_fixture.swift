@@ -91,6 +91,12 @@ func makeFixture(_ arguments: FixtureArguments) throws -> [String: String] {
     var loadError: Error?
     container.loadPersistentStores { _, error in loadError = error }
     if let loadError { throw loadError }
+    guard let persistentStore = container.persistentStoreCoordinator.persistentStores.first else {
+        throw FixtureError.message("synthetic fixture has no persistent store")
+    }
+    var storeMetadata = persistentStore.metadata ?? [:]
+    storeMetadata["MoneyWizToolsDisposableFixture"] = "W01-v1"
+    container.persistentStoreCoordinator.setMetadata(storeMetadata, for: persistentStore)
 
     let context = container.viewContext
     let user = try insert("User", into: context)

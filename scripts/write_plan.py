@@ -51,9 +51,15 @@ INVESTMENT_POLICIES = {
     "investment_income": ("write.investment-income", "DepositTransaction", 1),
     "investment_expense": ("write.investment-expense", "WithdrawTransaction", -1),
     "investment_buy": ("write.investment-buy", "InvestmentBuyTransaction", -1),
+    "investment_buy_new_holding": ("write.investment-buy-new-holding", "InvestmentBuyTransaction", -1),
     "investment_sell": ("write.investment-sell", "InvestmentSellTransaction", 1),
 }
 INVESTMENT_CAPABILITIES = frozenset(item[0] for item in INVESTMENT_POLICIES.values())
+NATIVE_HOLDING_TYPES = frozenset({
+    "Stock", "Mutual Fund", "Bond", "CD", "Option", "Money Market Fund", "Other",
+    "Remic", "Future", "Commodity", "Currency", "Unit Investment Trust",
+    "Employee Stock Option", "Insurance Annuity", "Preferred Stock", "ETF", "Warrants",
+})
 PAYEE_MERGE_CAPABILITIES = {
     "merge_exact_payee": "write.merge-exact-payees",
     "merge_approved_fuzzy_payee": "write.merge-approved-fuzzy-payees",
@@ -1353,6 +1359,8 @@ def _validate_investment_operation(
         "expected_final_units",
     }
     optional = {"description"} if "description" in operation else set()
+    if operation.get("kind") == "investment_buy_new_holding":
+        extra |= {"holding_type", "holding_description"}
     if set(operation) != base | extra | optional:
         raise PlanValidationError(f"{prefix} has unknown or missing W08 fields")
     if "description" in optional:
@@ -1378,7 +1386,7 @@ def _validate_investment_operation(
         raise PlanValidationError("W08 operation identity differs from its envelope")
     if operation["account_mode"] not in {"aggregate", "units"}:
         raise PlanValidationError("W08 account_mode must be aggregate or units")
-    if kind in {"investment_buy", "investment_sell"} and operation["account_mode"] != "units":
+    if kind in {"investment_buy", "investment_buy_new_holding", "investment_sell"} and operation["account_mode"] != "units":
         raise PlanValidationError("W08 Buy/Sell requires a units-based account")
     for field in ("amount", "expected_balance_delta", "quantity", "unit_price", "fee",
                   "expected_prior_cash", "expected_final_cash"):
@@ -1438,6 +1446,14 @@ def _validate_investment_operation(
             _canonical_decimal(operation[field], f"{prefix}.{field}")
         prior_units = Decimal(operation["expected_prior_units"])
         final_units = Decimal(operation["expected_final_units"])
+        if kind == "investment_buy_new_holding":
+            _text(operation["holding_type"], f"{prefix}.holding_type")
+            _text(operation["holding_description"], f"{prefix}.holding_description")
+            if (operation["holding_type"] not in NATIVE_HOLDING_TYPES
+                    or operation["asset_type"] != 0 or prior_units != 0
+                    or quantity.as_tuple().exponent < -8
+                    or operation["holding_gid"] != f"{operation['account_gid']}-{operation['holding_symbol']}-0"):
+                raise PlanValidationError("W08 first Buy requires native holding identity, type and zero prior units")
         if (
             quantity <= 0 or price <= 0 or prior_units < 0 or final_units < 0
             or final_units != prior_units + (quantity if sign < 0 else -quantity)
@@ -1995,6 +2011,22 @@ def validate_result(plan: dict[str, Any], result: object) -> dict[str, Any]:
                 raise PlanValidationError("W08 receipt differs from derived cash or holding state")
             if not success and details is not None:
                 raise PlanValidationError("unverified W08 receipt claims investment state")
+            holding = receipt.get("holding_creation")
+            if operation["kind"] == "investment_buy_new_holding" and success:
+                if not isinstance(holding, Mapping) or set(holding) != {
+                    "holding_gid", "holding_type", "holding_description", "durable_numeric_id", "durable_uri"
+                }:
+                    raise PlanValidationError("W08 first Buy receipt omits the created holding")
+                holding_id = holding["durable_numeric_id"]
+                if (not isinstance(holding_id, str) or not holding_id.isascii()
+                        or not holding_id.isdigit() or int(holding_id) <= 0
+                        or holding_id == receipt.get("durable_numeric_id")
+                        or holding["durable_uri"] != f"x-coredata://{plan['store_identity']['store_uuid']}/InvestmentHolding/p{holding_id}"
+                        or any(holding[field] != operation[field] for field in
+                               ("holding_gid", "holding_type", "holding_description"))):
+                    raise PlanValidationError("W08 first Buy receipt holding differs from the plan")
+            elif holding is not None:
+                raise PlanValidationError("W08 receipt claims an unrequested or unverified holding creation")
         if operation["kind"] == "reassign_payee":
             if (
                 success
