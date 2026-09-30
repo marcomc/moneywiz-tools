@@ -16,6 +16,7 @@ from typing import Any
 from write_plan import (
     CONTRACT_VERSION,
     ADJUST_BALANCE_CAPABILITY,
+    ADJUST_BALANCE_POLICIES,
     DELETE_ADJUSTMENT_CAPABILITY,
     TRANSFER_CAPABILITY,
     ASSIGN_CAPABILITY,
@@ -338,21 +339,31 @@ def build_reconcile_plan(request: Mapping[str, Any], *, kind: str) -> dict[str, 
 
 
 def build_adjust_balance_plan(request: Mapping[str, Any]) -> dict[str, Any]:
-    """Plan the observed aggregate investment balance variant only."""
+    """Plan one adjustment using its explicit native balance unit."""
     raw = _mapping(request, "request")
     if set(raw) != _ENVELOPE_FIELDS | {"operation"}:
         raise PlanValidationError("request has unknown or missing W05 fields")
     operation = _mapping(raw.pop("operation"), "operation")
-    if set(operation) != {
+    kind = operation.get("kind")
+    if type(kind) is not str:
+        raise PlanValidationError("W05 kind must be a string")
+    extended = kind in ADJUST_BALANCE_POLICIES
+    fields = {
         "operation_id", "kind", "account_gid", "balance_unit",
         "expected_prior_balance", "target_balance", "occurred_at",
-    } or operation.get("kind") != "adjust_investment_total":
+    }
+    if extended:
+        fields |= {"description", "reporting_exchange_rate"}
+    if kind == "adjust_asset_quantity":
+        fields |= {"holding_gid", "holding_symbol", "asset_type", "expected_prior_cash"}
+    if set(operation) != fields or not (extended or kind == "adjust_investment_total"):
         raise PlanValidationError("operation has unknown or missing W05 fields")
+    capability = ADJUST_BALANCE_POLICIES[kind][0] if extended else ADJUST_BALANCE_CAPABILITY
     prior = normalize_decimal(operation["expected_prior_balance"], "expected_prior_balance")
     target = normalize_decimal(operation["target_balance"], "target_balance")
     store_identity = _mapping(raw["store_identity"], "store_identity")
     operation.update(
-        capability=ADJUST_BALANCE_CAPABILITY,
+        capability=capability,
         transaction_entity="ReconcileTransaction",
         transaction_gid=deterministic_transaction_gid(
             store_uuid=store_identity.get("store_uuid"),
@@ -369,18 +380,20 @@ def build_adjust_balance_plan(request: Mapping[str, Any]) -> dict[str, Any]:
         currency_unit=raw["currency_unit"],
         timezone=raw["timezone"],
     )
-    operation["expected_postcondition"] = {
-        field: operation[field] for field in (
+    post_fields = {
             "transaction_entity", "transaction_gid", "account_gid", "owner_uri",
             "balance_unit", "expected_prior_balance", "target_balance",
             "expected_balance_delta", "currency_unit", "occurred_at", "timezone",
-        )
     }
+    for field in fields & {"reporting_exchange_rate", "expected_prior_cash"}:
+        operation[field] = normalize_decimal(operation[field], field)
+    post_fields |= fields & {"description", "reporting_exchange_rate", "holding_gid", "holding_symbol", "asset_type", "expected_prior_cash"}
+    operation["expected_postcondition"] = {field: operation[field] for field in post_fields}
     return validate_plan({
         "contract_version": CONTRACT_VERSION,
         "operation_schema_version": OPERATION_SCHEMA_VERSION,
         **raw,
-        "capability": ADJUST_BALANCE_CAPABILITY,
+        "capability": capability,
         "operations": [operation],
     })
 

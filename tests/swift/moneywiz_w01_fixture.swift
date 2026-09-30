@@ -126,7 +126,8 @@ func runFixtureInspection(_ args: [String]) throws {
         relationships[key] = try fixtureRelationshipIDs(transaction, key)
     }
     let account = supportedAccountEntities.contains(transaction.entity.name ?? "")
-        ? transaction : transaction.value(forKey: "account") as? NSManagedObject
+        ? transaction : transaction.value(forKey: transaction.entity.name == "InvestmentHolding"
+            ? "investmentAccount" : "account") as? NSManagedObject
     let result: [String: Any] = [
         "entity": transaction.entity.name ?? "",
         "object_uri": transaction.objectID.uriRepresentation().absoluteString,
@@ -285,7 +286,8 @@ func runFixtureWriter() throws {
                   args.count == 4 || ["--unmarked", "--w06", "--w06-backdated", "--w06-unmarked", "--w06-linked",
                     "--w07-source", "--w07-paired", "--w07-reverse", "--w07-ambiguous",
                     "--w07-unmarked", "--w07-voided", "--w08-aggregate",
-                    "--w08-units", "--w08-unmarked", "--w09-exact",
+                    "--w08-units", "--w08-unmarked", "--w05-balance", "--w05-cash", "--w05-quantity",
+                    "--w05-unmarked-balance", "--w05-unmarked-cash", "--w05-unmarked-quantity", "--w09-exact",
                     "--w09-fuzzy", "--w09-untrimmed", "--w09-control-space",
                     "--w09-blank-control",
                     "--w09-unmarked"].contains(args[4]) else {
@@ -301,7 +303,7 @@ func runFixtureWriter() throws {
             guard let persistentStore = container.persistentStoreCoordinator.persistentStores.first else { throw HostError.message("fixture has no persistent store") }
             if args.count == 4 || ["--w06", "--w06-backdated", "--w06-linked", "--w07-source",
                 "--w07-paired", "--w07-reverse", "--w07-ambiguous",
-                "--w07-voided", "--w08-aggregate", "--w08-units",
+                "--w07-voided", "--w08-aggregate", "--w08-units", "--w05-balance", "--w05-cash", "--w05-quantity",
                 "--w09-exact", "--w09-fuzzy", "--w09-untrimmed",
                 "--w09-control-space", "--w09-blank-control"].contains(args[4]) {
                 var storeMetadata = persistentStore.metadata ?? [:]
@@ -313,6 +315,74 @@ func runFixtureWriter() throws {
             try fixtureSet(user, "syncLogin", "w01-fixture@example.invalid")
             let foreignUser = try fixtureObject("User", c)
             try fixtureSet(foreignUser, "syncLogin", "w01-foreign@example.invalid")
+            if args.count == 5 && args[4].hasPrefix("--w05-") {
+                let quantity = args[4].hasSuffix("quantity")
+                let cash = args[4].hasSuffix("cash")
+                let entity = ProcessInfo.processInfo.environment["MONEYWIZ_TEST_ACCOUNT_ENTITY"] ??
+                    (quantity ? "ForexAccount" : cash ? "InvestmentAccount" : "BankChequeAccount")
+                let account = try fixtureAccount(entity, gid: "w05-account", name: "W05 account",
+                    opening: 100, balance: 0, user: user, context: c)
+                try fixtureSet(account, "currencyName", ProcessInfo.processInfo.environment["MONEYWIZ_TEST_CURRENCY"] ?? "EUR")
+                try fixtureSet(account, "archived", false)
+                if quantity {
+                    let holding = try fixtureObject("InvestmentHolding", c)
+                    try fixtureSet(holding, "GID", "w05-holding")
+                    try fixtureSet(holding, "symbol", "ETH")
+                    try fixtureSet(holding, "investmentObjectType", entity == "InvestmentAccount" ? 0 : 1)
+                    try fixtureSet(holding, "openningNumberOfShares", 1.1)
+                    try fixtureSet(holding, "investmentAccount", account)
+                    for (rowEntity, gid, delta) in [(entity == "InvestmentAccount" ? "InvestmentBuyTransaction" : "DepositTransaction", "w05-deposit", 0.01),
+                                                 ("ReconcileTransaction", "w05-adjustment", 0.005)] {
+                        let row = try fixtureObject(rowEntity, c)
+                        try fixtureSet(row, "GID", gid)
+                        try fixtureSet(row, "symbol", "ETH")
+                        try fixtureSet(row, "numberOfShares", delta)
+                        try fixtureSet(row, "date", precisePlanTimestamp("2026-09-10T09:00:00Z"))
+                        try fixtureSet(row, "status", 2)
+                        try fixtureSet(row, "account", account)
+                        try fixtureSet(row, "investmentHolding", holding)
+                        if entity == "InvestmentAccount" && rowEntity == "InvestmentBuyTransaction" {
+                            try fixtureSet(row, "amount", -0.1)
+                            try fixtureSet(row, "pricePerShare", 10.0)
+                        }
+                    }
+                    if entity == "InvestmentAccount" {
+                        let sell = try fixtureObject("InvestmentSellTransaction", c)
+                        try fixtureSet(sell, "GID", "w05-sell")
+                        try fixtureSet(sell, "symbol", "ETH")
+                        try fixtureSet(sell, "numberOfShares", 0.1)
+                        try fixtureSet(sell, "amount", 0.1)
+                        try fixtureSet(sell, "pricePerShare", 1.0)
+                        try fixtureSet(sell, "date", precisePlanTimestamp("2026-09-10T09:30:00Z"))
+                        try fixtureSet(sell, "status", 2)
+                        try fixtureSet(sell, "account", account)
+                        try fixtureSet(sell, "investmentHolding", holding)
+                    } else {
+                        let other = try fixtureObject("InvestmentHolding", c)
+                        try fixtureSet(other, "GID", "w05-peer-holding")
+                        try fixtureSet(other, "symbol", "USD")
+                        try fixtureSet(other, "investmentObjectType", 1)
+                        try fixtureSet(other, "investmentAccount", account)
+                        let exchange = try fixtureObject("InvestmentExchangeTransaction", c)
+                        try fixtureSet(exchange, "GID", "w05-exchange")
+                        try fixtureSet(exchange, "date", precisePlanTimestamp("2026-09-10T09:30:00Z"))
+                        try fixtureSet(exchange, "fromInvestmentHolding", holding)
+                        try fixtureSet(exchange, "toInvestmentHolding", other)
+                        try fixtureSet(exchange, "fromSymbol", "ETH")
+                        try fixtureSet(exchange, "toSymbol", "USD")
+                        try fixtureSet(exchange, "fromNumberOfShares", -0.1)
+                        try fixtureSet(exchange, "toNumberOfShares", 10.0)
+                        try fixtureSet(exchange, "account", account)
+                    }
+                }
+                try c.save()
+                let metadata = try NSPersistentStoreCoordinator.metadataForPersistentStore(ofType: NSSQLiteStoreType, at: store, options: nil)
+                let result: [String: Any] = ["store_uuid": metadata[NSStoreUUIDKey] as! String,
+                    "owner_uri": user.objectID.uriRepresentation().absoluteString]
+                FileHandle.standardOutput.write(try JSONSerialization.data(withJSONObject: result, options: [.sortedKeys]))
+                FileHandle.standardOutput.write(Data([10]))
+                return
+            }
             if args.count == 5 && args[4].hasPrefix("--w09-") {
                 let account = try fixtureAccount("CashAccount", gid: "w09-account",
                     name: "W09 account", opening: 100, balance: 90, user: user, context: c)

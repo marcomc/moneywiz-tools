@@ -860,12 +860,22 @@ struct AdjustBalancePostcondition: Encodable {
     let currencyUnit: String
     let occurredAt: String
     let timezone: String
+    var description: String? = nil
+    var reportingExchangeRate: String? = nil
+    var holdingGID: String? = nil
+    var holdingSymbol: String? = nil
+    var assetType: Int? = nil
+    var expectedPriorCash: String? = nil
     enum CodingKeys: String, CodingKey {
         case transactionEntity = "transaction_entity", transactionGID = "transaction_gid"
         case accountGID = "account_gid", ownerURI = "owner_uri", balanceUnit = "balance_unit"
         case expectedPriorBalance = "expected_prior_balance", targetBalance = "target_balance"
         case expectedBalanceDelta = "expected_balance_delta", currencyUnit = "currency_unit"
         case occurredAt = "occurred_at", timezone
+        case description, reportingExchangeRate = "reporting_exchange_rate"
+        case holdingGID = "holding_gid", holdingSymbol = "holding_symbol"
+        case assetType = "asset_type"
+        case expectedPriorCash = "expected_prior_cash"
     }
 }
 
@@ -1193,7 +1203,7 @@ func validateWriterPlanV2(_ plan: WriterPlanV2, rawPlan: [String: Any]) throws {
             try validateReconcileOperationShape(rawOperation, plan: plan)
             continue
         }
-        if kind == "adjust_investment_total" {
+        if kind == "adjust_investment_total" || extendedAdjustPolicies[kind ?? ""] != nil {
             try validateAdjustBalanceShape(rawOperation, plan: plan)
             continue
         }
@@ -1220,7 +1230,7 @@ func validateWriterPlanV2(_ plan: WriterPlanV2, rawPlan: [String: Any]) throws {
           plan.operationSchemaVersion == 1,
           plan.profileID == policy.profileID,
           plan.modelChecksum == policy.modelChecksum,
-          (plan.capability == policy.capability || ["write.create-income", "write.create-expense", "write.create-refund", "write.edit-transaction", "write.assign-payee-categories", "write.reconcile", "write.unreconcile", "write.adjust-balance-investment-total", "write.delete-adjust-balance-investment-total", "write.replace-import-with-transfer", "write.investment-income", "write.investment-expense", "write.investment-buy", "write.investment-sell"].contains(plan.capability)),
+          (plan.capability == policy.capability || extendedAdjustPolicies.values.contains(where: { $0.capability == plan.capability }) || ["write.create-income", "write.create-expense", "write.create-refund", "write.edit-transaction", "write.assign-payee-categories", "write.reconcile", "write.unreconcile", "write.adjust-balance-investment-total", "write.delete-adjust-balance-investment-total", "write.replace-import-with-transfer", "write.investment-income", "write.investment-expense", "write.investment-buy", "write.investment-sell"].contains(plan.capability)),
           moneyWizBundleIdentifiers.contains(plan.appIdentity.bundleID),
           !isBlank(plan.appIdentity.version),
           !isBlank(plan.appIdentity.path),
@@ -1288,6 +1298,10 @@ func validateWriterPlanV2(_ plan: WriterPlanV2, rawPlan: [String: Any]) throws {
        (plan.operations.count != 1 || plan.operations[0].kind != "adjust_investment_total") {
         throw HostError.message("W05 requires exactly one investment-total operation")
     }
+    if extendedAdjustPolicies.values.contains(where: { $0.capability == plan.capability }) &&
+       (plan.operations.count != 1 || extendedAdjustPolicies[plan.operations[0].kind]?.capability != plan.capability) {
+        throw HostError.message("W05 requires exactly one matching adjustment operation")
+    }
     if plan.capability == "write.delete-adjust-balance-investment-total" &&
        (plan.operations.count != 1 || plan.operations[0].kind != "delete_investment_total_adjustment") {
         throw HostError.message("W06 requires exactly one investment-total deletion")
@@ -1308,7 +1322,7 @@ func validateWriterPlanV2(_ plan: WriterPlanV2, rawPlan: [String: Any]) throws {
             }
             continue
         }
-        if ["create_income", "create_expense", "create_refund", "adjust_investment_total",
+        if extendedAdjustPolicies[operation.kind] != nil || ["create_income", "create_expense", "create_refund", "adjust_investment_total",
             "investment_income", "investment_expense", "investment_buy", "investment_sell"].contains(operation.kind) {
             guard operation.capability == plan.capability,
                   operation.accountGID == plan.expectedAccountGID,
@@ -1390,28 +1404,40 @@ func deterministicCreationGID(plan: WriterPlanV2) -> String {
     return "\(hex.prefix(8))-\(hex.dropFirst(8).prefix(4))-\(hex.dropFirst(12).prefix(4))-\(hex.dropFirst(16).prefix(4))-\(hex.dropFirst(20).prefix(12))"
 }
 
+let extendedAdjustPolicies: [String: (capability: String, unit: String)] = [
+    "adjust_account_balance": ("write.adjust-account-balance", "account_balance"),
+    "adjust_investment_cash": ("write.adjust-investment-cash", "investment_cash"),
+    "adjust_asset_quantity": ("write.adjust-asset-quantity", "asset_quantity"),
+]
+
 func validateAdjustBalanceShape(_ raw: [String: Any], plan: WriterPlanV2) throws {
-    let fields: Set<String> = ["transaction_entity", "transaction_gid", "account_gid", "owner_uri",
+    let kind = raw["kind"] as? String ?? ""
+    let policy = extendedAdjustPolicies[kind]
+    let extended = policy != nil
+    let units = kind == "adjust_asset_quantity"
+    var fields: Set<String> = ["transaction_entity", "transaction_gid", "account_gid", "owner_uri",
         "balance_unit", "expected_prior_balance", "target_balance", "expected_balance_delta",
         "currency_unit", "occurred_at", "timezone"]
+    if extended { fields.formUnion(["description", "reporting_exchange_rate"]) }
+    if units { fields.formUnion(["holding_gid", "holding_symbol", "asset_type", "expected_prior_cash"]) }
     let required = fields.union(["operation_id", "kind", "capability", "source_event_id", "expected_postcondition"])
     guard Set(raw.keys) == required,
-          let post = raw["expected_postcondition"] as? [String: String],
+          let post = raw["expected_postcondition"] as? [String: Any],
           Set(post.keys) == fields,
-          fields.allSatisfy({ post[$0] == raw[$0] as? String }),
-          raw["kind"] as? String == "adjust_investment_total",
-          raw["capability"] as? String == "write.adjust-balance-investment-total",
-          plan.capability == "write.adjust-balance-investment-total",
+          NSDictionary(dictionary: post).isEqual(to: raw.filter { fields.contains($0.key) }),
+          extended || kind == "adjust_investment_total",
+          raw["capability"] as? String == (policy?.capability ?? "write.adjust-balance-investment-total"),
+          plan.capability == (policy?.capability ?? "write.adjust-balance-investment-total"),
           raw["transaction_entity"] as? String == "ReconcileTransaction",
           raw["transaction_gid"] as? String == deterministicCreationGID(plan: plan),
           raw["account_gid"] as? String == plan.expectedAccountGID,
           raw["owner_uri"] as? String == plan.ownerURI,
           raw["source_event_id"] as? String == plan.sourceEventID,
-          raw["balance_unit"] as? String == "investment_total",
+          raw["balance_unit"] as? String == (policy?.unit ?? "investment_total"),
           raw["currency_unit"] as? String == plan.currencyUnit,
           raw["timezone"] as? String == plan.timezone,
-          plan.expectedCachedAccountBalance == "0",
-          plan.currencyUnit == "GBP",
+          extended || plan.expectedCachedAccountBalance == "0",
+          extended ? ["GBP", "EUR", "USD", "CAD"].contains(plan.currencyUnit) : plan.currencyUnit == "GBP",
           let prior = raw["expected_prior_balance"] as? String,
           let target = raw["target_balance"] as? String,
           let delta = raw["expected_balance_delta"] as? String,
@@ -1425,10 +1451,28 @@ func validateAdjustBalanceShape(_ raw: [String: Any], plan: WriterPlanV2) throws
     guard amounts.allSatisfy({ value in
         var source = value
         var rounded = Decimal()
-        NSDecimalRound(&rounded, &source, 2, .plain)
+        NSDecimalRound(&rounded, &source, units ? 8 : 2, .plain)
         return rounded == value
     }), amounts[1] - amounts[0] == amounts[2] else {
         throw HostError.message("W05 target minus prior differs from delta")
+    }
+    if extended {
+        guard let description = raw["description"] as? String, !isBlank(description),
+              description == description.trimmingCharacters(in: planWhitespace),
+              let rate = raw["reporting_exchange_rate"] as? String,
+              try decimalValue(rate, field: "W05 reporting rate") >= 0 else {
+            throw HostError.message("W05 requires an explicit description and reporting rate")
+        }
+        if units {
+            guard let gid = raw["holding_gid"] as? String, !isBlank(gid),
+                  let symbol = raw["holding_symbol"] as? String, !isBlank(symbol),
+                  let assetType = plan.operations[0].assetType, [0, 1].contains(assetType),
+                  let cash = raw["expected_prior_cash"] as? String,
+                  amounts[0] >= 0, amounts[1] >= 0, rate == "0" else {
+                throw HostError.message("W05 asset identity, units or native zero reporting rate is invalid")
+            }
+            _ = try decimalValue(cash, field: "W05 prior cash")
+        }
     }
     let instant = try planTimestamp(occurred)
     let offset = occurred.hasSuffix("Z") ? 0 : {
@@ -2744,12 +2788,21 @@ struct AdjustBalanceInspection {
 }
 
 func adjustBalancePostcondition(_ operation: WriterOperationV2) -> AdjustBalancePostcondition {
-    AdjustBalancePostcondition(transactionEntity: operation.transactionEntity,
+    var result = AdjustBalancePostcondition(transactionEntity: operation.transactionEntity,
         transactionGID: operation.transactionGID, accountGID: operation.accountGID!,
         ownerURI: operation.ownerURI, balanceUnit: operation.balanceUnit!,
         expectedPriorBalance: operation.expectedPriorBalance!, targetBalance: operation.targetBalance!,
         expectedBalanceDelta: operation.expectedBalanceDelta!, currencyUnit: operation.currencyUnit!,
         occurredAt: operation.occurredAt!, timezone: operation.timezone!)
+    if extendedAdjustPolicies[operation.kind] != nil {
+        result.description = operation.description
+        result.reportingExchangeRate = operation.reportingExchangeRate
+        result.holdingGID = operation.holdingGID
+        result.holdingSymbol = operation.holdingSymbol
+        result.assetType = operation.assetType
+        result.expectedPriorCash = operation.expectedPriorCash
+    }
+    return result
 }
 
 func inspectAdjustBalance(_ plan: WriterPlanV2, context: NSManagedObjectContext,
@@ -2883,6 +2936,223 @@ func inspectAdjustBalance(_ plan: WriterPlanV2, context: NSManagedObjectContext,
     return AdjustBalanceInspection(receipt: WriterResultV2(contractVersion: 2, planID: plan.planID,
         planDigest: plan.planDigest, classification: classification, verified: success,
         operations: [item]), account: account, openingBalance: opening)
+}
+
+func roundedBalance(_ value: Decimal, scale: Int) -> Decimal {
+    var source = value
+    var rounded = Decimal()
+    NSDecimalRound(&rounded, &source, scale, .plain)
+    return rounded
+}
+
+// Native Forex holdings use signed quantities on deposits/adjustments and
+// separate signed from/to quantities on exchange rows. Stock trades use the
+// existing W08 Buy/Sell path. A quantity adjustment carries no cash movement.
+func forexUnits(_ holding: NSManagedObject, account: NSManagedObject) throws -> Decimal {
+    var total = try nativeDecimal(holding, "openningNumberOfShares")
+    for row in try relatedObjects(account, "transactionsHistory") {
+        let direct = (row.value(forKey: "investmentHolding") as? NSManagedObject)?.objectID == holding.objectID
+        let exchange = row.entity.name == "InvestmentExchangeTransaction"
+        let from = exchange && (row.value(forKey: "fromInvestmentHolding") as? NSManagedObject)?.objectID == holding.objectID
+        let to = exchange && (row.value(forKey: "toInvestmentHolding") as? NSManagedObject)?.objectID == holding.objectID
+        if !direct && !from && !to { continue }
+        guard (row.value(forKey: "voidCheque") as? NSNumber)?.intValue == 0 else {
+            throw HostError.message("W05 holding history contains a void row")
+        }
+        if direct {
+            guard ["DepositTransaction", "ReconcileTransaction", "InvestmentBuyTransaction", "InvestmentSellTransaction"].contains(row.entity.name ?? ""),
+                  row.value(forKey: "symbol") as? String == holding.value(forKey: "symbol") as? String else {
+                throw HostError.message("W05 Forex holding history contains an unsupported transaction")
+            }
+            let quantity = try nativeDecimal(row, "numberOfShares")
+            if row.entity.name == "InvestmentBuyTransaction" || row.entity.name == "InvestmentSellTransaction" {
+                guard quantity > 0 else { throw HostError.message("W05 trade has nonpositive units") }
+            }
+            total += row.entity.name == "InvestmentSellTransaction" ? -quantity : quantity
+        } else {
+            // Currency-denominated exchange fees modify the corresponding leg.
+            let fee = try nativeDecimal(row, "originalFee")
+            if from {
+                let units = try nativeDecimal(row, "fromNumberOfShares")
+                guard units <= 0 else { throw HostError.message("W05 invalid outgoing exchange quantity") }
+                total += units
+                if row.value(forKey: "originalFeeCurrency") as? String == holding.value(forKey: "symbol") as? String {
+                    total += fee
+                }
+            }
+            if to {
+                let units = try nativeDecimal(row, "toNumberOfShares")
+                guard units >= 0 else { throw HostError.message("W05 invalid incoming exchange quantity") }
+                total += units
+                if row.value(forKey: "originalFeeCurrency") as? String == holding.value(forKey: "symbol") as? String {
+                    total += fee
+                }
+            }
+        }
+    }
+    let units = roundedBalance(total, scale: 8)
+    guard units >= 0 else { throw HostError.message("W05 negative derived asset quantity") }
+    return units
+}
+
+struct ExtendedAdjustmentInspection {
+    let receipt: WriterResultV2
+    let account: NSManagedObject
+    let holding: NSManagedObject?
+}
+
+func inspectExtendedAdjustment(_ plan: WriterPlanV2, context: NSManagedObjectContext,
+                               saved: Bool = false) throws -> ExtendedAdjustmentInspection {
+    guard let coordinator = context.persistentStoreCoordinator else { throw HostError.message("W05 missing coordinator") }
+    try requireReviewedRuntime(plan, coordinator: coordinator)
+    let operation = plan.operations[0]
+    let account = try reviewedAccount(plan.expectedAccountGID, ownerURI: plan.ownerURI,
+                                      currency: plan.currencyUnit, context: context)
+    guard try nativeDecimal(account, "ballance") == decimalValue(plan.expectedCachedAccountBalance, field: "W05 cache") else {
+        throw HostError.message("W05 account cache changed")
+    }
+    let units = operation.kind == "adjust_asset_quantity"
+    let holding: NSManagedObject?
+    if units {
+        guard ["InvestmentAccount", "ForexAccount"].contains(account.entity.name ?? "") else {
+            throw HostError.message("W05 quantity adjustment requires an investment or Forex account")
+        }
+        let object = try fetchExactObject(entityName: "InvestmentHolding", gid: operation.holdingGID!, context: context)
+        guard (object.value(forKey: "investmentAccount") as? NSManagedObject)?.objectID == account.objectID,
+              object.value(forKey: "symbol") as? String == operation.holdingSymbol,
+              (object.value(forKey: "investmentObjectType") as? NSNumber)?.intValue == operation.assetType,
+              operation.assetType == (account.entity.name == "ForexAccount" ? 1 : 0),
+              try relatedObjects(account, "investmentHoldings").contains(object) else {
+            throw HostError.message("W05 holding identity or native quantity mode differs")
+        }
+        holding = object
+    } else {
+        let investment = account.entity.name == "InvestmentAccount"
+        guard operation.kind == "adjust_investment_cash" ? investment :
+            !["InvestmentAccount", "ForexAccount"].contains(account.entity.name ?? "") else {
+            throw HostError.message("W05 balance unit differs from native account type")
+        }
+        holding = nil
+    }
+    let cash = try investmentLedger(account)
+    let actual = try holding.map { try investmentUnits($0, account: account) } ?? cash
+    if units {
+        guard cash == (try decimalValue(operation.expectedPriorCash!, field: "W05 unchanged cash")) else {
+            throw HostError.message("W05 quantity adjustment cash precondition changed")
+        }
+    }
+    let prior = try decimalValue(operation.expectedPriorBalance!, field: "W05 prior")
+    let target = try decimalValue(operation.targetBalance!, field: "W05 target")
+    let occurred = try planTimestamp(operation.occurredAt!)
+    let candidates = try creationObjects(entity: "SyncObject", gid: operation.transactionGID, context: context)
+    guard candidates.count <= 1 else { throw HostError.message("W05 adjustment GID collision") }
+    let existing = candidates.first
+    if let row = existing {
+        guard row.entity.name == "ReconcileTransaction",
+              (row.value(forKey: "account") as? NSManagedObject)?.objectID == account.objectID,
+              (row.value(forKey: "investmentHolding") as? NSManagedObject)?.objectID == holding?.objectID,
+              row.value(forKey: "date") as? Date == occurred,
+              row.value(forKey: "objectCreationDate") as? Date == (try planTimestamp(plan.createdAt)),
+              row.value(forKey: "desc") as? String == operation.description,
+              row.value(forKey: "notes") as? String == "",
+              row.value(forKey: "symbol") as? String == operation.holdingSymbol,
+              (row.value(forKey: "status") as? NSNumber)?.intValue == 2,
+              (row.value(forKey: "flags") as? NSNumber)?.intValue == 0,
+              (row.value(forKey: "reconciled") as? NSNumber)?.boolValue == false,
+              (row.value(forKey: "voidCheque") as? NSNumber)?.intValue == 0,
+              try nativeDecimal(row, "amount") == (units ? 0 : target - prior),
+              try nativeDecimal(row, "reconcileAmount") == (units ? 0 : target),
+              try nativeDecimal(row, "numberOfShares") == (units ? target - prior : 0),
+              try nativeDecimal(row, "reconcileNumberOfShares") == (units ? target : 0),
+              try nativeDecimal(row, "currencyExchangeRate") == decimalValue(operation.reportingExchangeRate!, field: "W05 rate") else {
+            throw HostError.message("W05 existing GID differs from the reviewed adjustment")
+        }
+        for key in ["originalAmount", "originalExchangeRate", "originalFee", "fee", "pricePerShare"] {
+            guard try nativeDecimal(row, key) == 0 else { throw HostError.message("W05 unsupported adjustment scalar") }
+        }
+        for key in ["originalCurrency", "originalFeeCurrency", "investmentSymbol"] {
+            guard row.value(forKey: key) == nil else { throw HostError.message("W05 unsupported adjustment metadata") }
+        }
+        for (key, relationship) in row.entity.relationshipsByName where !["account", "investmentHolding"].contains(key) {
+            let empty = relationship.isToMany ? try relatedObjects(row, key).isEmpty : row.value(forKey: key) == nil
+            guard empty else { throw HostError.message("W05 adjustment has unexpected relationships") }
+        }
+    }
+    let latest = try relatedObjects(account, "transactionsHistory").compactMap { $0.value(forKey: "date") as? Date }.max() ?? .distantPast
+    let classification: String
+    if existing != nil && actual == target { classification = saved ? "applied" : "noop" }
+    else if existing == nil && actual == target && prior == target { classification = "noop" }
+    else if existing == nil && actual == prior && occurred > latest { classification = "retry_safe" }
+    else { classification = "unknown" }
+    let success = classification == "applied" || classification == "noop"
+    var item = WriterOperationResultV2(operationID: operation.operationID,
+        status: success ? classification : "unknown", transactionEntity: operation.transactionEntity,
+        transactionGID: operation.transactionGID, durableURI: existing?.objectID.uriRepresentation().absoluteString,
+        durableNumericID: existing.map { durableNumericID($0.objectID) }, oldPayeeGID: nil, newPayeeGID: nil, postcondition: nil)
+    if success { item.adjustBalancePostcondition = adjustBalancePostcondition(operation) }
+    return ExtendedAdjustmentInspection(receipt: WriterResultV2(contractVersion: 2, planID: plan.planID,
+        planDigest: plan.planDigest, classification: classification, verified: success, operations: [item]),
+        account: account, holding: holding)
+}
+
+func extendedAdjustmentV2(_ plan: WriterPlanV2, context: NSManagedObjectContext,
+                          requireStopped: () throws -> Void) throws -> WriterResultV2 {
+    let before = try inspectExtendedAdjustment(plan, context: context)
+    if before.receipt.classification == "noop" { return before.receipt }
+    guard before.receipt.classification == "retry_safe" else { throw HostError.message("W05 prior balance, date or GID is stale") }
+    let history = try relatedObjects(before.account, "transactionsHistory")
+    let existing = [before.account] + Array(history) + (before.holding.map { [$0] } ?? [])
+    let preimages = try existing.map { object -> CreationPreimage in
+        let allowed: Set<String> = object.objectID == before.account.objectID ? ["relationship:transactionsHistory"] :
+            object.objectID == before.holding?.objectID ? ["relationship:investmentTransactions"] : []
+        var fingerprint = try immutableTransactionFingerprint(object)
+        if object.entity.relationshipsByName["payee"] != nil {
+            fingerprint["relationship:payee"] = (object.value(forKey: "payee") as? NSManagedObject)
+                .map { $0.objectID.uriRepresentation().absoluteString as NSString } ?? NSNull()
+        }
+        return CreationPreimage(objectID: object.objectID,
+            fingerprint: fingerprint.filter { !allowed.contains($0.key) }, allowedKeys: allowed)
+    }
+    let operation = plan.operations[0]
+    let units = before.holding != nil
+    let delta = try decimalValue(operation.expectedBalanceDelta!, field: "W05 delta")
+    let target = try decimalValue(operation.targetBalance!, field: "W05 target")
+    let row = NSEntityDescription.insertNewObject(forEntityName: "ReconcileTransaction", into: context)
+    row.setValue(operation.transactionGID, forKey: "GID")
+    row.setValue(nativeDouble(units ? 0 : delta), forKey: "amount")
+    row.setValue(nativeDouble(units ? 0 : target), forKey: "reconcileAmount")
+    row.setValue(nativeDouble(units ? delta : 0), forKey: "numberOfShares")
+    row.setValue(nativeDouble(units ? target : 0), forKey: "reconcileNumberOfShares")
+    row.setValue(nativeDouble(try decimalValue(operation.reportingExchangeRate!, field: "W05 reporting rate")), forKey: "currencyExchangeRate")
+    row.setValue(try planTimestamp(operation.occurredAt!), forKey: "date")
+    row.setValue(try planTimestamp(plan.createdAt), forKey: "objectCreationDate")
+    row.setValue(operation.description, forKey: "desc")
+    row.setValue("", forKey: "notes")
+    row.setValue(2, forKey: "status")
+    row.setValue(before.account, forKey: "account")
+    row.setValue(before.holding, forKey: "investmentHolding")
+    row.setValue(operation.holdingSymbol, forKey: "symbol")
+    try verifyCreationPreimages(preimages, context: context)
+    try requireStopped()
+#if MONEYWIZ_TOOLS_TESTING
+    if writerTestCrashPoint == .beforeSave { _exit(86) }
+#endif
+    try context.save()
+#if MONEYWIZ_TOOLS_TESTING
+    if writerTestCrashPoint == .afterSave { _exit(87) }
+#endif
+    let readback = NSManagedObjectContext(concurrencyType: .privateQueueConcurrencyType)
+    readback.persistentStoreCoordinator = context.persistentStoreCoordinator
+    var result: Result<WriterResultV2, Error> = .failure(HostError.message("W05 independent read-back did not run"))
+    readback.performAndWait {
+        result = Result {
+            let verified = try inspectExtendedAdjustment(plan, context: readback, saved: true)
+            guard verified.receipt.classification == "applied" else { throw HostError.message("W05 independent read-back differs") }
+            try verifyCreationPreimages(preimages, context: readback)
+            return verified.receipt
+        }
+    }
+    return try result.get()
 }
 
 func adjustBalanceV2(_ plan: WriterPlanV2, context: NSManagedObjectContext,
@@ -3650,6 +3920,10 @@ func recoverPlanV2(_ plan: WriterPlanV2, container: NSPersistentContainer,
                 result = .success(try inspectAdjustBalance(plan, context: context).receipt)
                 return
             }
+            if extendedAdjustPolicies.values.contains(where: { $0.capability == plan.capability }) {
+                result = .success(try inspectExtendedAdjustment(plan, context: context).receipt)
+                return
+            }
             if plan.capability == "write.delete-adjust-balance-investment-total" {
                 result = .success(try inspectDeleteAdjustment(plan, context: context).receipt)
                 return
@@ -3720,6 +3994,10 @@ func writePlanV2(
             }
             if plan.capability == "write.adjust-balance-investment-total" {
                 result = .success(try adjustBalanceV2(plan, context: context, requireStopped: requireStopped))
+                return
+            }
+            if extendedAdjustPolicies.values.contains(where: { $0.capability == plan.capability }) {
+                result = .success(try extendedAdjustmentV2(plan, context: context, requireStopped: requireStopped))
                 return
             }
             if plan.capability == "write.delete-adjust-balance-investment-total" {
@@ -4275,20 +4553,30 @@ func investmentLedger(_ account: NSManagedObject) throws -> Decimal {
 }
 
 func investmentUnits(_ holding: NSManagedObject, account: NSManagedObject) throws -> Decimal {
+    if account.entity.name == "ForexAccount" { return try forexUnits(holding, account: account) }
     var total = try nativeDecimal(holding, "openningNumberOfShares")
     for row in try relatedObjects(holding, "investmentTransactions") {
         guard (row.value(forKey: "account") as? NSManagedObject)?.objectID == account.objectID,
               (row.value(forKey: "voidCheque") as? NSNumber)?.intValue == 0,
               let entity = row.entity.name,
-              ["InvestmentBuyTransaction", "InvestmentSellTransaction"].contains(entity) else {
+              ["InvestmentBuyTransaction", "InvestmentSellTransaction", "ReconcileTransaction"].contains(entity) else {
             throw HostError.message("W08 holding history contains unsupported transaction")
         }
         let quantity = try nativeDecimal(row, "numberOfShares")
-        guard quantity > 0 else { throw HostError.message("W08 holding history has nonpositive units") }
-        total += entity == "InvestmentBuyTransaction" ? quantity : -quantity
+        if entity == "ReconcileTransaction" {
+            guard try nativeDecimal(row, "amount") == 0,
+                  try nativeDecimal(row, "reconcileAmount") == 0,
+                  row.value(forKey: "symbol") as? String == holding.value(forKey: "symbol") as? String else {
+                throw HostError.message("W08 stock quantity adjustment has cash movement or a different symbol")
+            }
+        } else {
+            guard quantity > 0 else { throw HostError.message("W08 holding history has nonpositive units") }
+        }
+        total += entity == "InvestmentSellTransaction" ? -quantity : quantity
     }
-    guard total >= 0 else { throw HostError.message("W08 holding has negative derived units") }
-    return total
+    let units = roundedBalance(total, scale: 8)
+    guard units >= 0 else { throw HostError.message("W08 holding has negative derived units") }
+    return units
 }
 
 func preflightInvestment(_ operation: WriterOperationV2, plan: WriterPlanV2,

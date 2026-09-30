@@ -33,6 +33,12 @@ RECONCILE_CAPABILITIES = {
     "unreconcile_transaction": ("write.unreconcile", True, False),
 }
 ADJUST_BALANCE_CAPABILITY = "write.adjust-balance-investment-total"
+ADJUST_BALANCE_POLICIES = {
+    "adjust_account_balance": ("write.adjust-account-balance", "account_balance"),
+    "adjust_investment_cash": ("write.adjust-investment-cash", "investment_cash"),
+    "adjust_asset_quantity": ("write.adjust-asset-quantity", "asset_quantity"),
+}
+EXTENDED_ADJUST_CAPABILITIES = frozenset(item[0] for item in ADJUST_BALANCE_POLICIES.values())
 DELETE_ADJUSTMENT_CAPABILITY = "write.delete-adjust-balance-investment-total"
 TRANSFER_CAPABILITY = "write.replace-import-with-transfer"
 INVESTMENT_POLICIES = {
@@ -201,7 +207,7 @@ class ReconcileTransactionOperation(TypedDict):
 
 
 class AdjustBalanceOperation(TypedDict):
-    """One W05 aggregate investment balance adjustment."""
+    """One W05 adjustment, with a balance unit bound to its native variant."""
 
     operation_id: str
     kind: str
@@ -218,7 +224,13 @@ class AdjustBalanceOperation(TypedDict):
     currency_unit: str
     occurred_at: str
     timezone: str
-    expected_postcondition: dict[str, str]
+    expected_postcondition: dict[str, str | int]
+    description: NotRequired[str]
+    reporting_exchange_rate: NotRequired[str]
+    holding_gid: NotRequired[str]
+    holding_symbol: NotRequired[str]
+    asset_type: NotRequired[int]
+    expected_prior_cash: NotRequired[str]
 
 
 class DeleteAdjustmentOperation(TypedDict):
@@ -891,17 +903,26 @@ def _validate_adjust_balance_operation(
         "balance_unit", "expected_prior_balance", "target_balance",
         "expected_balance_delta", "currency_unit", "occurred_at", "timezone",
     }
+    extended = operation.get("kind") in ADJUST_BALANCE_POLICIES
+    units = operation.get("kind") == "adjust_asset_quantity"
+    if extended:
+        fields |= {"description", "reporting_exchange_rate"}
+    if units:
+        fields |= {"holding_gid", "holding_symbol", "asset_type", "expected_prior_cash"}
     required = fields | {
         "operation_id", "kind", "capability", "source_event_id",
         "expected_postcondition",
     }
     if set(operation) != required:
         raise PlanValidationError(f"{prefix} has unknown or missing W05 fields")
-    if (operation.get("kind") != "adjust_investment_total"
-            or operation.get("capability") != ADJUST_BALANCE_CAPABILITY
-            or plan["capability"] != ADJUST_BALANCE_CAPABILITY
+    capability, unit = ADJUST_BALANCE_POLICIES.get(
+        operation.get("kind"), (ADJUST_BALANCE_CAPABILITY, "investment_total")
+    )
+    if (not extended and operation.get("kind") != "adjust_investment_total"
+            or operation.get("capability") != capability
+            or plan["capability"] != capability
             or operation.get("transaction_entity") != "ReconcileTransaction"
-            or operation.get("balance_unit") != "investment_total"):
+            or operation.get("balance_unit") != unit):
         raise PlanValidationError(f"{prefix} is not the observed W05 variant")
     for field, envelope in (
         ("account_gid", "expected_account_gid"),
@@ -923,19 +944,36 @@ def _validate_adjust_balance_operation(
     delta = _canonical_decimal(operation.get("expected_balance_delta"), f"{prefix}.expected_balance_delta")
     if Decimal(target) - Decimal(prior) != Decimal(delta):
         raise PlanValidationError(f"{prefix}.expected_balance_delta differs from target minus prior")
-    if plan["currency_unit"] != "GBP" or any(
-        Decimal(value).as_tuple().exponent < -2 for value in (prior, target, delta)
-    ):
+    precision = 8 if units else 2
+    if ((not extended and plan["currency_unit"] != "GBP") or any(
+        Decimal(value).as_tuple().exponent < -precision for value in (prior, target, delta)
+    )):
         raise PlanValidationError("W05 is limited to GBP pence in the observed account shape")
+    if extended:
+        if plan["currency_unit"] not in {"GBP", "EUR", "USD", "CAD"}:
+            raise PlanValidationError("W05 currency is outside the installed account inventory")
+        _text(operation["description"], f"{prefix}.description")
+        rate = _canonical_decimal(operation["reporting_exchange_rate"], f"{prefix}.reporting_exchange_rate")
+        if Decimal(rate) < 0:
+            raise PlanValidationError("W05 reporting exchange rate must be nonnegative")
+        if units:
+            _text(operation["holding_gid"], f"{prefix}.holding_gid")
+            _text(operation["holding_symbol"], f"{prefix}.holding_symbol")
+            if type(operation["asset_type"]) is not int or operation["asset_type"] not in {0, 1}:
+                raise PlanValidationError("W05 asset_type must be the native stock (0) or Forex (1) mode")
+            _canonical_decimal(operation["expected_prior_cash"], f"{prefix}.expected_prior_cash")
+            if Decimal(prior) < 0 or Decimal(target) < 0 or rate != "0":
+                raise PlanValidationError("W05 quantity requires nonnegative units and the native zero reporting rate")
     occurred_at = _whole_timestamp(operation.get("occurred_at"), f"{prefix}.occurred_at")
     _validate_timezone_offset(occurred_at, plan["timezone"], f"{prefix}.occurred_at")
-    if plan["expected_cached_account_balance"] != "0":
+    if not extended and plan["expected_cached_account_balance"] != "0":
         raise PlanValidationError("W05 requires the observed zero investment cash cache")
     if operation["account_gid"] != plan["expected_account_gid"]:
         raise PlanValidationError(f"{prefix}.account_gid must match the envelope")
     postcondition = operation.get("expected_postcondition")
     expected = {field: operation[field] for field in fields}
-    if not isinstance(postcondition, Mapping) or dict(postcondition) != expected:
+    if (not isinstance(postcondition, Mapping) or dict(postcondition) != expected
+            or units and type(postcondition.get("asset_type")) is not int):
         raise PlanValidationError(f"{prefix}.expected_postcondition differs from reviewed fields")
     return operation["transaction_gid"]
 
@@ -1462,7 +1500,7 @@ def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
         raise PlanValidationError("timezone must be an IANA timezone") from exc
     capability = plan.get("capability")
     if capability not in {PAYEE_CAPABILITY, EDIT_CAPABILITY, ASSIGN_CAPABILITY,
-                          ADJUST_BALANCE_CAPABILITY, DELETE_ADJUSTMENT_CAPABILITY,
+                          ADJUST_BALANCE_CAPABILITY, *EXTENDED_ADJUST_CAPABILITIES, DELETE_ADJUSTMENT_CAPABILITY,
                           TRANSFER_CAPABILITY,
                           *INVESTMENT_CAPABILITIES,
                           *(policy[0] for policy in RECONCILE_CAPABILITIES.values()),
@@ -1534,7 +1572,7 @@ def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
         if operation_id in operation_ids:
             raise PlanValidationError("operation_id values must be unique")
         operation_ids.add(operation_id)
-        kind = operation.get("kind")
+        kind = _text(operation.get("kind"), f"{prefix}.kind")
         if kind == "reassign_payee":
             if plan["capability"] != PAYEE_CAPABILITY:
                 raise PlanValidationError(
@@ -1550,7 +1588,7 @@ def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
         elif kind in CREATE_OPERATION_POLICIES:
             create_operations += 1
             transaction_gid = _validate_create_operation(operation, prefix, plan)
-        elif kind == "adjust_investment_total":
+        elif kind == "adjust_investment_total" or kind in ADJUST_BALANCE_POLICIES:
             adjust_operations += 1
             transaction_gid = _validate_adjust_balance_operation(operation, prefix, plan)
         elif kind == "delete_investment_total_adjustment":
@@ -1579,6 +1617,7 @@ def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
         EDIT_CAPABILITY,
         ASSIGN_CAPABILITY,
         ADJUST_BALANCE_CAPABILITY,
+        *EXTENDED_ADJUST_CAPABILITIES,
         DELETE_ADJUSTMENT_CAPABILITY,
         TRANSFER_CAPABILITY,
         *INVESTMENT_CAPABILITIES,
@@ -1695,12 +1734,12 @@ def validate_result(plan: dict[str, Any], result: object) -> dict[str, Any]:
             and numeric_id is None and uri is None
         )
         adjust_without_row = (
-            operation["kind"] == "adjust_investment_total"
+            (operation["kind"] == "adjust_investment_total" or operation["kind"] in ADJUST_BALANCE_POLICIES)
             and classification in {"noop", "retry_safe", "unknown"}
             and numeric_id is None and uri is None
         )
         if (
-            operation["kind"] == "adjust_investment_total"
+            (operation["kind"] == "adjust_investment_total" or operation["kind"] in ADJUST_BALANCE_POLICIES)
             and classification == "retry_safe"
             and not adjust_without_row
         ):
@@ -1792,6 +1831,11 @@ def validate_result(plan: dict[str, Any], result: object) -> dict[str, Any]:
                     "native operation receipt violates its payee postcondition"
                 )
         elif success:
+            if operation["kind"] == "adjust_asset_quantity" and (
+                not isinstance(receipt.get("postcondition"), Mapping)
+                or type(receipt["postcondition"].get("asset_type")) is not int
+            ):
+                raise PlanValidationError("W05 quantity receipt requires an exact native asset_type integer")
             if receipt.get("postcondition") != operation["expected_postcondition"]:
                 raise PlanValidationError(
                     "native operation receipt violates its "

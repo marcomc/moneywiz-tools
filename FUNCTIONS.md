@@ -69,9 +69,10 @@ on the reviewed live Setapp runtime and marked disposable model-48 fixtures. See
 [Transaction Editing](doc/TRANSACTION-EDITING.md) for edit fields,
 [Transaction Assignment](doc/TRANSACTION-ASSIGNMENT.md) for relationships,
 [Transaction Reconciliation](doc/TRANSACTION-RECONCILIATION.md) for flags, and
-[Transaction Adjust Balance](doc/TRANSACTION-ADJUST-BALANCE.md) for the observed
-investment-total creation and deletion variants. W05's model-48 live creation
-capability is verified for the no-holdings account shape, retaining the exact
+[Transaction Adjust Balance](doc/TRANSACTION-ADJUST-BALANCE.md) for ordinary
+balance, investment cash, existing-asset quantity and the observed investment-total
+variant. W05 investment-total creation is verified for the no-holdings GBP
+account shape, retaining the exact
 TestFlight 2026.37.1 build 449 live path. W06 deletion is enabled on the reviewed
 live Setapp runtime and marked disposable stores. See
 [Writer Recovery](doc/WRITER-RECOVERY.md) for journals.
@@ -90,7 +91,7 @@ reference inventory; see [Payee Consolidation](doc/PAYEE-CONSOLIDATION.md).
 | `transaction assign --request FILE --plan FILE` | Build a guarded W03 payee/category replacement plan without opening a store |
 | `transaction reconcile --request FILE --plan FILE` | Build a guarded W04 reconciliation plan without opening a store |
 | `transaction unreconcile --request FILE --plan FILE` | Build a guarded W04 correction plan without opening a store |
-| `transaction adjust-balance --request FILE --plan FILE` | Build a W05 GBP investment-total plan without opening a store |
+| `transaction adjust-balance --request FILE --plan FILE` | Build an explicit W05 ordinary balance, investment cash, existing-asset quantity or GBP investment-total plan without opening a store |
 | `transaction delete-adjustment --request FILE --plan FILE` | Build a W06 plan for one exact latest GBP investment-total adjustment without opening a store |
 | `transaction transfer --request FILE --plan FILE` | Build a W07 plan to replace one or two imported rows with a zero-fee paired transfer without opening a store |
 | `transaction investment --request FILE --plan FILE` | Build one guarded W08 cash event or existing-holding Buy/Sell plan without opening a store |
