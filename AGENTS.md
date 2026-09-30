@@ -31,9 +31,14 @@ These rules do not apply outside of work under `moneywiz-tools/`.
 ## Distributable bundle validation
 
 - Inspect generated manifests and native binary bytes for build-path disclosure
-  in addition to runtime self-containment. Test each implicated producer and
-  corroborate the result with a fresh rebuilt artifact. Keep privacy, runtime
-  portability, and application acceptance as separate evidence.
+  in addition to runtime self-containment. Scan symlink targets as well as
+  regular-file bytes, and require portable aliases to resolve relatively within
+  the bundle. Test each implicated producer and corroborate the result with a
+  fresh rebuilt artifact. Keep privacy, runtime portability, and application
+  acceptance as separate evidence.
+- When adding a runtime payload to a bundle manifest, update every copied-source
+  publication fixture in the same change. Run its publication tests before the
+  full suite, including while the new payload is untracked.
 
 ## Reconciliation skill and private context
 
