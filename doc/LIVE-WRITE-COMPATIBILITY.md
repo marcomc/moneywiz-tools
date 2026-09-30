@@ -14,6 +14,7 @@ compatibility is defined per write path.
 | W01 income, expense and linked refund | Enabled; live trial accepted | Exact reviewed Setapp app, model and store identity. |
 | W02 edit, W03 assignment, W04 reconcile/unreconcile | Enabled; live trial accepted | Exact reviewed Setapp app, model and store identity. |
 | W05 Adjust Balance investment total | Verified | Setapp or TestFlight MoneyWiz 2026.37.1 build 449, exact model and reviewed store identity. |
+| W05 ordinary balance, investment cash and existing-asset quantity | Enabled; live trial accepted for ordinary balances, cash and stock quantity | Setapp MoneyWiz 2026.37.1 build 449; exact model, store and balance unit; Forex quantity tested on disposable stores. |
 | W07 reciprocal zero-fee transfer replacement | Enabled; live trial accepted | Exact reviewed Setapp app, model and store identity. |
 | W06 delete one investment-total adjustment | Enabled for authorized trials | Setapp MoneyWiz 2026.37.1 build 449, exact model and reviewed store identity. |
 | W08 investment cash events and Buy/Sell | Enabled for authorized trials | Setapp MoneyWiz 2026.37.1 build 449, exact model and reviewed store identity. |
@@ -41,8 +42,18 @@ displays the retained TEST rows and matching bank and investment balances.
 Individual temporary investment and transfer identities were not checked on the
 second device. Private plans, receipts and comparisons remain outside the repository.
 
-Account coverage does not expand operation-specific semantics: W05/W06 retain
-the reviewed no-holdings GBP investment-total adjustment contract, and W08
+The W05 extensions additionally passed six installed-CLI live trials: ordinary
+GBP/EUR/USD/CAD balances, investment cash and existing stock quantity. App
+read-back and per-record CloudKit export were verified. Exact native cleanup
+restored the original financial fields, histories and holding metadata while
+preserving the three retained TEST rows. Reopened balances and quantities agreed,
+and iCloud reported **Up to Date**. These six temporary rows were not verified
+on a second device; Forex quantity has disposable-store acceptance only.
+
+Account coverage does not expand operation-specific semantics: W05 retains
+the reviewed no-holdings GBP investment-total contract alongside its explicit
+ordinary balance, investment cash and existing-asset quantity variants. W06
+still deletes only the reviewed investment-total adjustment, and W08
 Buy/Sell requires an existing owned holding. Runtime capability entries remain
 enabled until the current implementation change completes independent review.
 

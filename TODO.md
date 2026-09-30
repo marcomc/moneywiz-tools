@@ -147,6 +147,16 @@ and sync acceptance remains a separate promotion gate.
 | P2-W05-05 | Independent PR review | Local READY and current-head clean review against `release/0.3.0`; leave PR open for user inspection | [PR #10](https://github.com/marcomc/moneywiz-tools/pull/10) merged at `29864f1` |
 | P2-W05-06 | Application and sync acceptance | Reopen a tool-written row in MoneyWiz and verify sync for the supported variant | Live app read-back and iCloud export observed; investment-total capability verified |
 
+W05 extensions on `feat/w05-balance-units`: ordinary balance, investment cash
+and existing stock/Forex quantity are implemented. Focused native tests cover
+apply, replay, recovery, matching-target no-op and subsequent Buy/Sell. Independent
+local review is complete. Installed-CLI live trials covered four ordinary
+currencies, investment cash and stock quantity; app read-back, iCloud export and
+cleanup restored original financial data while preserving the three retained
+TEST rows. Forex quantity has disposable-store coverage. Fresh installed-bundle
+validation passed: 917 tests on TestFlight and 55 on Setapp, including the
+Setapp-specific reference-store case. Current-head GitHub review remains pending.
+
 ## P2 preparation: W06 guarded deletion
 
 Entry: W05 merged into `release/0.3.0` at `29864f1`. The first W06 variant is

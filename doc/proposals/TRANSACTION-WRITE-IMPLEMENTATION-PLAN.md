@@ -10,6 +10,15 @@ remaining operation in a separate PR and leave new PRs open for user inspection.
 Do not merge on the user's behalf. This 2026-09-28 decision supersedes the earlier
 proposal to put P2/P3 in later releases.
 
+Update (2026-09-30): the bounded W01–W09 contracts are integrated through
+[PR #15](https://github.com/marcomc/moneywiz-tools/pull/15). The additional W05
+ordinary balance, investment cash and existing-asset quantity variants are under
+validation on `feat/w05-balance-units`; ordinary/cash/stock live trials, app
+read-back, iCloud export and verified cleanup are complete. Forex quantity has
+disposable-store coverage. Supported-record deletion and first-Buy
+holding creation remain separate W06 and W08 extensions. See the current
+[Adjust Balance contract](../TRANSACTION-ADJUST-BALANCE.md) and TODO for gates.
+
 ## Purpose and related documents
 
 Make routine MoneyWiz reconciliation use verified CLI writes, with targeted

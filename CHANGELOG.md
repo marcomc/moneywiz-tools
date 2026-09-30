@@ -24,6 +24,10 @@
   no-holdings account shape, with native `ReconcileTransaction` creation,
   history checks and replay recovery. The observed GBP investment-total variant
   passed live app read-back and iCloud export acceptance.
+- W05 explicit ordinary-account balance, investment cash and existing-asset
+  quantity adjustments, preserving account caches, holding metadata and the
+  existing GBP investment-total contract. Quantity adjustments support native
+  stock and Forex modes and remain compatible with subsequent Buy/Sell.
 - W06 exact-ID deletion of the latest GBP investment-total adjustment on marked
   disposable stores and the reviewed live Setapp runtime, with history and
   relationship guards, fresh read-back and interruption recovery.

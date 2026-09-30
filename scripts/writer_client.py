@@ -15,6 +15,7 @@ from compatibility import CompatibilityError, require_disposable_write_capabilit
 from write_journal import JournalError, JournalStore, store_lock
 from write_plan import (
     ADJUST_BALANCE_CAPABILITY,
+    EXTENDED_ADJUST_CAPABILITIES,
     DELETE_ADJUSTMENT_CAPABILITY,
     TRANSFER_CAPABILITY,
     ASSIGN_CAPABILITY,
@@ -284,6 +285,7 @@ class WriterClient:
             return
         if plan["capability"] not in {
             *CREATE_CAPABILITIES, EDIT_CAPABILITY, ASSIGN_CAPABILITY,
+            *EXTENDED_ADJUST_CAPABILITIES,
             DELETE_ADJUSTMENT_CAPABILITY,
             TRANSFER_CAPABILITY,
             *INVESTMENT_CAPABILITIES,
