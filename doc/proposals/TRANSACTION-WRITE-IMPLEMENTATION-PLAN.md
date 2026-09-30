@@ -32,6 +32,16 @@ app read-back, iCloud export/deletion and exact fictional-data cleanup passed.
 Integration requires full installed validation and independent review.
 Forex Exchange and second-device verification are outside this goal.
 
+Update (2026-10-01): first-Buy holding creation is integrated through PR #18
+at `1b126b1`. Aggregate investment-total creation and latest-adjustment deletion
+now support the reviewed fiat/crypto currency catalogs through PR #19 at
+`8328073`, preserving original GBP plans. Native non-GBP references, installed
+validation, fictional live app/iCloud acceptance and exact cleanup are complete.
+The release-to-main PR follows scoped remediation and current-head Codex review;
+Forex Exchange holding creation and nonzero-fee transfer conversion remain
+unsupported. Second-device verification is separate from the recorded app/export
+proofs. Historical checkpoints below retain their original phase scope.
+
 ## Purpose and related documents
 
 Make routine MoneyWiz reconciliation use verified CLI writes, with targeted

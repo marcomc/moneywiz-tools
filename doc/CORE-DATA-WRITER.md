@@ -133,10 +133,11 @@ When multiple descriptions share one user-scoped normalized creation key, the
 lowest selected transaction ID supplies one deterministic display name for the
 entire group.
 
-`merge-duplicate-payees` has a separate exact-normalized Python plan. Its
-application remains unavailable: the capability gate rejects `--apply`, and
-the native host has no merge mutation route. Similar-name pairs stay pending
-in an approval CSV.
+`merge-duplicate-payees` retains its legacy exact-normalized Python plan and
+blocked `--apply` path. The separate version-2 `payee merge` command executes
+one reviewed exact pair or one approved fuzzy CSV row through the native W09
+writer. Pending and rejected rows remain no-ops; see
+[Payee Consolidation](PAYEE-CONSOLIDATION.md).
 
 See [Live Payee Structure](LIVE-PAYEE-STRUCTURE.md) for the recorded live
 mappings and [Live Write Compatibility](LIVE-WRITE-COMPATIBILITY.md) for the

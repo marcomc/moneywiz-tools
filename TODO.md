@@ -246,17 +246,17 @@ admission and fictional application/sync acceptance are complete.
 ### W08 first-Buy holding extension
 
 Entry: W06 extension merged through PR #17 at `9ffc516`.
-Branch: `feat/w08-first-buy-holding`. The active goal authorizes implementation,
-fictional Revolut acceptance, publication and merge after the required gates.
+Integrated through PR #18 at `1b126b1`; branch and worktree retired after
+fictional investment acceptance, independent review and current-head Codex clean.
 
 | Deliverable | Evidence / remaining gate |
 | --- | --- |
 | Native first-Buy reference and cleanup | Native Stock Buy/holding fields and NSDate-keyed price archive captured; both fictional records removed; ledger, units and retained TEST rows restored; app cash and iCloud verified |
 | Strict plans, ownership, duplicate protection and atomic persistence | Implemented as `investment_buy_new_holding`; live admission binds the reviewed Setapp app/model/store/owner identity |
 | Empty/existing portfolio, native holding types, replay and crash recovery | 124 candidate regressions passed, including all native holding type choices and crash/refusal cases |
-| Existing-holding Buy/Sell, installed bundle and direct admission | Candidate installed coverage passed, including 44 Setapp first-Buy checks; fresh full installed, publication and privacy gates required before PR |
+| Existing-holding Buy/Sell, installed bundle and direct admission | Installed coverage passed, including 44 Setapp first-Buy checks; full integrated, publication and privacy gates passed before PR #18 |
 | Fictional live first Buy, app/export acceptance and cleanup | Installed first Buy and subsequent Buy/Sell, replay/recovery, native app and exact iCloud export/deletion verified; financial baseline and retained TEST restored |
-| Independent review, current-head Codex clean, squash merge and cleanup | Promotion requires local READY and current-head Codex clean; same coordinator and ledger retained for W08 |
+| Independent review, current-head Codex clean, squash merge and cleanup | Local READY and current-head Codex clean obtained; PR #18 merged and branch/worktree cleanup complete |
 
 ## P3 preparation: W09 payee merges
 

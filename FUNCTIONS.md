@@ -71,16 +71,18 @@ on the reviewed live Setapp runtime and marked disposable model-48 fixtures. See
 [Transaction Reconciliation](doc/TRANSACTION-RECONCILIATION.md) for flags, and
 [Transaction Adjust Balance](doc/TRANSACTION-ADJUST-BALANCE.md) for ordinary
 balance, investment cash, existing-asset quantity and the observed investment-total
-variant. W05 investment-total creation is verified for the no-holdings GBP
-account shape, retaining the exact
-TestFlight 2026.37.1 build 449 live path. W06 deletion is enabled on the reviewed
+variant. W05 investment-total creation supports the reviewed fiat/crypto
+currency catalogs for accounts without holdings, with explicit native precision
+and reporting rates; original GBP plans and the exact TestFlight 2026.37.1
+build 449 live path are preserved. W06 deletion is enabled on the reviewed
 live Setapp runtime and marked disposable stores. See
 [Writer Recovery](doc/WRITER-RECOVERY.md) for journals.
 W07 transfer replacement is enabled on the reviewed live Setapp runtime and
 marked disposable stores; see
 [Transaction Transfer](doc/TRANSACTION-TRANSFER.md) for its paired-leg contract.
-W08 investment cash events and existing-holding Buy/Sell transactions are
-enabled on the reviewed live Setapp runtime and marked disposable stores; see [Investment Transactions](doc/TRANSACTION-INVESTMENT.md).
+W08 investment cash events, existing-holding Buy/Sell and first Buy creating a
+manual investment holding are enabled on the reviewed live Setapp runtime and
+marked disposable stores; see [Investment Transactions](doc/TRANSACTION-INVESTMENT.md).
 W09 payee merges use one reviewed source/survivor pair and a complete native
 reference inventory; see [Payee Consolidation](doc/PAYEE-CONSOLIDATION.md).
 
@@ -91,11 +93,11 @@ reference inventory; see [Payee Consolidation](doc/PAYEE-CONSOLIDATION.md).
 | `transaction assign --request FILE --plan FILE` | Build a guarded W03 payee/category replacement plan without opening a store |
 | `transaction reconcile --request FILE --plan FILE` | Build a guarded W04 reconciliation plan without opening a store |
 | `transaction unreconcile --request FILE --plan FILE` | Build a guarded W04 correction plan without opening a store |
-| `transaction adjust-balance --request FILE --plan FILE` | Build an explicit W05 ordinary balance, investment cash, existing-asset quantity or GBP investment-total plan without opening a store |
-| `transaction delete-adjustment --request FILE --plan FILE` | Build a W06 plan for one exact latest GBP investment-total adjustment without opening a store |
+| `transaction adjust-balance --request FILE --plan FILE` | Build an explicit W05 ordinary balance, investment cash, existing-asset quantity or currency-aware investment-total plan without opening a store |
+| `transaction delete-adjustment --request FILE --plan FILE` | Build a W06 plan for one exact latest investment-total adjustment without opening a store |
 | `transaction delete --target GID --reason TEXT --evidence-note TEXT --plan FILE` | Build a W06 plan from a native read-only inventory; repeat `--target` for complete transfer/refund groups; see [Supported Transaction Deletion](doc/TRANSACTION-DELETION.md) for status |
 | `transaction transfer --request FILE --plan FILE` | Build a W07 plan to replace one or two imported rows with a zero-fee paired transfer without opening a store |
-| `transaction investment --request FILE --plan FILE` | Build one guarded W08 cash event or existing-holding Buy/Sell plan without opening a store |
+| `transaction investment --request FILE --plan FILE` | Build one guarded W08 cash event, existing-holding Buy/Sell or first-Buy holding plan without opening a store |
 | `payee merge --kind KIND --source-gid GID --survivor-gid GID --plan FILE` | Build one W09 merge plan from a native read-only inventory; fuzzy requires `--fuzzy-map` |
 | `write validate --plan FILE` | Validate and display the exact plan and canonical digest |
 | `write apply --plan FILE` | Inspect without mutation |
@@ -202,8 +204,7 @@ explicit source/survivor pair and reads an approved fuzzy CSV row when asked.
 3. Review the plan. Editing the CSV does not affect this legacy command; an
    approved row can be supplied explicitly to `payee merge --kind fuzzy`.
 
-4. The CLI application capability is currently blocked pending separate
-   acceptance evidence:
+4. The legacy group application capability remains blocked:
 
    ~~~sh
    moneywiz compatibility --capability write.merge-duplicate-payees
@@ -260,9 +261,11 @@ If they are different merchants, leave `approved_canonical_id` empty:
 1,0.919,similarity>=0.88,1037,Merchant Example A,1892,Merchant Example B,rejected,,"Different merchants despite similar names."
 ~~~
 
-The current CLI stops at this review artifact. Editing `approved` or
-`rejected` does not trigger a write command. Use the CSV as an index for the
-GUI workflow:
+Editing `approved` or `rejected` does not trigger a write. To apply an approved
+row through the CLI, build one `payee merge --kind fuzzy` plan with the CSV and
+explicit source/survivor GIDs, then review and apply its digest as documented in
+[Payee Consolidation](doc/PAYEE-CONSOLIDATION.md). For a GUI merge, use the CSV
+as an index:
 
 1. Search `left_name` and `right_name` in **Preferences > Payees > Edit**.
 2. Use `left_id` and `right_id` to distinguish the records when names are
@@ -273,8 +276,9 @@ GUI workflow:
    survivor in `approved_canonical_id`, and add the rationale to
    `review_notes`. For a non-merge, record `rejected` and the reason instead.
 
-The current CLI does not import these fields or execute the GUI merge from the
-CSV.
+The legacy `merge-duplicate-payees` command does not consume review fields.
+The separate W09 `payee merge --kind fuzzy` path validates one approved row;
+pending and rejected rows remain no-ops.
 
 ## Command safety summary
 

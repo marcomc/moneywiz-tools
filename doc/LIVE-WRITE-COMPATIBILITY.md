@@ -56,8 +56,10 @@ the reviewed no-holdings investment-total contract alongside its explicit
 ordinary balance, investment cash and existing-asset quantity variants. W06
 additionally deletes the eight supported transaction entities with explicit
 refund/transfer closure and owned dependency cleanup. W08
-Buy/Sell requires an existing owned holding. Runtime capability entries remain
-enabled until the current implementation change completes independent review.
+Buy/Sell uses an existing owned holding; the separate first-Buy operation can
+create a manual investment holding atomically. New Forex holdings through
+Exchange remain outside that contract. Implementation PRs have completed
+independent review; runtime entries retain their operation-specific status.
 
 The aggregate investment-total currency extension validates identifiers and
 decimal precision against the reviewed app's fiat/crypto catalogs on apply
