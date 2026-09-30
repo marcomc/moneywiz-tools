@@ -62,6 +62,10 @@
 
 ### Changed
 
+- Extend aggregate investment-total Adjust Balance and latest-adjustment
+  deletion to the reviewed MoneyWiz fiat and crypto currency catalogs, with
+  native precision checks and explicit reporting rates. Preserve existing
+  GBP plans, deterministic replay and recovery.
 - Enable the implemented W01–W09 variants for Setapp MoneyWiz 2026.37.1 build
   449, with independent native app/model/store checks on apply and recovery.
   Retain the verified W05 TestFlight 2026.37.1 build 449 live path.

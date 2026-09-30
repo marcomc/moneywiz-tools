@@ -37,6 +37,23 @@ def request() -> dict:
     return base
 
 
+@pytest.mark.parametrize("currency,precision,amount", [
+    ("JPY", 0, "1"), ("EUR", 2, "0.01"), ("BHD", 3, "0.001"),
+    ("XAU", 6, "0.000001"), ("PI+35697", 8, "0.00000001"),
+])
+def test_delete_aggregate_binds_currency_precision_and_reporting_rate(currency, precision, amount) -> None:
+    candidate = request()
+    candidate["currency_unit"] = currency
+    candidate["operation"].update(currency_precision=precision, reporting_exchange_rate="0.75",
+                                  expected_amount=amount, expected_reconcile_amount="100", expected_prior_balance="100")
+    plan = build_delete_adjustment_plan(candidate)
+    assert validate_plan(plan) == plan
+    assert plan["operations"][0]["currency_precision"] == precision
+    candidate["operation"]["currency_precision"] = float(precision)
+    with pytest.raises(PlanValidationError):
+        build_delete_adjustment_plan(candidate)
+
+
 def receipt(plan: dict, classification: str) -> dict:
     operation = plan["operations"][0]
     return {

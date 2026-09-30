@@ -361,6 +361,8 @@ def build_adjust_balance_plan(request: Mapping[str, Any]) -> dict[str, Any]:
         fields |= {"description", "reporting_exchange_rate"}
     if kind == "adjust_asset_quantity":
         fields |= {"holding_gid", "holding_symbol", "asset_type", "expected_prior_cash"}
+    if kind == "adjust_investment_total" and {"currency_precision", "reporting_exchange_rate"} & operation.keys():
+        fields |= {"currency_precision", "reporting_exchange_rate"}
     if set(operation) != fields or not (extended or kind == "adjust_investment_total"):
         raise PlanValidationError("operation has unknown or missing W05 fields")
     capability = ADJUST_BALANCE_POLICIES[kind][0] if extended else ADJUST_BALANCE_CAPABILITY
@@ -392,7 +394,7 @@ def build_adjust_balance_plan(request: Mapping[str, Any]) -> dict[str, Any]:
     }
     for field in fields & {"reporting_exchange_rate", "expected_prior_cash"}:
         operation[field] = normalize_decimal(operation[field], field)
-    post_fields |= fields & {"description", "reporting_exchange_rate", "holding_gid", "holding_symbol", "asset_type", "expected_prior_cash"}
+    post_fields |= fields & {"description", "reporting_exchange_rate", "currency_precision", "holding_gid", "holding_symbol", "asset_type", "expected_prior_cash"}
     operation["expected_postcondition"] = {field: operation[field] for field in post_fields}
     return validate_plan({
         "contract_version": CONTRACT_VERSION,
@@ -477,13 +479,18 @@ def build_delete_adjustment_plan(request: Mapping[str, Any]) -> dict[str, Any]:
     if set(raw) != _ENVELOPE_FIELDS | {"operation"}:
         raise PlanValidationError("request has unknown or missing W06 fields")
     operation = _mapping(raw.pop("operation"), "operation")
-    if set(operation) != {
+    fields = {
         "operation_id", "kind", "transaction_gid", "transaction_numeric_id",
         "account_gid", "balance_unit", "expected_amount",
         "expected_reconcile_amount", "expected_prior_balance", "occurred_at",
         "deletion_reason",
-    } or operation.get("kind") != "delete_investment_total_adjustment":
+    }
+    if {"currency_precision", "reporting_exchange_rate"} & operation.keys():
+        fields |= {"currency_precision", "reporting_exchange_rate"}
+    if set(operation) != fields or operation.get("kind") != "delete_investment_total_adjustment":
         raise PlanValidationError("operation has unknown or missing W06 fields")
+    if "reporting_exchange_rate" in operation:
+        operation["reporting_exchange_rate"] = normalize_decimal(operation["reporting_exchange_rate"], "reporting_exchange_rate")
     amount = normalize_decimal(operation["expected_amount"], "expected_amount")
     prior = normalize_decimal(operation["expected_prior_balance"], "expected_prior_balance")
     reconcile = normalize_decimal(

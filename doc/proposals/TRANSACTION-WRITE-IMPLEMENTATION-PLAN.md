@@ -24,6 +24,14 @@ goal authorizes squash merge after local READY and
 current-head clean Codex review. See the current
 [Adjust Balance contract](../TRANSACTION-ADJUST-BALANCE.md) and TODO for gates.
 
+Update (2026-10-01): `feat/investment-total-currencies` extends aggregate
+investment-total Adjust Balance and latest-adjustment deletion to the reviewed
+fiat/crypto catalogs. Precision and reporting rate are bound to the plan; old GBP
+plans are preserved. Native EUR/crypto references, installed-client live trials,
+app read-back, iCloud export/deletion and exact fictional-data cleanup passed.
+Integration requires full installed validation and independent review.
+Forex Exchange and second-device verification are outside this goal.
+
 ## Purpose and related documents
 
 Make routine MoneyWiz reconciliation use verified CLI writes, with targeted

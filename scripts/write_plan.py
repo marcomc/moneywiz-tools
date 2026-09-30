@@ -907,6 +907,29 @@ def _validate_reconcile_operation(
     return operation["transaction_gid"]
 
 
+AGGREGATE_CURRENCY_FIELDS = {"currency_precision", "reporting_exchange_rate"}
+
+
+def _aggregate_currency_precision(operation: Mapping[str, Any], currency: str) -> int:
+    """Keep old GBP plans intact; bind explicit native metadata for new plans."""
+    present = AGGREGATE_CURRENCY_FIELDS & operation.keys()
+    if not present:
+        if currency != "GBP":
+            raise PlanValidationError("investment total requires explicit currency precision and reporting rate")
+        return 2
+    if present != AGGREGATE_CURRENCY_FIELDS:
+        raise PlanValidationError("investment total currency metadata must be supplied together")
+    precision = operation["currency_precision"]
+    if type(precision) is not int or precision not in {0, 2, 3, 6, 8}:
+        raise PlanValidationError("investment total currency_precision must be an exact supported integer")
+    rate = _canonical_decimal(operation["reporting_exchange_rate"], "reporting_exchange_rate")
+    if Decimal(rate) < 0:
+        raise PlanValidationError("investment total reporting exchange rate must be nonnegative")
+    # The native host independently resolves the identifier and precision from
+    # the reviewed app's fiat/crypto catalogs before either apply or recovery.
+    return precision
+
+
 def _validate_adjust_balance_operation(
     operation: Mapping[str, Any], prefix: str, plan: dict[str, Any]
 ) -> str:
@@ -917,6 +940,8 @@ def _validate_adjust_balance_operation(
     }
     extended = operation.get("kind") in ADJUST_BALANCE_POLICIES
     units = operation.get("kind") == "adjust_asset_quantity"
+    if not extended and AGGREGATE_CURRENCY_FIELDS & operation.keys():
+        fields |= AGGREGATE_CURRENCY_FIELDS
     if extended:
         fields |= {"description", "reporting_exchange_rate"}
     if units:
@@ -956,11 +981,11 @@ def _validate_adjust_balance_operation(
     delta = _canonical_decimal(operation.get("expected_balance_delta"), f"{prefix}.expected_balance_delta")
     if Decimal(target) - Decimal(prior) != Decimal(delta):
         raise PlanValidationError(f"{prefix}.expected_balance_delta differs from target minus prior")
-    precision = 8 if units else 2
-    if ((not extended and plan["currency_unit"] != "GBP") or any(
+    precision = (8 if units else 2) if extended else _aggregate_currency_precision(operation, plan["currency_unit"])
+    if any(
         Decimal(value).as_tuple().exponent < -precision for value in (prior, target, delta)
-    )):
-        raise PlanValidationError("W05 is limited to GBP pence in the observed account shape")
+    ):
+        raise PlanValidationError("W05 amount exceeds the reviewed currency precision")
     if extended:
         if plan["currency_unit"] not in {"GBP", "EUR", "USD", "CAD"}:
             raise PlanValidationError("W05 currency is outside the installed account inventory")
@@ -985,7 +1010,8 @@ def _validate_adjust_balance_operation(
     postcondition = operation.get("expected_postcondition")
     expected = {field: operation[field] for field in fields}
     if (not isinstance(postcondition, Mapping) or dict(postcondition) != expected
-            or units and type(postcondition.get("asset_type")) is not int):
+            or units and type(postcondition.get("asset_type")) is not int
+            or "currency_precision" in fields and type(postcondition.get("currency_precision")) is not int):
         raise PlanValidationError(f"{prefix}.expected_postcondition differs from reviewed fields")
     return operation["transaction_gid"]
 
@@ -1157,6 +1183,8 @@ def _validate_delete_adjustment_operation(
         "expected_balance_delta", "currency_unit", "occurred_at", "timezone",
         "deletion_reason", "expected_postcondition",
     }
+    if AGGREGATE_CURRENCY_FIELDS & operation.keys():
+        required |= AGGREGATE_CURRENCY_FIELDS
     if set(operation) != required:
         raise PlanValidationError(f"{prefix} has unknown or missing W06 fields")
     if (
@@ -1192,10 +1220,11 @@ def _validate_delete_adjustment_operation(
             Decimal(values["expected_prior_balance"]) - Decimal(values["expected_amount"])
             or Decimal(values["expected_balance_delta"]) != -Decimal(values["expected_amount"])):
         raise PlanValidationError("W06 target, prior balance and deletion delta disagree")
-    if plan["currency_unit"] != "GBP" or any(
-        Decimal(value).as_tuple().exponent < -2 for value in values.values()
+    precision = _aggregate_currency_precision(operation, plan["currency_unit"])
+    if any(
+        Decimal(value).as_tuple().exponent < -precision for value in values.values()
     ) or plan["expected_cached_account_balance"] != "0":
-        raise PlanValidationError("W06 is limited to observed GBP investment totals")
+        raise PlanValidationError("W06 amount exceeds currency precision or investment cache differs")
     occurred_at = _timestamp(operation["occurred_at"], f"{prefix}.occurred_at")
     _validate_timezone_offset(occurred_at, plan["timezone"], f"{prefix}.occurred_at")
     expected_postcondition = {
@@ -2036,6 +2065,11 @@ def validate_result(plan: dict[str, Any], result: object) -> dict[str, Any]:
                     "native operation receipt violates its payee postcondition"
                 )
         elif success:
+            if operation["kind"] == "adjust_investment_total" and "currency_precision" in operation and (
+                not isinstance(receipt.get("postcondition"), Mapping)
+                or type(receipt["postcondition"].get("currency_precision")) is not int
+            ):
+                raise PlanValidationError("investment total receipt requires an exact currency precision integer")
             if operation["kind"] == "adjust_asset_quantity" and (
                 not isinstance(receipt.get("postcondition"), Mapping)
                 or type(receipt["postcondition"].get("asset_type")) is not int

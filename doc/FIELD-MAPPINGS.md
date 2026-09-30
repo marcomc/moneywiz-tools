@@ -132,6 +132,14 @@ Related link: `ZWITHDRAWREFUNDTRANSACTIONLINK (ZREFUNDTRANSACTION -> ZWITHDRAWTR
 - reconcile_amount (optional) ← `ZRECONCILEAMOUNT`
 - reconcile_number_of_shares (optional) ← `ZRECONCILENUMBEROFSHARES`
 
+For aggregate investment-total writes, `amount` and `reconcile_amount` are
+delta and target in the account's exact `currencyName`. `currencyExchangeRate`
+maps to `ZCURRENCYEXCHANGERATE` and carries the explicitly reviewed reporting
+rate. Decimal precision is `numberOfDigits` in the installed MoneyWiz fiat or
+crypto catalog; it is not a Core Data account column. Crypto currency identifiers
+can include the native `+coinMarketCapId` suffix. See
+[Adjust Balance](TRANSACTION-ADJUST-BALANCE.md) for the guarded writer contract.
+
 ### TransferDepositTransaction
 
 - account ← `ZACCOUNT2`
