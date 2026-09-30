@@ -115,3 +115,63 @@ def test_w05_client_respects_capability_gate(monkeypatch: pytest.MonkeyPatch) ->
     with pytest.raises(writer_client.WriterClientError, match="blocked"):
         client._require_operation_capability(plan)
     assert checked == [plan["capability"]]
+
+
+@pytest.mark.parametrize("currency,precision,target", [
+    ("JPY", 0, "101"), ("EUR", 2, "100.01"), ("BHD", 3, "100.001"),
+    ("XAU", 6, "100.000001"), ("BTC", 8, "100.00000001"),
+    ("PI+35697", 8, "100.12345678"),
+])
+def test_aggregate_currency_metadata_binds_amounts_and_receipt(currency, precision, target) -> None:
+    candidate = request()
+    candidate["currency_unit"] = currency
+    candidate["operation"].update(currency_precision=precision, reporting_exchange_rate="0.75", target_balance=target)
+    plan = build_adjust_balance_plan(candidate)
+    assert plan["operations"][0]["expected_postcondition"]["currency_precision"] == precision
+    assert plan["operations"][0]["expected_postcondition"]["reporting_exchange_rate"] == "0.75"
+    assert validate_result(plan, receipt(plan, "applied", durable=True))
+    candidate["operation"]["target_balance"] = "100." + "0" * precision + "1"
+    with pytest.raises(PlanValidationError, match="precision"):
+        build_adjust_balance_plan(candidate)
+
+
+@pytest.mark.parametrize("value", [True, False, 2.0, "2", None, -1, 1, 9])
+def test_aggregate_precision_rejects_noninteger_or_unsupported_values(value) -> None:
+    candidate = request()
+    candidate["operation"].update(currency_precision=value, reporting_exchange_rate="0")
+    with pytest.raises(PlanValidationError):
+        build_adjust_balance_plan(candidate)
+
+
+@pytest.mark.parametrize("metadata", [
+    {"currency_precision": 2}, {"reporting_exchange_rate": "1"},
+    {"currency_precision": 2, "reporting_exchange_rate": "-1"},
+    {"currency_precision": 2, "reporting_exchange_rate": True},
+])
+def test_aggregate_metadata_requires_complete_nonnegative_native_contract(metadata) -> None:
+    candidate = request()
+    candidate["currency_unit"] = "EUR"
+    candidate["operation"].update(metadata)
+    with pytest.raises(PlanValidationError):
+        build_adjust_balance_plan(candidate)
+
+
+def test_original_gbp_contract_keeps_its_digest_and_field_shape() -> None:
+    plan = build_adjust_balance_plan(request())
+    assert "currency_precision" not in plan["operations"][0]
+    assert "reporting_exchange_rate" not in plan["operations"][0]
+    # New metadata must never silently rewrite an already reviewed old plan.
+    explicit = request()
+    explicit["operation"].update(currency_precision=2, reporting_exchange_rate="0")
+    assert build_adjust_balance_plan(explicit)["plan_digest"] != plan["plan_digest"]
+
+
+def test_aggregate_receipt_precision_is_an_exact_integer() -> None:
+    candidate = request()
+    candidate["currency_unit"] = "JPY"
+    candidate["operation"].update(currency_precision=0, reporting_exchange_rate="0.75", target_balance="101")
+    plan = build_adjust_balance_plan(candidate)
+    result = receipt(plan, "applied", durable=True)
+    result["operations"][0]["postcondition"]["currency_precision"] = False
+    with pytest.raises(PlanValidationError, match="exact currency precision"):
+        validate_result(plan, result)

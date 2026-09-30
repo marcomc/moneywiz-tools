@@ -52,12 +52,24 @@ and iCloud reported **Up to Date**. These six temporary rows were not verified
 on a second device; Forex quantity has disposable-store acceptance only.
 
 Account coverage does not expand operation-specific semantics: W05 retains
-the reviewed no-holdings GBP investment-total contract alongside its explicit
+the reviewed no-holdings investment-total contract alongside its explicit
 ordinary balance, investment cash and existing-asset quantity variants. W06
 additionally deletes the eight supported transaction entities with explicit
 refund/transfer closure and owned dependency cleanup. W08
 Buy/Sell requires an existing owned holding. Runtime capability entries remain
 enabled until the current implementation change completes independent review.
+
+The aggregate investment-total currency extension validates identifiers and
+decimal precision against the reviewed app's fiat/crypto catalogs on apply
+and recovery. New plans bind an explicit reporting exchange rate; original
+GBP plans keep their existing contract. Native EUR and eight-decimal crypto
+references were captured. Installed-client live trials verified creation,
+replay, recovery and dedicated latest-adjustment deletion in both currencies.
+The app displayed the exact totals and deltas, and row-specific CloudKit
+metadata recorded export with no pending upload. All fictional rows and
+accounts were removed; original financial fields and the three retained TEST
+rows were preserved. The app reported iCloud up to date and the trial records
+had no remaining CloudKit metadata. No second-device check is claimed.
 
 The W06 extension passed native live deletion of 15 exported fictional rows
 and installed Python-client deletion of three further exported rows. Coverage

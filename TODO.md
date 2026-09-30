@@ -158,6 +158,15 @@ validation passed: 917 tests on TestFlight and 55 on Setapp, including the
 Setapp-specific reference-store case. PR #16 passed current-head GitHub review
 and merged at `d037afb`.
 
+### W05 aggregate investment-total currency extension
+
+`feat/investment-total-currencies` supports reviewed fiat and crypto identifiers,
+including native precision classes 0/2/3/6/8 and exact reporting rates. Original
+GBP plans remain compatible. Creation, replay, recovery and dedicated latest
+deletion passed fictional live EUR/crypto trials; app/iCloud acceptance and exact
+cleanup preserved original financial fields and the three retained TEST rows.
+Integration requires full installed validation and independent PR review.
+
 ## P2 preparation: W06 guarded deletion
 
 Entry: W05 merged into `release/0.3.0` at `29864f1`. The first W06 variant is

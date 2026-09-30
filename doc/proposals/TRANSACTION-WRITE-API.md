@@ -248,6 +248,12 @@ W05 maps to native `ReconcileTransaction` semantics, not W04's reconciliation fl
 Inspect target versus delta and cash versus share fields. Do not categorize or edit
 adjustment rows like normal transactions. An aggregate investment sale is a policy-
 selected income category, not proof that an assetless native Sell is supported.
+Aggregate totals without holdings now bind the exact account currency, its
+catalog precision and a reporting exchange rate. Apply, recovery and latest-row
+deletion independently check the reviewed app's fiat/crypto catalogs. Legacy
+GBP plans retain their original shape. Holdings and valuation histories remain
+outside this aggregate contract; see the
+[current Adjust Balance contract](../TRANSACTION-ADJUST-BALANCE.md).
 
 ## Delivery order and tests
 

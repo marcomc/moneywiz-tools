@@ -682,7 +682,7 @@ func runFixtureWriter() throws {
                 try fixtureSet(account, "objectCreationDate", Date())
                 try fixtureSet(account, "openingBalance", 100.0)
                 try fixtureSet(account, "ballance", 0.0)
-                try fixtureSet(account, "currencyName", "GBP")
+                try fixtureSet(account, "currencyName", ProcessInfo.processInfo.environment["MONEYWIZ_TEST_CURRENCY"] ?? "GBP")
                 try fixtureSet(account, "archived", false)
                 try fixtureSet(account, "user", user)
                 func adjustment(_ gid: String, amount: Double, total: Double, date: String) throws -> NSManagedObject {

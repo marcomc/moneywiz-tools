@@ -229,7 +229,7 @@ func validatePlanScalarTypes(_ value: Any, key: String = "") throws {
             throw HostError.message("writer plan \(key) requires nonblank trimmed text")
         }
     } else if let number = value as? NSNumber {
-        let integers: Set<String> = ["contract_version", "operation_schema_version", "asset_type",
+        let integers: Set<String> = ["contract_version", "operation_schema_version", "asset_type", "currency_precision",
             "expected_native_status", "expected_native_flags", "source_count", "parsed_count",
             "status", "flags", "native_status", "native_flags", "user_id"]
         let booleans: Set<String> = ["expected_reconciled", "target_reconciled", "reconciled",
@@ -684,6 +684,7 @@ struct WriterOperationV2: Decodable {
     let refundReference: RefundReference?
     let description: String?
     let reportingExchangeRate: String?
+    let currencyPrecision: Int?
     let expectedBalanceDelta: String?
     let changes: [String: EditScalar]?
     let expectedPrior: [String: EditScalar]?
@@ -752,7 +753,7 @@ struct WriterOperationV2: Decodable {
         case tagGIDs = "tag_gids"
         case note
         case refundReference = "refund_reference"
-        case description, reportingExchangeRate = "reporting_exchange_rate"
+        case description, reportingExchangeRate = "reporting_exchange_rate", currencyPrecision = "currency_precision"
         case expectedBalanceDelta = "expected_balance_delta"
         case changes
         case expectedPrior = "expected_prior"
@@ -867,6 +868,7 @@ struct AdjustBalancePostcondition: Encodable {
     let timezone: String
     var description: String? = nil
     var reportingExchangeRate: String? = nil
+    var currencyPrecision: Int? = nil
     var holdingGID: String? = nil
     var holdingSymbol: String? = nil
     var assetType: Int? = nil
@@ -877,7 +879,7 @@ struct AdjustBalancePostcondition: Encodable {
         case expectedPriorBalance = "expected_prior_balance", targetBalance = "target_balance"
         case expectedBalanceDelta = "expected_balance_delta", currencyUnit = "currency_unit"
         case occurredAt = "occurred_at", timezone
-        case description, reportingExchangeRate = "reporting_exchange_rate"
+        case description, reportingExchangeRate = "reporting_exchange_rate", currencyPrecision = "currency_precision"
         case holdingGID = "holding_gid", holdingSymbol = "holding_symbol"
         case assetType = "asset_type"
         case expectedPriorCash = "expected_prior_cash"
@@ -1438,15 +1440,61 @@ let extendedAdjustPolicies: [String: (capability: String, unit: String)] = [
     "adjust_asset_quantity": ("write.adjust-asset-quantity", "asset_quantity"),
 ]
 
+func validateAggregateCurrencyMetadata(_ raw: [String: Any]) throws -> Int {
+    guard let precision = raw["currency_precision"] as? Int,
+          [0, 2, 3, 6, 8].contains(precision),
+          let rate = raw["reporting_exchange_rate"] as? String,
+          let value = try? decimalValue(rate, field: "investment total reporting rate"),
+          value >= 0, NSDecimalNumber(decimal: value).stringValue == rate else {
+        throw HostError.message("investment total requires explicit currency precision and reporting rate")
+    }
+    return precision
+}
+
+// Account.currencyName stores fiat codes, legacy crypto codes, or the native
+// code+coinMarketCapId identifier. Do not substitute ISO decimal conventions:
+// MoneyWiz also lists six-decimal metals and eight-decimal crypto currencies.
+func aggregateCurrencyPrecision(_ plan: WriterPlanV2) throws -> Int {
+    guard let precision = plan.operations[0].currencyPrecision else {
+        guard plan.currencyUnit == "GBP" else { throw HostError.message("investment total currency metadata is missing") }
+        return 2 // Preserve the original GBP plan/digest/replay contract.
+    }
+    let resources = URL(fileURLWithPath: plan.appIdentity.path).appendingPathComponent("Contents/Resources")
+    for (file, crypto) in [("currencies_fiat.plist", false), ("currencies_crypto_v2.plist", true)] {
+        let data = try Data(contentsOf: resources.appendingPathComponent(file))
+        guard let rows = try PropertyListSerialization.propertyList(from: data, format: nil) as? [[String: Any]] else {
+            throw HostError.message("MoneyWiz currency catalog has an unsupported shape")
+        }
+        let matches = rows.filter { row in
+            guard let code = row["currencyCode"] as? String else { return false }
+            return code == plan.currencyUnit || (crypto && (row["coinMarketCapId"] as? String).map {
+                code + "+" + $0 == plan.currencyUnit
+            } == true)
+        }
+        if !matches.isEmpty {
+            guard matches.allSatisfy({ row in
+                guard let digits = row["numberOfDigits"] as? NSNumber,
+                      CFGetTypeID(digits) != CFBooleanGetTypeID(),
+                      !["f", "d"].contains(String(cString: digits.objCType)) else { return false }
+                return digits.intValue == precision
+            }) else { throw HostError.message("investment total precision differs from the MoneyWiz currency catalog") }
+            return precision // Fiat identifiers take precedence over bare crypto symbols.
+        }
+    }
+    throw HostError.message("investment total currency is absent from the reviewed MoneyWiz catalogs")
+}
+
 func validateAdjustBalanceShape(_ raw: [String: Any], plan: WriterPlanV2) throws {
     let kind = raw["kind"] as? String ?? ""
     let policy = extendedAdjustPolicies[kind]
     let extended = policy != nil
     let units = kind == "adjust_asset_quantity"
+    let currencyMetadata = !extended && (raw["currency_precision"] != nil || raw["reporting_exchange_rate"] != nil)
     var fields: Set<String> = ["transaction_entity", "transaction_gid", "account_gid", "owner_uri",
         "balance_unit", "expected_prior_balance", "target_balance", "expected_balance_delta",
         "currency_unit", "occurred_at", "timezone"]
     if extended { fields.formUnion(["description", "reporting_exchange_rate"]) }
+    if currencyMetadata { fields.formUnion(["currency_precision", "reporting_exchange_rate"]) }
     if units { fields.formUnion(["holding_gid", "holding_symbol", "asset_type", "expected_prior_cash"]) }
     let required = fields.union(["operation_id", "kind", "capability", "source_event_id", "expected_postcondition"])
     guard Set(raw.keys) == required,
@@ -1465,7 +1513,7 @@ func validateAdjustBalanceShape(_ raw: [String: Any], plan: WriterPlanV2) throws
           raw["currency_unit"] as? String == plan.currencyUnit,
           raw["timezone"] as? String == plan.timezone,
           extended || plan.expectedCachedAccountBalance == "0",
-          extended ? ["GBP", "EUR", "USD", "CAD"].contains(plan.currencyUnit) : plan.currencyUnit == "GBP",
+          extended ? ["GBP", "EUR", "USD", "CAD"].contains(plan.currencyUnit) : (currencyMetadata || plan.currencyUnit == "GBP"),
           let prior = raw["expected_prior_balance"] as? String,
           let target = raw["target_balance"] as? String,
           let delta = raw["expected_balance_delta"] as? String,
@@ -1476,10 +1524,11 @@ func validateAdjustBalanceShape(_ raw: [String: Any], plan: WriterPlanV2) throws
         throw HostError.message("W05 operation shape or envelope is invalid")
     }
     let amounts = try [prior, target, delta].map { try decimalValue($0, field: "W05 amount") }
+    let precision = currencyMetadata ? try validateAggregateCurrencyMetadata(raw) : (units ? 8 : 2)
     guard amounts.allSatisfy({ value in
         var source = value
         var rounded = Decimal()
-        NSDecimalRound(&rounded, &source, units ? 8 : 2, .plain)
+        NSDecimalRound(&rounded, &source, precision, .plain)
         return rounded == value
     }), amounts[1] - amounts[0] == amounts[2] else {
         throw HostError.message("W05 target minus prior differs from delta")
@@ -1514,11 +1563,13 @@ func validateAdjustBalanceShape(_ raw: [String: Any], plan: WriterPlanV2) throws
 }
 
 func validateDeleteAdjustmentShape(_ raw: [String: Any], plan: WriterPlanV2) throws {
-    let required: Set<String> = ["operation_id", "kind", "capability", "transaction_entity",
+    var required: Set<String> = ["operation_id", "kind", "capability", "transaction_entity",
         "transaction_gid", "transaction_numeric_id", "account_gid", "owner_uri", "source_event_id",
         "balance_unit", "expected_amount", "expected_reconcile_amount", "expected_prior_balance",
         "target_balance", "expected_balance_delta", "currency_unit", "occurred_at", "timezone",
         "deletion_reason", "expected_postcondition"]
+    let currencyMetadata = raw["currency_precision"] != nil || raw["reporting_exchange_rate"] != nil
+    if currencyMetadata { required.formUnion(["currency_precision", "reporting_exchange_rate"]) }
     guard Set(raw.keys) == required,
           raw["kind"] as? String == "delete_investment_total_adjustment",
           raw["capability"] as? String == "write.delete-adjust-balance-investment-total",
@@ -1535,7 +1586,7 @@ func validateDeleteAdjustmentShape(_ raw: [String: Any], plan: WriterPlanV2) thr
           raw["balance_unit"] as? String == "investment_total",
           raw["currency_unit"] as? String == plan.currencyUnit,
           raw["timezone"] as? String == plan.timezone,
-          plan.expectedCachedAccountBalance == "0", plan.currencyUnit == "GBP",
+          plan.expectedCachedAccountBalance == "0", currencyMetadata || plan.currencyUnit == "GBP",
           let reason = raw["deletion_reason"] as? String, !isBlank(reason),
           let prior = raw["expected_prior_balance"] as? String,
           let target = raw["target_balance"] as? String,
@@ -1554,11 +1605,12 @@ func validateDeleteAdjustmentShape(_ raw: [String: Any], plan: WriterPlanV2) thr
     let values = try [amount, reconcile, prior, target, delta].map {
         try decimalValue($0, field: "W06 amount")
     }
+    let precision = currencyMetadata ? try validateAggregateCurrencyMetadata(raw) : 2
     guard values[0] != 0, values[1] == values[2], values[3] == values[2] - values[0],
           values[4] == -values[0], values.allSatisfy({ value in
               var source = value
               var rounded = Decimal()
-              NSDecimalRound(&rounded, &source, 2, .plain)
+              NSDecimalRound(&rounded, &source, precision, .plain)
               return rounded == value
           }) else {
         throw HostError.message("W06 deletion balances differ from the reviewed target")
@@ -2837,6 +2889,8 @@ func adjustBalancePostcondition(_ operation: WriterOperationV2) -> AdjustBalance
         expectedPriorBalance: operation.expectedPriorBalance!, targetBalance: operation.targetBalance!,
         expectedBalanceDelta: operation.expectedBalanceDelta!, currencyUnit: operation.currencyUnit!,
         occurredAt: operation.occurredAt!, timezone: operation.timezone!)
+    result.currencyPrecision = operation.currencyPrecision
+    if operation.currencyPrecision != nil { result.reportingExchangeRate = operation.reportingExchangeRate }
     if extendedAdjustPolicies[operation.kind] != nil {
         result.description = operation.description
         result.reportingExchangeRate = operation.reportingExchangeRate
@@ -2853,6 +2907,7 @@ func inspectAdjustBalance(_ plan: WriterPlanV2, context: NSManagedObjectContext,
     guard let coordinator = context.persistentStoreCoordinator else { throw HostError.message("W05 missing coordinator") }
     try requireReviewedRuntime(plan, coordinator: coordinator)
     let operation = plan.operations[0]
+    let precision = try aggregateCurrencyPrecision(plan)
     let account = try fetchExactObject(entityName: "InvestmentAccount", gid: plan.expectedAccountGID,
                                        context: context)
     guard let owner = account.value(forKey: "user") as? NSManagedObject,
@@ -2910,7 +2965,7 @@ func inspectAdjustBalance(_ plan: WriterPlanV2, context: NSManagedObjectContext,
         sum += try nativeDecimal(transaction, "amount")
         var rowBalance = opening + sum
         var roundedRowBalance = Decimal()
-        NSDecimalRound(&roundedRowBalance, &rowBalance, 2, .plain)
+        NSDecimalRound(&roundedRowBalance, &rowBalance, precision, .plain)
         // Native cash entries can be backdated after an adjustment. Its stored
         // target is then a historical annotation, not the current running sum.
         let historicalTarget = try nativeDecimal(transaction, "reconcileAmount")
@@ -2924,7 +2979,7 @@ func inspectAdjustBalance(_ plan: WriterPlanV2, context: NSManagedObjectContext,
     }
     var unrounded = opening + sum
     var actual = Decimal()
-    NSDecimalRound(&actual, &unrounded, 2, .plain)
+    NSDecimalRound(&actual, &unrounded, precision, .plain)
     let prior = try decimalValue(operation.expectedPriorBalance!, field: "prior balance")
     let target = try decimalValue(operation.targetBalance!, field: "target balance")
     let occurred = try planTimestamp(operation.occurredAt!)
@@ -2957,7 +3012,7 @@ func inspectAdjustBalance(_ plan: WriterPlanV2, context: NSManagedObjectContext,
               try nativeDecimal(existing, "originalAmount") == 0,
               try nativeDecimal(existing, "fee") == 0,
               try nativeDecimal(existing, "originalFee") == 0,
-              try nativeDecimal(existing, "currencyExchangeRate") == 0,
+              try nativeDecimal(existing, "currencyExchangeRate") == decimalValue(operation.reportingExchangeRate ?? "0", field: "W05 reporting rate"),
               try nativeDecimal(existing, "originalExchangeRate") == 0,
               try nativeDecimal(existing, "pricePerShare") == 0 else {
             throw HostError.message("W05 existing GID does not match the requested native adjustment")
@@ -3226,6 +3281,7 @@ func adjustBalanceV2(_ plan: WriterPlanV2, context: NSManagedObjectContext,
     transaction.setValue(nativeDouble(try decimalValue(operation.targetBalance!, field: "target")), forKey: "reconcileAmount")
     transaction.setValue(try planTimestamp(operation.occurredAt!), forKey: "date")
     transaction.setValue(try planTimestamp(plan.createdAt), forKey: "objectCreationDate")
+    transaction.setValue(nativeDouble(try decimalValue(operation.reportingExchangeRate ?? "0", field: "W05 reporting rate")), forKey: "currencyExchangeRate")
     transaction.setValue("New balance", forKey: "desc")
     transaction.setValue("", forKey: "notes")
     transaction.setValue(2, forKey: "status")
@@ -3273,11 +3329,12 @@ func inspectDeleteAdjustment(_ plan: WriterPlanV2, context: NSManagedObjectConte
     }
     try requireReviewedRuntime(plan, coordinator: coordinator)
     let operation = plan.operations[0]
+    let precision = try aggregateCurrencyPrecision(plan)
     let account = try fetchExactObject(entityName: "InvestmentAccount", gid: plan.expectedAccountGID,
                                        context: context)
     guard let owner = account.value(forKey: "user") as? NSManagedObject,
           owner.objectID.uriRepresentation().absoluteString == plan.ownerURI,
-          account.value(forKey: "currencyName") as? String == "GBP",
+          account.value(forKey: "currencyName") as? String == plan.currencyUnit,
           (account.value(forKey: "archived") as? NSNumber)?.boolValue == false,
           account.value(forKey: "onlineBankAccount") == nil,
           try relatedObjects(account, "investmentHoldings").isEmpty,
@@ -3329,7 +3386,7 @@ func inspectDeleteAdjustment(_ plan: WriterPlanV2, context: NSManagedObjectConte
         total += try nativeDecimal(transaction, "amount")
         var source = total
         var rounded = Decimal()
-        NSDecimalRound(&rounded, &source, 2, .plain)
+        NSDecimalRound(&rounded, &source, precision, .plain)
         let historicalTarget = try nativeDecimal(transaction, "reconcileAmount")
         guard !adjustmentOnly || historicalTarget == rounded else {
             throw HostError.message("W06 account history has an inconsistent adjustment balance")
@@ -3338,7 +3395,7 @@ func inspectDeleteAdjustment(_ plan: WriterPlanV2, context: NSManagedObjectConte
     }
     var source = total
     var actual = Decimal()
-    NSDecimalRound(&actual, &source, 2, .plain)
+    NSDecimalRound(&actual, &source, precision, .plain)
     let prior = try decimalValue(operation.expectedPriorBalance!, field: "W06 prior balance")
     let targetBalance = try decimalValue(operation.targetBalance!, field: "W06 target balance")
     let amount = try decimalValue(operation.expectedAmount!, field: "W06 target amount")
@@ -3366,7 +3423,7 @@ func inspectDeleteAdjustment(_ plan: WriterPlanV2, context: NSManagedObjectConte
               try nativeDecimal(target, "amount") == amount,
               try nativeDecimal(target, "reconcileAmount") == prior,
               try nativeDecimal(target, "originalAmount") == 0,
-              try nativeDecimal(target, "currencyExchangeRate") == 0 else {
+              try nativeDecimal(target, "currencyExchangeRate") == decimalValue(operation.reportingExchangeRate ?? "0", field: "W06 reporting rate") else {
             throw HostError.message("W06 target differs from the reviewed latest adjustment")
         }
         for (name, relationship) in target.entity.relationshipsByName where name != "account" {
