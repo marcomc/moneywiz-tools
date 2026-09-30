@@ -267,5 +267,5 @@ This is a first draft synthesized from the test DB and the current API models. A
 Earlier releases exposed raw-SQL create and update helpers. Those routes no
 longer exist in either dispatcher. The field sets above remain mapping evidence
 for inspection and fixture design, not runnable mutation recipes. A live
-mutation requires an explicit verified capability and a dedicated Core Data
-implementation.
+mutation requires an explicit enabled or verified capability and a dedicated
+Core Data implementation with the operation-specific runtime and plan guards.

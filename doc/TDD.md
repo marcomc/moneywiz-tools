@@ -34,17 +34,20 @@ Make owns the supported build and installation workflow:
 | --- | --- | --- |
 | Reads | SQLite/API access | Live or copied store. |
 | Payee reassignment | Bundled Swift Core Data host | Verified live path. |
-| Exact duplicate planning | Python planner | Available; native apply is not implemented. |
+| Exact duplicate group planning | Python planner | Read-only; legacy group apply blocked. |
+| W01–W09 typed plans | Python planning and bundled Swift Core Data host | Enabled finite variants on the reviewed live Setapp runtime or marked disposable model-48 stores. |
 
 The live writer relies on Core Data to manage object identity, optimistic
 versions, persistent history, and the sync-visible save lifecycle. A Python
-preflight must identify a known profile and a verified named capability before
-the host is launched.
+preflight must identify a known profile and an enabled or verified named
+capability before the host is launched. Version-2 apply and recovery also enforce
+the exact reviewed app/model/store identity independently in the native host.
 
 For exact duplicate groups, the Python command selects deterministic canonical
-payees and reports the proposed merges. The Swift host does not migrate inbound
-relationships or delete source payees, and the capability gate rejects apply
-attempts.
+payees and reports the proposed merges; its legacy group apply remains blocked.
+The separate W09 pair planner binds the complete inbound inventory. Its native
+handler migrates references and deletes one source payee in a single save, with
+read-back and recovery.
 
 ## Validation strategy
 

@@ -41,8 +41,8 @@ moneywiz merge-duplicate-payees --apply --show-plan
 ~~~
 
 This legacy command's `--apply` is blocked by the compatibility gate before the
-native host can open or mutate the store. Live application remains pending
-until operation-specific Core Data and sync acceptance evidence is recorded.
+native host can open or mutate the store. Use the separate W09 reviewed pair
+workflow below for enabled merge operations.
 
 ### W09 reviewed merge plans
 
@@ -50,7 +50,8 @@ until operation-specific Core Data and sync acceptance evidence is recorded.
 survivor. It reads the current Core Data graph without changing the store and
 includes every transaction, string-history item, scheduled handler, payment
 plan and info card that refers to the source. Review that inventory and the
-digest before applying it to a **marked disposable model-48 store**:
+digest before applying it to a marked disposable model-48 store or the reviewed
+live Setapp runtime. The following example uses a disposable TestFlight fixture:
 
 ~~~sh
 moneywiz --db /private/path/disposable.sqlite payee merge \
@@ -76,13 +77,16 @@ and have their own capability; fuzzy approval never authorizes a different pair.
 The native host rechecks the complete reference inventory, moves each relation
 in one Core Data save, deletes the source and verifies the graph in a fresh
 context. Recovery distinguishes an unchanged source from a completed merge.
-Stale plans and unreviewed model relationships are refused. Both W09 live
-capabilities remain blocked pending separate MoneyWiz reopen and sync acceptance.
+Stale plans and unreviewed model relationships are refused. Both W09 capabilities
+are enabled on Setapp MoneyWiz 2026.37.1 build 449 with exact app/model/store
+identity checks. See [Live Write Compatibility](LIVE-WRITE-COMPATIBILITY.md) for
+authorized trial and sync evidence.
 
 The active MoneyWiz 2026 model exposes inbound
 payee references from transactions, string history, scheduled transaction
 handlers, payment plans, and info cards. `User.payees` is ownership metadata.
-This inventory authorizes W09 mutation only on marked disposable stores.
+W09 mutation requires this complete inventory and the operation-specific
+runtime guards; current TestFlight regression stores must be marked disposable.
 
 ## Similar-name approval map
 
@@ -127,12 +131,13 @@ then record one of these reviewer decisions:
 
 | Decision | Values to record | Next action |
 | --- | --- | --- |
-| Same merchant | `review_decision=approved`; set `approved_canonical_id` to the survivor; add rationale in `review_notes`. | Search both names in **Preferences > Payees > Edit**, use the IDs to select the records, then merge and choose the survivor. |
+| Same merchant | `review_decision=approved`; set `approved_canonical_id` to the survivor; add rationale in `review_notes`. | Build and review one W09 fuzzy pair plan, then apply it through the enabled native path. |
 | Different merchants | `review_decision=rejected`; add rationale in `review_notes`. | Keep both payees. |
 | Not enough evidence | Leave `review_decision=pending`; optionally add a note. | Take no write action. |
 
 The legacy group command does not parse the CSV approval fields for mutation.
-The W09 planner validates one approved row for a disposable merge. Editing a
+The W09 planner validates one approved row for the reviewed live or disposable
+merge path. Editing a
 row does not change the database.
 
 ### CSV editing example
@@ -153,7 +158,8 @@ explain the decision in `review_notes`:
 1,0.919,similarity>=0.88,1037,Merchant Example A,1892,Merchant Example B,rejected,,"Different merchants."
 ~~~
 
-These values document the decision but are not consumed by the current CLI.
-An approved merge must be performed through MoneyWiz's native
-**Preferences > Payees > Edit** workflow: search both names, use the CSV IDs to
-select the exact records, invoke merge, and choose the survivor.
+The legacy group command does not consume these approval fields.
+`moneywiz payee merge --kind fuzzy --fuzzy-map PATH` consumes one approved pair
+to build a fresh reviewed plan; `moneywiz write apply` executes it with the
+required digest and runtime guards. The native MoneyWiz
+**Preferences > Payees > Edit** workflow remains an alternative.

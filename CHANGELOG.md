@@ -7,36 +7,36 @@
 - Shared version-2 writer plans and reviewed-digest apply/recovery commands,
   preserving the version-1 payee interface.
 - W01 typed income, expense and refund creation experiments through the native
-  host on marked disposable stores, with deterministic source-event identities,
-  relationship validation and persisted read-back. Live creation remains blocked.
-- W02 guarded scalar transaction edits on disposable model-48 stores, preserving
-  identity and relationships with expected-prior checks, atomic balance/refund
-  validation and interruption recovery. Live editing remains blocked.
+  host on marked disposable stores and the reviewed live Setapp runtime, with
+  deterministic source-event identities, relationship validation and persisted
+  read-back.
+- W02 guarded scalar transaction edits on disposable model-48 stores and the
+  reviewed live Setapp runtime, preserving identity and relationships with
+  expected-prior checks, atomic balance/refund validation and interruption recovery.
 - W03 exact-ID payee and category split replacement on disposable model-48
-  stores, with prior-state guards, owner/type/total validation, deliberate
-  removal of obsolete assignments and independent read-back. Live assignment
-  remains blocked.
-- W04 exact-ID reconcile and unreconcile plans on disposable model-48 stores,
-  with a complete-account inventory and balance guard, preserved native
-  status/flags, atomic save and interruption recovery. Live reconciliation
-  remains blocked; each P2/P3 capability requires separate acceptance.
+  stores and the reviewed live Setapp runtime, with prior-state guards,
+  owner/type/total validation, deliberate removal of obsolete assignments and
+  independent read-back.
+- W04 exact-ID reconcile and unreconcile plans on disposable model-48 stores
+  and the reviewed live Setapp runtime, with a complete-account inventory and
+  balance guard, preserved native status/flags, atomic save and interruption recovery.
 - W05 guarded GBP investment-total Adjust Balance plans for the observed
   no-holdings account shape, with native `ReconcileTransaction` creation,
   history checks and replay recovery. The observed GBP investment-total variant
   passed live app read-back and iCloud export acceptance.
 - W06 exact-ID deletion of the latest GBP investment-total adjustment on marked
-  disposable stores, with history and relationship guards, fresh read-back and
-  interruption recovery. Live deletion remains blocked.
+  disposable stores and the reviewed live Setapp runtime, with history and
+  relationship guards, fresh read-back and interruption recovery.
 - W07 guarded replacement of an imported withdrawal and optional identified
-  deposit with reciprocal zero-fee transfer legs on marked disposable stores.
-  Both account balances, old/new identities, links and replay are verified;
-  live conversion and nonzero fees remain blocked.
+  deposit with reciprocal zero-fee transfer legs on marked disposable stores
+  and the reviewed live Setapp runtime. Both account balances, old/new identities,
+  links and replay are verified; nonzero fees remain unsupported.
 - W08 guarded investment income, expense and existing-holding Buy/Sell plans
-  on marked disposable model-48 stores, with cash and units preflight, atomic
-  persistence, read-back and recovery. Live W08 capabilities remain blocked.
+  on marked disposable model-48 stores and the reviewed live Setapp runtime,
+  with cash and units preflight, atomic persistence, read-back and recovery.
 - W09 exact and individually approved fuzzy payee merge plans on marked
-  disposable model-48 stores, with complete native reference migration,
-  one-save deletion, fresh read-back and recovery. Live merges remain blocked.
+  disposable model-48 stores and the reviewed live Setapp runtime, with complete
+  native reference migration, one-save deletion, fresh read-back and recovery.
 - Private recovery journals, consistent pre-write snapshots, durable results,
   source-event retry guards and explicit retention cleanup.
 - Read-only runtime identity discovery binding the application edition/build,
@@ -48,6 +48,13 @@
 
 ### Changed
 
+- Enable the implemented W01–W09 variants for Setapp MoneyWiz 2026.37.1 build
+  449, with independent native app/model/store checks on apply and recovery.
+  Retain the verified W05 TestFlight 2026.37.1 build 449 live path.
+- Admit all seven concrete account subtypes for ordinary creation, editing,
+  assignment, reconciliation and transfer replacement. Live writes preserve
+  cached account balances and validate the ledger; disposable fixtures retain
+  cache-delta checks.
 - Pin the fork's reviewed MoneyWiz API read-completeness revision for source
   commands and the bundled app, while keeping native write capability checks
   independent of read completeness.
@@ -56,8 +63,10 @@
 - Required local scoped remediation before each implementation PR and a clean,
   current-head GitHub Codex review before integration into the release branch.
 
-New write operations remain disabled until their implementation and independent
-application-acceptance gates are satisfied. This entry is not write clearance.
+Enabled variants have authorized live trial evidence documented in
+[Live Write Compatibility](doc/LIVE-WRITE-COMPATIBILITY.md). Independent review
+of the current implementation remains required; this entry does not promote
+enabled capabilities to verified or authorize additional operation variants.
 
 ## [0.2.1] - 2026-08-13
 

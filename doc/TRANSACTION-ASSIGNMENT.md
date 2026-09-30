@@ -72,5 +72,6 @@ contract. `tests/cli/test_native_transaction_assign.py` exercises the native
 host on invented stores, including replacement, add/remove, payee-only,
 category-only, stale/foreign references, atomic rollback and interruption
 recovery. Installed bundle validation must use `MONEYWIZ_TEST_BUNDLE_PATH`.
-MoneyWiz reopen/history and remote synchronization acceptance require a
-separate authorized session before live capability promotion.
+Separate authorized MoneyWiz reopen/history and sync trial results are recorded
+in [Live Write Compatibility](LIVE-WRITE-COMPATIBILITY.md); synthetic regression
+tests alone do not establish application or remote synchronization acceptance.

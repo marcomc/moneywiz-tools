@@ -63,21 +63,23 @@ their command-specific output behavior.
 ## Versioned writer and recovery
 
 The version-2 interface accepts a saved typed plan and defaults to inspection.
-W01 creation, W02 editing, W03 assignment and W04 reconciliation are restricted
-to marked disposable fixtures; all four live capabilities remain blocked. See
+W01 creation, W02 editing, W03 assignment and W04 reconciliation are enabled
+on the reviewed live Setapp runtime and marked disposable model-48 fixtures. See
 [Transaction Creation](doc/TRANSACTION-CREATION.md) for creation fields,
 [Transaction Editing](doc/TRANSACTION-EDITING.md) for edit fields,
 [Transaction Assignment](doc/TRANSACTION-ASSIGNMENT.md) for relationships,
 [Transaction Reconciliation](doc/TRANSACTION-RECONCILIATION.md) for flags, and
 [Transaction Adjust Balance](doc/TRANSACTION-ADJUST-BALANCE.md) for the observed
 investment-total creation and deletion variants. W05's model-48 live creation
-capability is verified for the no-holdings account shape; W06 deletion remains
-limited to marked disposable stores. See
+capability is verified for the no-holdings account shape, retaining the exact
+TestFlight 2026.37.1 build 449 live path. W06 deletion is enabled on the reviewed
+live Setapp runtime and marked disposable stores. See
 [Writer Recovery](doc/WRITER-RECOVERY.md) for journals.
-W07 transfer replacement is also limited to marked disposable stores; see
+W07 transfer replacement is enabled on the reviewed live Setapp runtime and
+marked disposable stores; see
 [Transaction Transfer](doc/TRANSACTION-TRANSFER.md) for its paired-leg contract.
-W08 investment cash events and Buy/Sell transactions are limited to marked
-disposable stores; see [Investment Transactions](doc/TRANSACTION-INVESTMENT.md).
+W08 investment cash events and existing-holding Buy/Sell transactions are
+enabled on the reviewed live Setapp runtime and marked disposable stores; see [Investment Transactions](doc/TRANSACTION-INVESTMENT.md).
 W09 payee merges use one reviewed source/survivor pair and a complete native
 reference inventory; see [Payee Consolidation](doc/PAYEE-CONSOLIDATION.md).
 
@@ -225,13 +227,13 @@ original name is otherwise preserved character-for-character.
 
 | Decision | CSV fields to record | Next action |
 | --- | --- | --- |
-| Same merchant | `review_decision=approved`, `approved_canonical_id=<survivor ID>`, and `review_notes`. | Search both payees in **Preferences > Payees > Edit**, select them by ID, then merge and choose the recorded survivor. |
+| Same merchant | `review_decision=approved`, `approved_canonical_id=<survivor ID>`, and `review_notes`. | Build and review one W09 fuzzy pair plan, then apply it through the enabled native path. |
 | Different merchants | `review_decision=rejected` and `review_notes`. | Keep both payees. |
 | Insufficient evidence | Leave `review_decision=pending`; add a note if useful. | Take no write action. |
 
 Do not expect a later `merge-duplicate-payees --apply` run to consume approved
-rows. Use [Payee Consolidation](doc/PAYEE-CONSOLIDATION.md) for the disposable
-W09 plan and reviewed-digest apply path.
+rows. Use [Payee Consolidation](doc/PAYEE-CONSOLIDATION.md) for the reviewed live
+or disposable W09 plan and reviewed-digest apply path.
 
 ### How to edit the CSV
 
@@ -279,7 +281,7 @@ CSV.
 | Configured or explicitly selected store, read-only | `users`, `accounts`, `categories`, `payees`, `tags`, `transactions`, `holdings`, `snapshot`, `identity`, `record`, `summary`, `stats`, `schema`, `shell`, `compatibility` |
 | Live iCloud store through Core Data | `reassign-payees-by-id --apply` when its profile capability is verified |
 | Planning only; apply blocked | Legacy `merge-duplicate-payees --apply` remains unavailable |
-| Marked disposable model-48 store | `payee merge` plans and `write apply` executes one reviewed W09 merge; live W09 capabilities remain blocked |
+| Reviewed live Setapp runtime or marked disposable model-48 store | `write apply` executes reviewed W01–W09 plans, including one explicit W09 payee pair; exact runtime and operation guards apply |
 
 For the persistent-history and CloudKit contract, see
 [Core Data Writer](doc/CORE-DATA-WRITER.md),

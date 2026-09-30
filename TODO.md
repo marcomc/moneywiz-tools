@@ -10,8 +10,9 @@ Ordinary operations now cover all seven concrete account subtypes.
 See [Live Write Compatibility](doc/LIVE-WRITE-COMPATIBILITY.md) for exact scope.
 Historical phase rows below retain their original implementation checkpoints;
 their pending live authorization statements are superseded by this trial.
-Second-device consumption and independent review of these current changes remain
-separate from the observed app and export evidence.
+The user confirmed retained TEST rows and matching balances on the iPhone;
+individual temporary investment and transfer identities were not checked there.
+Independent review of the current changes remains a separate release gate.
 
 - [ ] Extend the sanitization pipeline to spot-check new columns (attachments, free-form notes) so `--sanitize-test-db` keeps pace with future MoneyWiz schema updates.
 

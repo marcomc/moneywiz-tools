@@ -38,8 +38,9 @@ or remove assignments implicitly.
 Transfers, adjustments (`ReconcileTransaction`), scheduled transactions,
 investment variants, unknown entities/fields, ownership changes and relationship
 mutations are refused. W03 assignments/splits use their own
-[disposable-only contract](TRANSACTION-ASSIGNMENT.md); W04 reconciliation flags
-and all P2/P3 operations remain disabled. Existing v1 payee reassignment is separate.
+[assignment contract](TRANSACTION-ASSIGNMENT.md); W04 reconciliation flags
+and P2/P3 operations use their own typed handlers. Existing v1 payee reassignment
+is separate.
 
 ## Request and apply
 
@@ -121,7 +122,7 @@ recovery. The release pins the read-completeness API revision
 is covered under [W01 validation](TRANSACTION-CREATION.md#reproducing-validation).
 
 The [W02 task ledger](../TODO.md#p1-w02-transaction-editing) separates implemented
-behavior, local validation, independent review and future acceptance. This work
-never reads or copies a live financial database. MoneyWiz reopen/history and
-remote-client sync acceptance require a separately authorized real session;
-the live capability gate remains blocked until direct evidence exists.
+behavior, local validation, independent review and acceptance. Synthetic tests
+never read or copy a live financial database. Separate authorized live trials
+and the user-confirmed second-device results are recorded in
+[Live Write Compatibility](LIVE-WRITE-COMPATIBILITY.md).

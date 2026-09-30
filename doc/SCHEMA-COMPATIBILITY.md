@@ -37,10 +37,12 @@ superset from a future model must not inherit a verified write capability.
 - Best-effort read loading skips an individual record that violates model
   invariants and records the entity, ID, and parse error; it does not abort
   unrelated commands for the whole store.
-- Live writes remain stricter than reads and require a separately verified
-  `profile x capability` entry in `scripts/compatibility_matrix.json`.
+- Live writes remain stricter than reads and require an enabled or verified
+  `profile x capability` entry in `scripts/compatibility_matrix.json`, plus the
+  operation-specific runtime and plan guards.
 - An unknown profile is diagnostic-only. A known profile is not enough to
-  authorize a write: the requested capability must be `verified`.
+  authorize a write. See [Live Write Compatibility](LIVE-WRITE-COMPATIBILITY.md)
+  for the finite reviewed runtime and acceptance boundaries.
 - Keep fixtures for each supported profile and run the same read tests against
   every fixture.
 

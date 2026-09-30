@@ -5,16 +5,17 @@
 P1F provides the version-2 shared writer infrastructure. Its narrow
 `reassign_payee` bridge uses the existing payee relationship operation to exercise
 preflight, atomic persistence and recovery. W01 creation uses the same journal
-with deterministic source-event identities on marked disposable fixtures. W02
+with deterministic source-event identities. W02
 scalar editing uses the same journal with exact target IDs and prior values.
 W03 relationship replacement uses it with exact prior and target assignments.
 W04 reconciliation adds a full-account inventory and exact native flag guards.
-Live W01–W04 remain disabled. Existing version-1 commands retain their interface and capability
-checks.
+The implemented W01–W09 variants are enabled on the reviewed live Setapp runtime
+and marked disposable stores. Existing version-1 commands retain their interface
+and capability checks.
 
-This phase is validated with synthetic/disposable stores. Local persisted
-read-back, MoneyWiz application acceptance and remote sync are separate evidence.
-No live P1 operation is cleared by these tests. See
+Synthetic/disposable tests validate persistence and recovery; application and
+remote sync acceptance are separate evidence. Authorized live trial results are
+recorded in [Live Write Compatibility](LIVE-WRITE-COMPATIBILITY.md). See
 [Transaction Creation](TRANSACTION-CREATION.md) and
 [Transaction Editing](TRANSACTION-EDITING.md), and
 [Transaction Assignment](TRANSACTION-ASSIGNMENT.md), and

@@ -18,8 +18,9 @@ The new row has `amount = target - prior`, `reconcileAmount = target`,
 note, and an account relationship. It has no holding, category, payee or tag.
 
 The writer supports only this `investment_total` variant in GBP. Live execution
-is admitted for Setapp MoneyWiz 2026.37.1 build 449; the TestFlight build remains
-available for marked disposable fixtures. It requires
+is admitted for Setapp and TestFlight MoneyWiz 2026.37.1 build 449, retaining
+the previously verified TestFlight path. Other compatible model-48 builds are
+admitted only on marked disposable fixtures. It requires
 the exact app, model, store, owner, account, prior balance and date in the
 reviewed plan; refuses holdings, valuation history and unsupported transaction
 history; saves one row; then reads it back in a fresh context. A deterministic

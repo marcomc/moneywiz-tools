@@ -3,7 +3,7 @@
 ## Purpose and current scope
 
 The bundled Core Data writer is the live-store write path for product
-operations that have a verified capability. It exists because changing relationship
+operations that have an enabled or verified capability. It exists because changing relationship
 columns with raw SQLite does not create the Core Data persistent-history and
 CloudKit metadata that MoneyWiz expects.
 
@@ -13,13 +13,15 @@ The current writer implements and is verified for:
 - Creating a destination payee when reassignment requires one.
 - Saving through the installed MoneyWiz Tools.app host.
 
-The Python CLI can plan exact-normalized duplicate consolidation, but the
-native host does not implement relationship migration or source-payee deletion.
-The corresponding capability remains blocked. Verification is
-operation-specific.
+Version-2 plans also implement the finite W01–W09 operations on the reviewed
+live Setapp runtime or marked disposable stores. W09 migrates the complete
+native reference inventory and deletes one source payee for an exact or
+individually approved fuzzy pair. The legacy group capability
+`write.merge-duplicate-payees` remains blocked. See
+[Live Write Compatibility](LIVE-WRITE-COMPATIBILITY.md) for runtime and acceptance
+boundaries and [Payee Consolidation](PAYEE-CONSOLIDATION.md) for pair approval.
 
-It is not a general live SQL writer and it never applies similar-name pairs
-from the approval map.
+It is not a general live SQL writer. Verification is operation-specific.
 
 ## Operational protocol
 
@@ -85,12 +87,11 @@ capability payloads fail closed.
 
 Version 2 adds a strict shared envelope, expected old values, reviewed digest,
 store/owner/app binding, durable per-operation IDs and independent persisted
-read-back. The P1F payee bridge remains supported. W01 adds creation handlers
-restricted to explicitly marked disposable stores; its live capabilities stay
-blocked pending application acceptance. Editing, post-create category mutation
-and reconciliation remain blocked. See [Transaction Creation](TRANSACTION-CREATION.md)
-for the exact supported experimental contract. Version 1 keeps its result and destination-payee creation
-behavior. See [Writer Recovery](WRITER-RECOVERY.md) for version-2 commands,
+read-back. The P1F payee bridge remains supported. W01–W09 handlers accept
+only their documented variants, with independent native app/model/store checks
+on apply and recovery. See [Transaction Creation](TRANSACTION-CREATION.md) and
+[Live Write Compatibility](LIVE-WRITE-COMPATIBILITY.md) for the supported
+contracts. Version 1 keeps its result and destination-payee creation behavior. See [Writer Recovery](WRITER-RECOVERY.md) for version-2 commands,
 journal retention and interrupted execution.
 
 The default model resolver reads the current-version leaf from the installed
