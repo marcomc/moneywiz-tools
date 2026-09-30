@@ -1274,7 +1274,9 @@ def _validate_payee_merge_plan(plan: dict[str, Any]) -> dict[str, Any]:
     }
     if set(plan) not in (required, required - {"plan_digest"}):
         raise PlanValidationError("W09 plan has unknown or missing fields")
-    if (plan.get("contract_version") != CONTRACT_VERSION
+    if (type(plan.get("contract_version")) is not int
+            or plan.get("contract_version") != CONTRACT_VERSION
+            or type(plan.get("operation_schema_version")) is not int
             or plan.get("operation_schema_version") != OPERATION_SCHEMA_VERSION
             or plan.get("profile_id") != "moneywiz-2026-model-48"
             or plan.get("model_checksum") != "+6BY8eaTke2jfAd5Bzt5D49JRMZld5o8ZoUW+4G2ElQ="):

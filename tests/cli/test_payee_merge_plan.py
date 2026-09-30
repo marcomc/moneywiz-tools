@@ -123,6 +123,18 @@ def test_exact_plan_rejects_changed_identity_or_shape(change) -> None:
         validate_plan(value)
 
 
+@pytest.mark.parametrize("field,value", [
+    ("contract_version", 2.0), ("operation_schema_version", True),
+    ("operation_schema_version", 1.0),
+])
+def test_plan_rejects_noninteger_schema_versions(field: str, value: object) -> None:
+    changed = deepcopy(plan())
+    changed.pop("plan_digest")
+    changed[field] = value
+    with pytest.raises(PlanValidationError, match="exact model-48 contract"):
+        validate_plan(changed)
+
+
 def test_fuzzy_plan_requires_approved_exact_pair() -> None:
     expected = plan(fuzzy=True, approval=fuzzy_approval())
     assert validate_plan(expected) == expected
