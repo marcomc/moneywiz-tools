@@ -6,10 +6,13 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 import sys
+import uuid
 from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from decimal import Decimal
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +21,7 @@ from write_plan import (
     ADJUST_BALANCE_CAPABILITY,
     ADJUST_BALANCE_POLICIES,
     DELETE_ADJUSTMENT_CAPABILITY,
+    SUPPORTED_DELETION_CAPABILITY,
     TRANSFER_CAPABILITY,
     ASSIGN_CAPABILITY,
     CREATE_OPERATION_POLICIES,
@@ -30,6 +34,7 @@ from write_plan import (
     edit_changed_fields,
     normalize_decimal,
     transfer_postcondition,
+    supported_deletion_postcondition,
     validate_plan,
 )
 
@@ -398,6 +403,74 @@ def build_adjust_balance_plan(request: Mapping[str, Any]) -> dict[str, Any]:
     })
 
 
+def build_supported_deletion_plan(request: Mapping[str, Any]) -> dict[str, Any]:
+    """Bind one explicit native deletion inventory to the existing v2 envelope."""
+    raw = _mapping(request, "request")
+    if set(raw) != _ENVELOPE_FIELDS | {"operation"}:
+        raise PlanValidationError("request has unknown or missing W06 supported-deletion fields")
+    operation = _mapping(raw.pop("operation"), "operation")
+    if set(operation) != {"operation_id", "kind", "deletion_reason", "deletion_inventory"}:
+        raise PlanValidationError("W06 supported-deletion operation has unknown or missing fields")
+    inventory = _mapping(operation["deletion_inventory"], "deletion_inventory")
+    try:
+        primary = inventory["targets"][0]["object"]
+        operation.update(
+            capability=SUPPORTED_DELETION_CAPABILITY,
+            transaction_entity=primary["entity"], transaction_gid=primary["gid"],
+            owner_uri=raw["owner_uri"], source_event_id=raw["source_event_id"],
+            expected_postcondition=supported_deletion_postcondition(inventory),
+        )
+    except (KeyError, IndexError, TypeError) as exc:
+        raise PlanValidationError("W06 native inventory is incomplete") from exc
+    return validate_plan({"contract_version": CONTRACT_VERSION,
+                          "operation_schema_version": OPERATION_SCHEMA_VERSION,
+                          **raw, "capability": SUPPORTED_DELETION_CAPABILITY,
+                          "operations": [operation]})
+
+
+def _native_deletion_request(args: argparse.Namespace) -> dict[str, Any]:
+    from runtime_identity import RuntimeIdentityError, resolve_runtime_identity
+    from writer_client import WriterClientError, resolve_writer
+
+    if args.db is None:
+        raise PlanValidationError("W06 deletion planning requires --db")
+    try:
+        writer = resolve_writer(script_file=__file__)
+        runtime = resolve_runtime_identity(args.db, owner_id=args.owner,
+            app_path=args.app, model_path=args.model, model_checksum_host=writer)
+        arguments = [str(writer), "--coredata-deletion-inventory", "--store", str(runtime.store.path),
+                     "--model", str(runtime.model_path)]
+        for gid in args.target:
+            arguments.extend(("--target", gid))
+        completed = subprocess.run(arguments, capture_output=True, text=True, check=False)
+        if completed.returncode:
+            raise PlanValidationError(completed.stderr.strip() or "W06 native inventory failed")
+        inventory = json.loads(completed.stdout)
+        owner_uri = f"x-coredata://{runtime.store.uuid}/User/p{runtime.store.owner_local_id}"
+        if inventory["owner_uri"] != owner_uri:
+            raise PlanValidationError("W06 native inventory owner differs from selected runtime")
+        primary_gid = inventory["targets"][0]["account_gid"]
+        account = next(item for item in inventory["accounts"] if item["gid"] == primary_gid)
+    except (RuntimeIdentityError, WriterClientError, KeyError, IndexError, TypeError, StopIteration,
+            json.JSONDecodeError) as exc:
+        raise PlanValidationError(f"W06 could not capture native inventory: {exc}") from exc
+    event = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return {
+        "plan_id": f"w06-{event}", "profile_id": "moneywiz-2026-model-48",
+        "model_checksum": runtime.store.model_checksum,
+        "store_identity": {"store_uuid": runtime.store.uuid}, "owner_uri": owner_uri,
+        "app_identity": {"bundle_id": runtime.app.bundle_identifier, "version": runtime.app.version,
+                         "path": str(runtime.app.path), "model_path": str(runtime.model_path)},
+        "created_at": now, "timezone": "UTC", "source_interval": {"start": now, "end": now},
+        "source_evidence_refs": [args.evidence_note], "source_event_id": event,
+        "expected_account_gid": account["gid"], "expected_cached_account_balance": account["prior_cache"],
+        "currency_unit": account["currency"],
+        "operation": {"operation_id": "delete-1", "kind": "delete_supported_transactions",
+                      "deletion_reason": args.reason, "deletion_inventory": inventory},
+    }
+
+
 def build_delete_adjustment_plan(request: Mapping[str, Any]) -> dict[str, Any]:
     """Plan deletion of one observed latest investment-total adjustment."""
     raw = _mapping(request, "request")
@@ -626,6 +699,15 @@ def make_parser() -> argparse.ArgumentParser:
             type=Path,
             help="Create the immutable plan at this new path; otherwise print it",
         )
+    deletion = commands.add_parser("delete", help="Plan a complete supported native transaction deletion")
+    deletion.add_argument("--db", type=Path, default=argparse.SUPPRESS)
+    deletion.add_argument("--target", action="append", required=True, help="Exact GID; repeat for dependent refunds and transfer peers")
+    deletion.add_argument("--reason", required=True)
+    deletion.add_argument("--evidence-note", required=True)
+    deletion.add_argument("--app", type=Path)
+    deletion.add_argument("--model", type=Path)
+    deletion.add_argument("--owner", type=int)
+    deletion.add_argument("--plan", type=Path)
     return parser
 
 
@@ -637,8 +719,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "delete-adjustment": build_delete_adjustment_plan,
                     "transfer": build_transfer_plan,
                     "investment": build_investment_plan}
-        request = _load_request(args.request)
-        plan = (builders[args.command](request)
+        request = _native_deletion_request(args) if args.command == "delete" else _load_request(args.request)
+        plan = (build_supported_deletion_plan(request) if args.command == "delete"
+                else builders[args.command](request)
                 if args.command in builders else build_reconcile_plan(
                     request, kind=f"{args.command}_transaction"))
         if args.plan is not None:

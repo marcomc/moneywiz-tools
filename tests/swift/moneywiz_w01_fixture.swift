@@ -71,6 +71,92 @@ func fixtureRefundLink(_ withdrawal: NSManagedObject, refund: NSManagedObject,
     try fixtureSet(link, "refundTransaction", refund)
 }
 
+func fixtureSupportedDeletion(_ user: NSManagedObject, foreignUser: NSManagedObject,
+                              context: NSManagedObjectContext) throws {
+    let environment = ProcessInfo.processInfo.environment
+    let accountEntity = environment["MONEYWIZ_TEST_ACCOUNT_ENTITY"] ?? "BankChequeAccount"
+    guard supportedAccountEntities.contains(accountEntity) else { throw HostError.message("W06 unsupported fixture account") }
+    let currency = environment["MONEYWIZ_TEST_CURRENCY"] ?? "EUR"
+    let investmentEntity = environment["MONEYWIZ_TEST_INVESTMENT_ENTITY"] ?? "InvestmentAccount"
+    guard ["InvestmentAccount", "ForexAccount"].contains(investmentEntity) else { throw HostError.message("W06 unsupported fixture investment account") }
+    let account = try fixtureAccount(accountEntity, gid: "w06-account", name: "W06 ordinary",
+        opening: 100, balance: 0, user: user, context: context)
+    let recipient = try fixtureAccount("BankSavingAccount", gid: "w06-recipient", name: "W06 recipient",
+        opening: 50, balance: 0, user: user, context: context)
+    let investment = try fixtureAccount(investmentEntity, gid: "w06-investment", name: "W06 investment",
+        opening: 100, balance: 0, user: user, context: context)
+    for object in [account, recipient, investment] { try fixtureSet(object, "currencyName", currency) }
+    let foreign = try fixtureAccount("CashAccount", gid: "w06-foreign", name: "W06 foreign",
+        opening: 0, balance: 0, user: foreignUser, context: context)
+    let payee = try fixtureObject("Payee", context)
+    try fixtureSet(payee, "GID", "w06-payee"); try fixtureSet(payee, "name", "W06 shared")
+    try fixtureSet(payee, "user", user)
+    let tag = try fixtureObject("Tag", context)
+    try fixtureSet(tag, "GID", "w06-tag"); try fixtureSet(tag, "name", "W06 shared")
+    try fixtureSet(tag, "user", user)
+    let category = try fixtureObject("Category", context)
+    try fixtureSet(category, "GID", "w06-category"); try fixtureSet(category, "name", "W06 shared")
+    try fixtureSet(category, "type", 1); try fixtureSet(category, "user", user)
+    func row(_ entity: String, _ gid: String, _ amount: Double, _ ownerAccount: NSManagedObject) throws -> NSManagedObject {
+        let object = try fixtureTransaction(entity, gid: gid, amount: amount, account: ownerAccount,
+            payee: payee, tag: tag, context: context)
+        try fixtureSet(object, "originalCurrency", currency)
+        return object
+    }
+    let expense = try row("WithdrawTransaction", "w06-expense", -10, account)
+    try fixtureCategoryAssignment(expense, category: category, amount: -10, context: context)
+    let firstRefund = try row("RefundTransaction", "w06-refund-1", 2, account)
+    let secondRefund = try row("RefundTransaction", "w06-refund-2", 3, account)
+    try fixtureRefundLink(expense, refund: firstRefund, context: context)
+    try fixtureRefundLink(expense, refund: secondRefund, context: context)
+    _ = try row("DepositTransaction", "w06-income", 4, account)
+    let categorized = try row("WithdrawTransaction", "w06-categorized", -4, account)
+    try fixtureCategoryAssignment(categorized, category: category, amount: -4, context: context)
+    let adjustment = try row("ReconcileTransaction", "w06-adjustment", 1, account)
+    try fixtureSet(adjustment, "reconcileAmount", 96.0)
+    let sender = try row("TransferWithdrawTransaction", "w06-send", -5, account)
+    let receiver = try row("TransferDepositTransaction", "w06-receive", 5, recipient)
+    try fixtureSet(sender, "recipientTransaction", receiver)
+    try fixtureSet(sender, "recipientAccount", recipient)
+    try fixtureSet(receiver, "senderAccount", account)
+    let holding = try fixtureObject("InvestmentHolding", context)
+    let symbol = investmentEntity == "ForexAccount" ? "USD" : "W06"
+    try fixtureSet(holding, "GID", "w06-holding"); try fixtureSet(holding, "symbol", symbol)
+    try fixtureSet(holding, "investmentAccount", investment)
+    try fixtureSet(holding, "investmentObjectType", investmentEntity == "ForexAccount" ? 1 : 0)
+    try fixtureSet(holding, "openningNumberOfShares", 3.0)
+    try fixtureSet(holding, "pricePerShare", 10.0)
+    if let prices = environment["MONEYWIZ_TEST_HISTORICAL_PRICES"] {
+        let history = NSMutableDictionary()
+        let early = Date(timeIntervalSinceReferenceDate: 123456789.25)
+        let late = Date(timeIntervalSinceReferenceDate: 123456790.75)
+        if prices == "numeric-key" {
+            history[NSNumber(value: 1)] = NSNumber(value: 10)
+        } else {
+            for date in prices == "reverse" ? [late, early] : [early, late] {
+                history[date] = NSNumber(value: date == early ? 10.5 : 11.25)
+            }
+            if prices == "string-price" { history[early] = "10.5" }
+            if prices == "bool-price" { history[early] = NSNumber(value: true) }
+            if prices == "infinite-price" { history[early] = NSNumber(value: Double.infinity) }
+        }
+        try fixtureSet(holding, "manualHistoricalPricesPerShare", history)
+    }
+    let buy = try row("InvestmentBuyTransaction", "w06-buy", -20, investment)
+    try fixtureSet(buy, "investmentHolding", holding); try fixtureSet(buy, "symbol", symbol)
+    try fixtureSet(buy, "numberOfShares", 2.0); try fixtureSet(buy, "pricePerShare", 10.0)
+    let sell = try row("InvestmentSellTransaction", "w06-sell", 40, investment)
+    try fixtureSet(sell, "investmentHolding", holding); try fixtureSet(sell, "symbol", symbol)
+    try fixtureSet(sell, "numberOfShares", 4.0); try fixtureSet(sell, "pricePerShare", 10.0)
+    if environment["MONEYWIZ_TEST_QUANTITY_ADJUSTMENT"] == "1" {
+        let quantity = try row("ReconcileTransaction", "w06-quantity", 0, investment)
+        try fixtureSet(quantity, "investmentHolding", holding); try fixtureSet(quantity, "symbol", symbol)
+        try fixtureSet(quantity, "numberOfShares", 0.5)
+        try fixtureSet(quantity, "reconcileNumberOfShares", 1.5)
+    }
+    _ = try row("DepositTransaction", "w06-foreign-income", 1, foreign)
+}
+
 func fixtureJSONValue(_ value: Any?) -> Any {
     guard let value else { return NSNull() }
     if let date = value as? Date {
@@ -201,6 +287,9 @@ func runFixtureCrash(_ args: [String]) throws -> Never {
     }
     let plan = try JSONDecoder().decode(WriterPlanV2.self, from: data)
     try validateWriterPlanV2(plan, rawPlan: raw)
+    if plan.capability == "write.delete-supported-transactions" {
+        _ = try preflightSupportedDeletionAtStore(plan, storeURL: store, modelURL: model)
+    }
     let container = try loadContainer(
         storeURL: store, modelURL: model,
         expectedChecksum: plan.modelChecksum
@@ -237,6 +326,12 @@ func runFixtureWriter() throws {
     }
     let plan = try JSONDecoder().decode(WriterPlanV2.self, from: data)
     try validateWriterPlanV2(plan, rawPlan: raw)
+    if plan.capability == "write.delete-supported-transactions" && !arguments.recoverOnly,
+       let noop = try preflightSupportedDeletionAtStore(plan, storeURL: arguments.store, modelURL: arguments.model) {
+        FileHandle.standardOutput.write(try JSONEncoder().encode(noop))
+        FileHandle.standardOutput.write(Data([10]))
+        return
+    }
     let container = try loadContainer(
         storeURL: arguments.store, modelURL: arguments.model,
         expectedChecksum: plan.modelChecksum,
@@ -283,7 +378,7 @@ func runFixtureWriter() throws {
                 try runFixtureCrash(args)
             }
             guard (args.count == 4 || args.count == 5), args[0] == "--store", args[2] == "--model",
-                  args.count == 4 || ["--unmarked", "--w06", "--w06-backdated", "--w06-unmarked", "--w06-linked",
+                  args.count == 4 || ["--unmarked", "--w06", "--w06-backdated", "--w06-unmarked", "--w06-linked", "--w06-supported",
                     "--w07-source", "--w07-paired", "--w07-reverse", "--w07-ambiguous",
                     "--w07-unmarked", "--w07-voided", "--w08-aggregate",
                     "--w08-units", "--w08-unmarked", "--w05-balance", "--w05-cash", "--w05-quantity",
@@ -301,7 +396,7 @@ func runFixtureWriter() throws {
             container.persistentStoreDescriptions = [description]
             var error: Error?; container.loadPersistentStores { _, value in error = value }; if let error { throw error }
             guard let persistentStore = container.persistentStoreCoordinator.persistentStores.first else { throw HostError.message("fixture has no persistent store") }
-            if args.count == 4 || ["--w06", "--w06-backdated", "--w06-linked", "--w07-source",
+            if args.count == 4 || ["--w06", "--w06-backdated", "--w06-linked", "--w06-supported", "--w07-source",
                 "--w07-paired", "--w07-reverse", "--w07-ambiguous",
                 "--w07-voided", "--w08-aggregate", "--w08-units", "--w05-balance", "--w05-cash", "--w05-quantity",
                 "--w09-exact", "--w09-fuzzy", "--w09-untrimmed",
@@ -315,6 +410,16 @@ func runFixtureWriter() throws {
             try fixtureSet(user, "syncLogin", "w01-fixture@example.invalid")
             let foreignUser = try fixtureObject("User", c)
             try fixtureSet(foreignUser, "syncLogin", "w01-foreign@example.invalid")
+            if args.count == 5 && args[4] == "--w06-supported" {
+                try fixtureSupportedDeletion(user, foreignUser: foreignUser, context: c)
+                try c.save()
+                let metadata = try NSPersistentStoreCoordinator.metadataForPersistentStore(ofType: NSSQLiteStoreType, at: store, options: nil)
+                let identity = ["store_uuid": metadata[NSStoreUUIDKey] as! String,
+                    "owner_uri": user.objectID.uriRepresentation().absoluteString]
+                FileHandle.standardOutput.write(try JSONSerialization.data(withJSONObject: identity, options: [.sortedKeys]))
+                FileHandle.standardOutput.write(Data([10]))
+                return
+            }
             if args.count == 5 && args[4].hasPrefix("--w05-") {
                 let quantity = args[4].hasSuffix("quantity")
                 let cash = args[4].hasSuffix("cash")

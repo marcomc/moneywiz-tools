@@ -93,6 +93,7 @@ reference inventory; see [Payee Consolidation](doc/PAYEE-CONSOLIDATION.md).
 | `transaction unreconcile --request FILE --plan FILE` | Build a guarded W04 correction plan without opening a store |
 | `transaction adjust-balance --request FILE --plan FILE` | Build an explicit W05 ordinary balance, investment cash, existing-asset quantity or GBP investment-total plan without opening a store |
 | `transaction delete-adjustment --request FILE --plan FILE` | Build a W06 plan for one exact latest GBP investment-total adjustment without opening a store |
+| `transaction delete --target GID --reason TEXT --evidence-note TEXT --plan FILE` | Build a W06 plan from a native read-only inventory; repeat `--target` for complete transfer/refund groups; see [Supported Transaction Deletion](doc/TRANSACTION-DELETION.md) for status |
 | `transaction transfer --request FILE --plan FILE` | Build a W07 plan to replace one or two imported rows with a zero-fee paired transfer without opening a store |
 | `transaction investment --request FILE --plan FILE` | Build one guarded W08 cash event or existing-holding Buy/Sell plan without opening a store |
 | `payee merge --kind KIND --source-gid GID --survivor-gid GID --plan FILE` | Build one W09 merge plan from a native read-only inventory; fuzzy requires `--fuzzy-map` |

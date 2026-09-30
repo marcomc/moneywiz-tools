@@ -220,6 +220,7 @@ Writes (dry-run by default; add --apply to commit):
   transaction unreconcile --help       Build a guarded W04 correction plan.
   transaction adjust-balance --help     Build an explicit W05 balance or quantity plan.
   transaction delete-adjustment --help  Build a guarded W06 deletion plan for that variant.
+  transaction delete --help  Plan deletion of supported transactions and their native dependencies.
   transaction transfer --help           Build a guarded W07 transfer replacement plan.
   transaction investment --help         Build a guarded W08 investment transaction plan.
   payee merge --help                     Build a guarded W09 exact or approved fuzzy merge plan.

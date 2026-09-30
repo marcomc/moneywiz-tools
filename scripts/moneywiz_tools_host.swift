@@ -224,7 +224,7 @@ func validatePlanScalarTypes(_ value: Any, key: String = "") throws {
             "original_transaction_gid", "target_payee_gid", "expected_old_payee_gid",
             "holding_gid", "holding_symbol", "investment_symbol", "gid", "object_uri",
             "source_evidence_refs", "tag_gids", "transaction_gids",
-            "category_assignment_uris", "deletion_reason", "evidence_note"]
+            "category_assignment_uris", "deletion_reason", "evidence_note", "entity", "transaction_entity", "symbol"]
         if identities.contains(key), isBlank(text) || text != text.trimmingCharacters(in: planWhitespace) {
             throw HostError.message("writer plan \(key) requires nonblank trimmed text")
         }
@@ -233,7 +233,7 @@ func validatePlanScalarTypes(_ value: Any, key: String = "") throws {
             "expected_native_status", "expected_native_flags", "source_count", "parsed_count",
             "status", "flags", "native_status", "native_flags", "user_id"]
         let booleans: Set<String> = ["expected_reconciled", "target_reconciled", "reconciled",
-            "transaction_absent", "external_source_verified"]
+            "transaction_absent", "external_source_verified", "retained_verified"]
         let boolean = CFGetTypeID(number) == CFBooleanGetTypeID()
         if integers.contains(key), boolean || ["f", "d"].contains(String(cString: number.objCType)) {
             throw HostError.message("writer plan \(key) requires an exact JSON integer")
@@ -703,6 +703,7 @@ struct WriterOperationV2: Decodable {
     let expectedAmount: String?
     let expectedReconcileAmount: String?
     let deletionReason: String?
+    let deletionInventory: SupportedDeletionInventory?
     let recipientTransactionGID: String?
     let sourceOld: TransferOldRow?
     let destinationOld: TransferOldRow?
@@ -769,6 +770,7 @@ struct WriterOperationV2: Decodable {
         case expectedAmount = "expected_amount"
         case expectedReconcileAmount = "expected_reconcile_amount"
         case deletionReason = "deletion_reason"
+        case deletionInventory = "deletion_inventory"
         case recipientTransactionGID = "recipient_transaction_gid"
         case sourceOld = "source_old"
         case destinationOld = "destination_old"
@@ -1037,6 +1039,7 @@ struct WriterOperationResultV2: Encodable {
     var reconcilePostcondition: ReconcilePostcondition? = nil
     var adjustBalancePostcondition: AdjustBalancePostcondition? = nil
     var deleteAdjustmentPostcondition: DeleteAdjustmentPostcondition? = nil
+    var supportedDeletionPostcondition: SupportedDeletionPostcondition? = nil
     var transferPostcondition: TransferPostcondition? = nil
     var transferDetails: TransferDetails? = nil
     var investmentDetails: InvestmentDetails? = nil
@@ -1067,7 +1070,8 @@ struct WriterOperationResultV2: Encodable {
         try container.encode(newPayeeGID, forKey: .newPayeeGID)
         try container.encodeIfPresent(transferDetails, forKey: .transferDetails)
         try container.encodeIfPresent(investmentDetails, forKey: .investmentDetails)
-        if let transferPostcondition { try container.encode(transferPostcondition, forKey: .postcondition) }
+        if let supportedDeletionPostcondition { try container.encode(supportedDeletionPostcondition, forKey: .postcondition) }
+        else if let transferPostcondition { try container.encode(transferPostcondition, forKey: .postcondition) }
         else if let deleteAdjustmentPostcondition { try container.encode(deleteAdjustmentPostcondition, forKey: .postcondition) }
         else if let adjustBalancePostcondition { try container.encode(adjustBalancePostcondition, forKey: .postcondition) }
         else if let reconcilePostcondition { try container.encode(reconcilePostcondition, forKey: .postcondition) }
@@ -1211,6 +1215,10 @@ func validateWriterPlanV2(_ plan: WriterPlanV2, rawPlan: [String: Any]) throws {
             try validateDeleteAdjustmentShape(rawOperation, plan: plan)
             continue
         }
+        if kind == "delete_supported_transactions" {
+            try validateSupportedDeletionShape(rawOperation, plan: plan)
+            continue
+        }
         if kind == "replace_import_with_transfer" {
             try validateTransferShape(rawOperation, plan: plan)
             continue
@@ -1230,7 +1238,7 @@ func validateWriterPlanV2(_ plan: WriterPlanV2, rawPlan: [String: Any]) throws {
           plan.operationSchemaVersion == 1,
           plan.profileID == policy.profileID,
           plan.modelChecksum == policy.modelChecksum,
-          (plan.capability == policy.capability || extendedAdjustPolicies.values.contains(where: { $0.capability == plan.capability }) || ["write.create-income", "write.create-expense", "write.create-refund", "write.edit-transaction", "write.assign-payee-categories", "write.reconcile", "write.unreconcile", "write.adjust-balance-investment-total", "write.delete-adjust-balance-investment-total", "write.replace-import-with-transfer", "write.investment-income", "write.investment-expense", "write.investment-buy", "write.investment-sell"].contains(plan.capability)),
+          (plan.capability == policy.capability || extendedAdjustPolicies.values.contains(where: { $0.capability == plan.capability }) || ["write.create-income", "write.create-expense", "write.create-refund", "write.edit-transaction", "write.assign-payee-categories", "write.reconcile", "write.unreconcile", "write.adjust-balance-investment-total", "write.delete-adjust-balance-investment-total", "write.delete-supported-transactions", "write.replace-import-with-transfer", "write.investment-income", "write.investment-expense", "write.investment-buy", "write.investment-sell"].contains(plan.capability)),
           moneyWizBundleIdentifiers.contains(plan.appIdentity.bundleID),
           !isBlank(plan.appIdentity.version),
           !isBlank(plan.appIdentity.path),
@@ -1306,6 +1314,10 @@ func validateWriterPlanV2(_ plan: WriterPlanV2, rawPlan: [String: Any]) throws {
        (plan.operations.count != 1 || plan.operations[0].kind != "delete_investment_total_adjustment") {
         throw HostError.message("W06 requires exactly one investment-total deletion")
     }
+    if plan.capability == "write.delete-supported-transactions" &&
+       (plan.operations.count != 1 || plan.operations[0].kind != "delete_supported_transactions") {
+        throw HostError.message("W06 requires exactly one supported deletion closure")
+    }
     if w07 && (plan.operations.count != 1 || plan.operations[0].kind != "replace_import_with_transfer") {
         throw HostError.message("W07 requires exactly one atomic transfer replacement")
     }
@@ -1338,6 +1350,16 @@ func validateWriterPlanV2(_ plan: WriterPlanV2, rawPlan: [String: Any]) throws {
             guard operationIDs.insert(operation.operationID).inserted,
                   transactionGIDs.insert(operation.transactionGID).inserted else {
                 throw HostError.message("writer v2 operation identifiers and transaction GIDs must be unique")
+            }
+            continue
+        }
+        if operation.kind == "delete_supported_transactions" {
+            guard operation.capability == plan.capability,
+                  operation.ownerURI == plan.ownerURI,
+                  operation.sourceEventID == plan.sourceEventID,
+                  operationIDs.insert(operation.operationID).inserted,
+                  transactionGIDs.insert(operation.transactionGID).inserted else {
+                throw HostError.message("W06 supported deletion differs from its envelope")
             }
             continue
         }
@@ -2948,9 +2970,11 @@ func roundedBalance(_ value: Decimal, scale: Int) -> Decimal {
 // Native Forex holdings use signed quantities on deposits/adjustments and
 // separate signed from/to quantities on exchange rows. Stock trades use the
 // existing W08 Buy/Sell path. A quantity adjustment carries no cash movement.
-func forexUnits(_ holding: NSManagedObject, account: NSManagedObject) throws -> Decimal {
+func forexUnits(_ holding: NSManagedObject, account: NSManagedObject,
+                excluding: Set<NSManagedObjectID> = []) throws -> Decimal {
     var total = try nativeDecimal(holding, "openningNumberOfShares")
     for row in try relatedObjects(account, "transactionsHistory") {
+        if excluding.contains(row.objectID) { continue }
         let direct = (row.value(forKey: "investmentHolding") as? NSManagedObject)?.objectID == holding.objectID
         let exchange = row.entity.name == "InvestmentExchangeTransaction"
         let from = exchange && (row.value(forKey: "fromInvestmentHolding") as? NSManagedObject)?.objectID == holding.objectID
@@ -3928,6 +3952,10 @@ func recoverPlanV2(_ plan: WriterPlanV2, container: NSPersistentContainer,
                 result = .success(try inspectDeleteAdjustment(plan, context: context).receipt)
                 return
             }
+            if plan.capability == "write.delete-supported-transactions" {
+                result = .success(try inspectSupportedDeletion(plan, context: context))
+                return
+            }
             if plan.capability == "write.replace-import-with-transfer" {
                 result = .success(try inspectTransfer(plan, context: context).receipt)
                 return
@@ -4002,6 +4030,10 @@ func writePlanV2(
             }
             if plan.capability == "write.delete-adjust-balance-investment-total" {
                 result = .success(try deleteAdjustmentV2(plan, context: context, requireStopped: requireStopped))
+                return
+            }
+            if plan.capability == "write.delete-supported-transactions" {
+                result = .success(try deleteSupportedTransactionsV2(plan, context: context, requireStopped: requireStopped))
                 return
             }
             if plan.capability == "write.replace-import-with-transfer" {
@@ -4537,9 +4569,10 @@ func investmentDetails(_ operation: WriterOperationV2) -> InvestmentDetails {
         expectedPriorUnits: operation.expectedPriorUnits, expectedFinalUnits: operation.expectedFinalUnits)
 }
 
-func investmentLedger(_ account: NSManagedObject) throws -> Decimal {
+func investmentLedger(_ account: NSManagedObject, excluding: Set<NSManagedObjectID> = []) throws -> Decimal {
     var total = try nativeDecimal(account, "openingBalance")
     for row in try relatedObjects(account, "transactionsHistory") {
+        if excluding.contains(row.objectID) { continue }
         guard (row.value(forKey: "voidCheque") as? NSNumber)?.intValue == 0 else {
             throw HostError.message("W08 account ledger contains a void row")
         }
@@ -4552,10 +4585,12 @@ func investmentLedger(_ account: NSManagedObject) throws -> Decimal {
     return rounded
 }
 
-func investmentUnits(_ holding: NSManagedObject, account: NSManagedObject) throws -> Decimal {
-    if account.entity.name == "ForexAccount" { return try forexUnits(holding, account: account) }
+func investmentUnits(_ holding: NSManagedObject, account: NSManagedObject,
+                     excluding: Set<NSManagedObjectID> = []) throws -> Decimal {
+    if account.entity.name == "ForexAccount" { return try forexUnits(holding, account: account, excluding: excluding) }
     var total = try nativeDecimal(holding, "openningNumberOfShares")
     for row in try relatedObjects(holding, "investmentTransactions") {
+        if excluding.contains(row.objectID) { continue }
         guard (row.value(forKey: "account") as? NSManagedObject)?.objectID == account.objectID,
               (row.value(forKey: "voidCheque") as? NSNumber)?.intValue == 0,
               let entity = row.entity.name,
@@ -5270,6 +5305,652 @@ func inspectPayeeInventory(_ arguments: [String]) throws -> PayeeInventory {
     return try result.get()
 }
 
+// W06 inventories are read-only. They bind the complete native deletion closure
+// and the projected inverse relationships without executing a Core Data delete.
+struct DeletionObjectState: Codable, Equatable {
+    let entity: String
+    let gid: String?
+    let objectURI: String
+    let fingerprint: String
+    let finalFingerprint: String?
+    enum CodingKeys: String, CodingKey {
+        case entity, gid, objectURI = "object_uri", fingerprint
+        case finalFingerprint = "final_fingerprint"
+    }
+}
+
+struct DeletionTargetState: Codable, Equatable {
+    let object: DeletionObjectState
+    let accountGID: String
+    let amount: String
+    let holdingGID: String?
+    let signedUnits: String
+    let description: String
+    enum CodingKeys: String, CodingKey {
+        case object, accountGID = "account_gid", amount, holdingGID = "holding_gid"
+        case signedUnits = "signed_units", description
+    }
+}
+
+struct DeletionAccountState: Codable, Equatable {
+    let objectURI: String
+    let gid: String
+    let currency: String
+    let priorBalance: String
+    let finalBalance: String
+    let priorCache: String
+    let finalCache: String
+    enum CodingKeys: String, CodingKey {
+        case objectURI = "object_uri", gid, currency
+        case priorBalance = "prior_balance", finalBalance = "final_balance"
+        case priorCache = "prior_cache", finalCache = "final_cache"
+    }
+}
+
+struct DeletionHoldingState: Codable, Equatable {
+    let objectURI: String
+    let gid: String
+    let accountGID: String
+    let symbol: String
+    let assetType: Int
+    let priorUnits: String
+    let finalUnits: String
+    enum CodingKeys: String, CodingKey {
+        case objectURI = "object_uri", gid, accountGID = "account_gid", symbol
+        case assetType = "asset_type", priorUnits = "prior_units", finalUnits = "final_units"
+    }
+}
+
+struct SupportedDeletionInventory: Codable, Equatable {
+    let ownerURI: String
+    let targets: [DeletionTargetState]
+    let dependents: [DeletionObjectState]
+    let retained: [DeletionObjectState]
+    let accounts: [DeletionAccountState]
+    let holdings: [DeletionHoldingState]
+    enum CodingKeys: String, CodingKey {
+        case ownerURI = "owner_uri", targets, dependents, retained, accounts, holdings
+    }
+}
+
+struct SupportedDeletionPostcondition: Codable {
+    struct Account: Codable { let gid: String; let balance: String; let cache: String }
+    struct Holding: Codable { let gid: String; let units: String }
+    let deletedObjectURIs: [String]
+    let retainedVerified: Bool
+    let accounts: [Account]
+    let holdings: [Holding]
+    enum CodingKeys: String, CodingKey {
+        case deletedObjectURIs = "deleted_object_uris", retainedVerified = "retained_verified", accounts, holdings
+    }
+}
+
+func supportedDeletionPostcondition(_ inventory: SupportedDeletionInventory) -> SupportedDeletionPostcondition {
+    SupportedDeletionPostcondition(
+        deletedObjectURIs: (inventory.targets.map { $0.object.objectURI } + inventory.dependents.map { $0.objectURI }).sorted(),
+        retainedVerified: true,
+        accounts: inventory.accounts.map { .init(gid: $0.gid, balance: $0.finalBalance, cache: $0.finalCache) },
+        holdings: inventory.holdings.map { .init(gid: $0.gid, units: $0.finalUnits) })
+}
+
+func validateSupportedDeletionShape(_ raw: [String: Any], plan: WriterPlanV2) throws {
+    let required: Set<String> = ["operation_id", "kind", "capability", "transaction_entity", "transaction_gid",
+        "owner_uri", "source_event_id", "deletion_reason", "deletion_inventory", "expected_postcondition"]
+    guard Set(raw.keys) == required, raw["kind"] as? String == "delete_supported_transactions",
+          raw["capability"] as? String == "write.delete-supported-transactions",
+          plan.capability == "write.delete-supported-transactions",
+          raw["owner_uri"] as? String == plan.ownerURI, raw["source_event_id"] as? String == plan.sourceEventID,
+          let reason = raw["deletion_reason"] as? String, !isBlank(reason),
+          let graph = raw["deletion_inventory"] as? [String: Any],
+          Set(graph.keys) == ["owner_uri", "targets", "dependents", "retained", "accounts", "holdings"],
+          graph["owner_uri"] as? String == plan.ownerURI else {
+        throw HostError.message("W06 supported deletion shape or envelope differs")
+    }
+    func objects(_ name: String) throws -> [[String: Any]] {
+        guard let items = graph[name] as? [[String: Any]] else { throw HostError.message("W06 \(name) must contain objects") }
+        return items
+    }
+    var seen: Set<String> = []
+    var gids: Set<String> = []
+    let prefix = "x-coredata://\(plan.storeIdentity.storeUUID)/"
+    func uri(_ value: String, entity: String? = nil) throws {
+        guard value.hasPrefix(prefix) else { throw HostError.message("W06 object URI has a different store") }
+        let tail = String(value.dropFirst(prefix.count))
+        let parts = tail.split(separator: "/", omittingEmptySubsequences: false)
+        guard parts.count == 2, String(parts[0]).range(of: "^[A-Za-z][A-Za-z0-9]*$", options: .regularExpression) != nil,
+              String(parts[1]).range(of: "^p[1-9][0-9]*$", options: .regularExpression) != nil,
+              entity == nil || String(parts[0]) == entity else { throw HostError.message("W06 object URI identity is invalid") }
+    }
+    func state(_ item: [String: Any], retained: Bool) throws {
+        let keys = Set(["entity", "object_uri", "fingerprint"])
+            .union(retained ? ["final_fingerprint"] : [])
+        guard Set(item.keys) == keys || Set(item.keys) == keys.union(["gid"]),
+              let entity = item["entity"] as? String, !isBlank(entity),
+              let identity = item["object_uri"] as? String, seen.insert(identity).inserted else {
+            throw HostError.message("W06 object state has unknown, missing or duplicate fields")
+        }
+        try uri(identity, entity: entity)
+        if item.keys.contains("gid") {
+            guard let gid = item["gid"] as? String, !isBlank(gid), gids.insert(gid).inserted else {
+                throw HostError.message("W06 object GID is missing or duplicated")
+            }
+        }
+        for field in retained ? ["fingerprint", "final_fingerprint"] : ["fingerprint"] {
+            guard let hash = item[field] as? String, hash.range(of: "^[0-9a-f]{64}$", options: .regularExpression) != nil else {
+                throw HostError.message("W06 object fingerprint is invalid")
+            }
+        }
+    }
+    let targets = try objects("targets")
+    let dependents = try objects("dependents")
+    let retained = try objects("retained")
+    let accounts = try objects("accounts")
+    let holdings = try objects("holdings")
+    guard !targets.isEmpty, !accounts.isEmpty, !retained.isEmpty else { throw HostError.message("W06 inventory is incomplete") }
+    for target in targets {
+        let keys: Set<String> = ["object", "account_gid", "amount", "signed_units", "description"]
+        guard Set(target.keys) == keys || Set(target.keys) == keys.union(["holding_gid"]),
+              let object = target["object"] as? [String: Any],
+              let entity = object["entity"] as? String, supportedDeletionEntities.contains(entity),
+              object["gid"] is String, target["account_gid"] is String, target["description"] is String else {
+            throw HostError.message("W06 target shape or entity is unsupported")
+        }
+        try state(object, retained: false)
+        for field in ["amount", "signed_units"] {
+            guard let text = target[field] as? String,
+                  NSDecimalNumber(decimal: try decimalValue(text, field: field)).stringValue == text else {
+                throw HostError.message("W06 target decimal is noncanonical")
+            }
+        }
+        if target.keys.contains("holding_gid") {
+            guard target["holding_gid"] is String else { throw HostError.message("W06 target holding GID is invalid") }
+        } else if target["signed_units"] as? String != "0" { throw HostError.message("W06 units require a holding") }
+    }
+    for child in dependents {
+        try state(child, retained: false)
+        guard ["CategoryAssigment", "TransactionBudgetLink", "Image", "WithdrawRefundTransactionLink"].contains(child["entity"] as? String ?? "") else {
+            throw HostError.message("W06 dependent entity is unsupported")
+        }
+    }
+    for item in retained { try state(item, retained: true) }
+    let retainedMap = Dictionary(uniqueKeysWithValues: retained.map { ($0["object_uri"] as! String, $0) })
+    var accountGIDs: Set<String> = []
+    for item in accounts {
+        guard Set(item.keys) == ["object_uri", "gid", "currency", "prior_balance", "final_balance", "prior_cache", "final_cache"],
+              let identity = item["object_uri"] as? String, let gid = item["gid"] as? String,
+              accountGIDs.insert(gid).inserted, retainedMap[identity]?["gid"] as? String == gid,
+              supportedAccountEntities.contains(retainedMap[identity]?["entity"] as? String ?? ""),
+              ["GBP", "EUR", "USD", "CAD"].contains(item["currency"] as? String ?? "") else {
+            throw HostError.message("W06 account projection identity differs")
+        }
+        try uri(identity)
+        for field in ["prior_balance", "final_balance", "prior_cache", "final_cache"] {
+            guard let text = item[field] as? String,
+                  NSDecimalNumber(decimal: try decimalValue(text, field: field)).stringValue == text else {
+                throw HostError.message("W06 account decimal is noncanonical")
+            }
+        }
+    }
+    guard accountGIDs == Set(targets.compactMap { $0["account_gid"] as? String }) else {
+        throw HostError.message("W06 affected account inventory differs")
+    }
+    var holdingGIDs: Set<String> = []
+    for item in holdings {
+        guard Set(item.keys) == ["object_uri", "gid", "account_gid", "symbol", "asset_type", "prior_units", "final_units"],
+              let identity = item["object_uri"] as? String, let gid = item["gid"] as? String,
+              holdingGIDs.insert(gid).inserted, retainedMap[identity]?["gid"] as? String == gid,
+              accountGIDs.contains(item["account_gid"] as? String ?? ""),
+              let symbol = item["symbol"] as? String, !isBlank(symbol),
+              [0, 1].contains(item["asset_type"] as? Int ?? -1) else {
+            throw HostError.message("W06 holding projection identity differs")
+        }
+        try uri(identity, entity: "InvestmentHolding")
+        for field in ["prior_units", "final_units"] {
+            guard let text = item[field] as? String else { throw HostError.message("W06 quantity must be text") }
+            let value = try decimalValue(text, field: field)
+            guard value >= 0, NSDecimalNumber(decimal: value).stringValue == text else {
+                throw HostError.message("W06 quantity is negative or noncanonical")
+            }
+        }
+    }
+    guard holdingGIDs == Set(targets.compactMap { $0["holding_gid"] as? String }) else { throw HostError.message("W06 affected holding inventory differs") }
+    for items in [targets.map { $0["object"] as! [String: Any] }, dependents, retained, accounts, holdings] {
+        let uris = items.map { $0["object_uri"] as! String }
+        guard uris == uris.sorted() else { throw HostError.message("W06 inventory order is noncanonical") }
+    }
+    let inventory = try JSONDecoder().decode(SupportedDeletionInventory.self, from: JSONSerialization.data(withJSONObject: graph))
+    let primary = inventory.targets[0]
+    guard let account = inventory.accounts.first(where: { $0.gid == primary.accountGID }),
+          primary.object.gid == raw["transaction_gid"] as? String,
+          primary.object.entity == raw["transaction_entity"] as? String,
+          plan.expectedAccountGID == account.gid, plan.currencyUnit == account.currency,
+          plan.expectedCachedAccountBalance == account.priorCache,
+          let postcondition = raw["expected_postcondition"] as? [String: Any] else {
+        throw HostError.message("W06 primary target or account differs from envelope")
+    }
+    let expected = try JSONSerialization.jsonObject(with: JSONEncoder().encode(supportedDeletionPostcondition(inventory))) as! [String: Any]
+    guard try canonicalV2Digest(postcondition) == canonicalV2Digest(expected) else {
+        throw HostError.message("W06 postcondition differs from complete deletion")
+    }
+}
+
+let supportedDeletionEntities: Set<String> = [
+    "DepositTransaction", "WithdrawTransaction", "RefundTransaction",
+    "TransferWithdrawTransaction", "TransferDepositTransaction", "ReconcileTransaction",
+    "InvestmentBuyTransaction", "InvestmentSellTransaction",
+]
+
+func deletionRelatedObjects(_ object: NSManagedObject, _ relationship: NSRelationshipDescription) throws -> [NSManagedObject] {
+    if relationship.isToMany {
+        if relationship.isOrdered, let ordered = object.value(forKey: relationship.name) as? NSOrderedSet {
+            let objects = ordered.array.compactMap { $0 as? NSManagedObject }
+            guard objects.count == ordered.count else { throw HostError.message("W06 invalid ordered relationship") }
+            return objects
+        }
+        return try relatedObjects(object, relationship.name).sorted {
+            $0.objectID.uriRepresentation().absoluteString < $1.objectID.uriRepresentation().absoluteString
+        }
+    }
+    guard let value = object.value(forKey: relationship.name) else { return [] }
+    guard let related = value as? NSManagedObject else { throw HostError.message("W06 invalid to-one relationship") }
+    return [related]
+}
+
+func deletionAttributeValue(_ value: Any?) throws -> Any {
+    guard let value else { return NSNull() }
+    if value is NSNull { return NSNull() }
+    if let date = value as? Date {
+        return ["date": NSNumber(value: date.timeIntervalSinceReferenceDate).stringValue]
+    }
+    if let data = value as? Data { return ["data": data.base64EncodedString()] }
+    if let number = value as? NSNumber {
+        guard number.doubleValue.isFinite else { throw HostError.message("W06 nonfinite native attribute") }
+        return ["number": number.stringValue, "type": String(cString: number.objCType)]
+    }
+    if let string = value as? String { return ["string": string] }
+    if let array = value as? NSArray { return try array.map { try deletionAttributeValue($0) } }
+    if let dictionary = value as? NSDictionary {
+        // Installed model-48 holdings archive manual prices with NSDate keys.
+        // Bind each dated price without converting its native key into a string.
+        if dictionary.count > 0 && dictionary.allKeys.allSatisfy({ $0 is Date }) {
+            let dates = dictionary.allKeys.map { $0 as! Date }.sorted()
+            let entries = try dates.map { date -> [String: Any] in
+                guard date.timeIntervalSinceReferenceDate.isFinite else {
+                    throw HostError.message("W06 nonfinite historical-price date")
+                }
+                guard let price = dictionary.object(forKey: date) as? NSNumber,
+                      CFGetTypeID(price) != CFBooleanGetTypeID(), price.doubleValue.isFinite else {
+                    throw HostError.message("W06 historical-price value must be a finite number")
+                }
+                return ["date": NSNumber(value: date.timeIntervalSinceReferenceDate).stringValue,
+                        "value": try deletionAttributeValue(price)]
+            }
+            return ["dated_dictionary": entries]
+        }
+        var result: [String: Any] = [:]
+        for (key, item) in dictionary {
+            guard let name = key as? String else { throw HostError.message("W06 nonstring native dictionary key") }
+            result[name] = try deletionAttributeValue(item)
+        }
+        return ["dictionary": result]
+    }
+    throw HostError.message("W06 unsupported native attribute type \(type(of: value))")
+}
+
+func deletionFingerprint(_ object: NSManagedObject, excluding: Set<NSManagedObjectID> = [],
+                         attributes: [String: Any] = [:]) throws -> String {
+    var snapshot: [String: Any] = [:]
+    for name in object.entity.attributesByName.keys {
+        snapshot["attribute:\(name)"] = try deletionAttributeValue(attributes[name] ?? object.value(forKey: name))
+    }
+    // Includes payee, unlike immutableTransactionFingerprint's reassignment contract.
+    for (name, relationship) in object.entity.relationshipsByName {
+        let objects = try deletionRelatedObjects(object, relationship).filter { !excluding.contains($0.objectID) }
+        let uris = objects.map { $0.objectID.uriRepresentation().absoluteString }
+        snapshot["relationship:\(name)"] = relationship.isToMany ? uris : uris.first.map { $0 as Any } ?? NSNull()
+    }
+    let data = try JSONSerialization.data(withJSONObject: snapshot, options: [.sortedKeys])
+    return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+}
+
+func deletionObjectState(_ object: NSManagedObject, excluding: Set<NSManagedObjectID>? = nil,
+                         attributes: [String: Any] = [:]) throws -> DeletionObjectState {
+    guard let entity = object.entity.name, !object.objectID.isTemporaryID else {
+        throw HostError.message("W06 requires a durable native object")
+    }
+    let gid = object.entity.attributesByName["GID"] != nil ? object.value(forKey: "GID") as? String : nil
+    return DeletionObjectState(entity: entity, gid: gid,
+        objectURI: object.objectID.uriRepresentation().absoluteString,
+        fingerprint: try deletionFingerprint(object),
+        finalFingerprint: try excluding.map { try deletionFingerprint(object, excluding: $0, attributes: attributes) })
+}
+
+func supportedDeletionInventory(gids: [String], context: NSManagedObjectContext) throws -> SupportedDeletionInventory {
+    guard !gids.isEmpty, Set(gids).count == gids.count,
+          gids.allSatisfy({ !isBlank($0) && $0 == $0.trimmingCharacters(in: planWhitespace) }) else {
+        throw HostError.message("W06 requires distinct normalized target GIDs")
+    }
+    let targets = try gids.map { gid -> NSManagedObject in
+        let matches = try creationObjects(entity: "SyncObject", gid: gid, context: context)
+        guard matches.count == 1, let row = matches.first else {
+            throw HostError.message("W06 target GID \(gid) matched \(matches.count) objects")
+        }
+        return row
+    }
+    let targetIDs = Set(targets.map { $0.objectID })
+    var accounts: Set<NSManagedObject> = []
+    var holdings: Set<NSManagedObject> = []
+    var ownerURI: String?
+    for row in targets {
+        guard supportedDeletionEntities.contains(row.entity.name ?? ""),
+              let account = row.value(forKey: "account") as? NSManagedObject,
+              let owner = account.value(forKey: "user") as? NSManagedObject,
+              let accountGID = account.value(forKey: "GID") as? String,
+              let currency = account.value(forKey: "currencyName") as? String,
+              ["GBP", "EUR", "USD", "CAD"].contains(currency),
+              (row.value(forKey: "voidCheque") as? NSNumber)?.intValue == 0,
+              (row.value(forKey: "flags") as? NSNumber)?.intValue == 0,
+              [1, 2].contains((row.value(forKey: "status") as? NSNumber)?.intValue ?? -1),
+              isBlank(row.value(forKey: "autoSkipLinkedScheduledTransactionGID") as? String ?? "") else {
+            throw HostError.message("W06 target has an unsupported type, state or account")
+        }
+        let observedOwner = owner.objectID.uriRepresentation().absoluteString
+        guard ownerURI == nil || ownerURI == observedOwner else { throw HostError.message("W06 targets have different owners") }
+        ownerURI = observedOwner
+        _ = try reviewedAccount(accountGID, ownerURI: observedOwner, currency: currency, context: context)
+        guard try relatedObjects(account, "transactionsHistory").contains(row) else {
+            throw HostError.message("W06 target account inverse is inconsistent")
+        }
+        accounts.insert(account)
+        if let holding = row.value(forKey: "investmentHolding") as? NSManagedObject {
+            guard (holding.value(forKey: "investmentAccount") as? NSManagedObject)?.objectID == account.objectID,
+                  try relatedObjects(account, "investmentHoldings").contains(holding),
+                  try relatedObjects(holding, "investmentTransactions").contains(row) else {
+                throw HostError.message("W06 holding ownership or inverse is inconsistent")
+            }
+            holdings.insert(holding)
+        } else if ["InvestmentBuyTransaction", "InvestmentSellTransaction"].contains(row.entity.name ?? "") {
+            throw HostError.message("W06 trade is missing its holding")
+        }
+        if row.entity.name == "TransferWithdrawTransaction" || row.entity.name == "TransferDepositTransaction" {
+            let outgoing = row.entity.name == "TransferWithdrawTransaction"
+            let peerKey = outgoing ? "recipientTransaction" : "senderTransaction"
+            let inverseKey = outgoing ? "senderTransaction" : "recipientTransaction"
+            let peerAccountKey = outgoing ? "recipientAccount" : "senderAccount"
+            let inverseAccountKey = outgoing ? "senderAccount" : "recipientAccount"
+            guard let peer = row.value(forKey: peerKey) as? NSManagedObject,
+                  peer.entity.name == (outgoing ? "TransferDepositTransaction" : "TransferWithdrawTransaction"),
+                  targetIDs.contains(peer.objectID),
+                  (peer.value(forKey: inverseKey) as? NSManagedObject)?.objectID == row.objectID,
+                  (row.value(forKey: peerAccountKey) as? NSManagedObject)?.objectID ==
+                    (peer.value(forKey: "account") as? NSManagedObject)?.objectID,
+                  (peer.value(forKey: inverseAccountKey) as? NSManagedObject)?.objectID == account.objectID else {
+                throw HostError.message("W06 requires the exact reciprocal transfer pair")
+            }
+        }
+        if row.entity.name == "WithdrawTransaction" || row.entity.name == "RefundTransaction" {
+            let withdrawal = row.entity.name == "WithdrawTransaction"
+            let key = withdrawal ? "refundTransactionsLinks" : "withdrawTransactionsLinks"
+            let links = try relatedObjects(row, key)
+            guard withdrawal || !links.isEmpty else { throw HostError.message("W06 refund has no original withdrawal") }
+            for link in links {
+                guard let original = link.value(forKey: "withdrawTransaction") as? NSManagedObject,
+                      let refund = link.value(forKey: "refundTransaction") as? NSManagedObject,
+                      original.entity.name == "WithdrawTransaction", refund.entity.name == "RefundTransaction",
+                      (withdrawal ? original : refund).objectID == row.objectID,
+                      (original.value(forKey: "account") as? NSManagedObject)?.objectID == account.objectID,
+                      (refund.value(forKey: "account") as? NSManagedObject)?.objectID == account.objectID,
+                      try relatedObjects(original, "refundTransactionsLinks").contains(link),
+                      try relatedObjects(refund, "withdrawTransactionsLinks").contains(link) else {
+                    throw HostError.message("W06 refund dependency is inconsistent")
+                }
+                guard !withdrawal || targetIDs.contains(refund.objectID) else {
+                    throw HostError.message("W06 withdrawal deletion requires explicitly selected dependent refunds")
+                }
+            }
+        }
+    }
+    var deleted = Set(targets)
+    var pending = targets
+    let dependentEntities: Set<String> = ["CategoryAssigment", "TransactionBudgetLink", "Image", "WithdrawRefundTransactionLink"]
+    while let object = pending.popLast() {
+        for relationship in object.entity.relationshipsByName.values {
+            for related in try deletionRelatedObjects(object, relationship) {
+                guard relationship.deleteRule != .denyDeleteRule,
+                      relationship.deleteRule != .noActionDeleteRule else {
+                    throw HostError.message("W06 populated relationship has an unsupported deletion rule")
+                }
+                guard relationship.deleteRule == .cascadeDeleteRule else { continue }
+                guard dependentEntities.contains(related.entity.name ?? "") else {
+                    throw HostError.message("W06 cascade reaches an unsupported entity")
+                }
+                // A cascade child must not also own a scheduled/string-history assignment.
+                for name in ["scheduledTransacition", "stringHistoryItem"] where related.entity.relationshipsByName[name] != nil {
+                    guard related.value(forKey: name) == nil else { throw HostError.message("W06 cascade child is shared with retained history") }
+                }
+                if deleted.insert(related).inserted { pending.append(related) }
+            }
+        }
+    }
+    let deletedIDs = Set(deleted.map { $0.objectID })
+    var retained: Set<NSManagedObject> = accounts.union(holdings)
+    for object in deleted {
+        for relationship in object.entity.relationshipsByName.values {
+            for related in try deletionRelatedObjects(object, relationship) where !deletedIDs.contains(related.objectID) {
+                guard let inverse = relationship.inverseRelationship,
+                      try deletionRelatedObjects(related, inverse).contains(object) else {
+                    throw HostError.message("W06 dependent inverse is inconsistent")
+                }
+                retained.insert(related)
+            }
+        }
+    }
+    // Bind the whole affected financial history, so a changed retained row cannot
+    // be accepted merely because its contribution rounds to the same balance.
+    for account in accounts {
+        retained.formUnion(try relatedObjects(account, "transactionsHistory").filter { !deletedIDs.contains($0.objectID) })
+        retained.formUnion(try relatedObjects(account, "investmentHoldings"))
+    }
+    func text(_ value: Decimal) -> String { NSDecimalNumber(decimal: value).stringValue }
+    var cacheOverrides: [NSManagedObjectID: [String: Any]] = [:]
+    let accountStates = try accounts.map { account -> DeletionAccountState in
+        let prior = try investmentLedger(account)
+        let final = try investmentLedger(account, excluding: deletedIDs)
+        let cache = try nativeDecimal(account, "ballance")
+        let delta = try targets.filter { ($0.value(forKey: "account") as? NSManagedObject)?.objectID == account.objectID }
+            .reduce(Decimal(0)) { try $0 - nativeDecimal($1, "amount") }
+        let finalCache = usesFixtureBalanceCache(context) ? cache + delta : cache
+        if usesFixtureBalanceCache(context) { cacheOverrides[account.objectID] = ["ballance": nativeDouble(finalCache)] }
+        return DeletionAccountState(objectURI: account.objectID.uriRepresentation().absoluteString,
+            gid: account.value(forKey: "GID") as! String, currency: account.value(forKey: "currencyName") as! String,
+            priorBalance: text(prior), finalBalance: text(final), priorCache: text(cache), finalCache: text(finalCache))
+    }.sorted { $0.objectURI < $1.objectURI }
+    let holdingStates = try holdings.map { holding -> DeletionHoldingState in
+        let account = holding.value(forKey: "investmentAccount") as! NSManagedObject
+        guard let gid = holding.value(forKey: "GID") as? String,
+              let symbol = holding.value(forKey: "symbol") as? String,
+              let assetType = (holding.value(forKey: "investmentObjectType") as? NSNumber)?.intValue,
+              assetType == (account.entity.name == "ForexAccount" ? 1 : 0) else {
+            throw HostError.message("W06 holding has an unsupported asset identity")
+        }
+        return DeletionHoldingState(objectURI: holding.objectID.uriRepresentation().absoluteString,
+            gid: gid, accountGID: account.value(forKey: "GID") as! String, symbol: symbol, assetType: assetType,
+            priorUnits: text(try investmentUnits(holding, account: account)),
+            finalUnits: text(try investmentUnits(holding, account: account, excluding: deletedIDs)))
+    }.sorted { $0.objectURI < $1.objectURI }
+    let targetStates = try targets.map { row -> DeletionTargetState in
+        let holding = row.value(forKey: "investmentHolding") as? NSManagedObject
+        let units = holding == nil ? Decimal(0) : try nativeDecimal(row, "numberOfShares")
+        return DeletionTargetState(object: try deletionObjectState(row),
+            accountGID: (row.value(forKey: "account") as! NSManagedObject).value(forKey: "GID") as! String,
+            amount: text(try nativeDecimal(row, "amount")), holdingGID: holding?.value(forKey: "GID") as? String,
+            signedUnits: text(row.entity.name == "InvestmentSellTransaction" ? -units : units),
+            description: row.value(forKey: "desc") as? String ?? "")
+    }.sorted { $0.object.objectURI < $1.object.objectURI }
+    return SupportedDeletionInventory(ownerURI: ownerURI!, targets: targetStates,
+        dependents: try deleted.filter { !targetIDs.contains($0.objectID) }.map { try deletionObjectState($0) }
+            .sorted { $0.objectURI < $1.objectURI },
+        retained: try retained.map { try deletionObjectState($0, excluding: deletedIDs, attributes: cacheOverrides[$0.objectID] ?? [:]) }
+            .sorted { $0.objectURI < $1.objectURI }, accounts: accountStates, holdings: holdingStates)
+}
+
+func inspectSupportedDeletionInventory(_ arguments: [String]) throws -> SupportedDeletionInventory {
+    guard arguments.count >= 7, arguments.count % 2 == 1,
+          arguments[0] == "--coredata-deletion-inventory", arguments[1] == "--store", arguments[3] == "--model",
+          stride(from: 5, to: arguments.count, by: 2).allSatisfy({ arguments[$0] == "--target" }) else {
+        throw HostError.message("usage: MoneyWizTools --coredata-deletion-inventory --store PATH --model PATH --target GID [--target GID ...]")
+    }
+    let container = try loadContainer(storeURL: URL(fileURLWithPath: arguments[2]),
+        modelURL: URL(fileURLWithPath: arguments[4]), expectedChecksum: supportedWriterPolicy.modelChecksum, readOnly: true)
+    let context = container.newBackgroundContext()
+    var result: Result<SupportedDeletionInventory, Error> = .failure(HostError.message("W06 inventory did not run"))
+    context.performAndWait {
+        result = Result { try supportedDeletionInventory(gids: stride(from: 6, to: arguments.count, by: 2).map { arguments[$0] }, context: context) }
+    }
+    return try result.get()
+}
+
+func resolveDeletionObject(_ state: DeletionObjectState, context: NSManagedObjectContext) throws -> NSManagedObject? {
+    guard let coordinator = context.persistentStoreCoordinator, let url = URL(string: state.objectURI),
+          let identity = coordinator.managedObjectID(forURIRepresentation: url), identity.entity.name == state.entity else {
+        throw HostError.message("W06 object URI cannot be resolved in the reviewed store")
+    }
+    let request = NSFetchRequest<NSManagedObject>(entityName: state.entity)
+    request.includesSubentities = false
+    request.predicate = NSPredicate(format: "SELF == %@", identity)
+    let matches = try context.fetch(request)
+    guard matches.count <= 1 else { throw HostError.message("W06 duplicate durable identity") }
+    if let gid = state.gid {
+        let collisions = try creationObjects(entity: "SyncObject", gid: gid, context: context)
+        guard collisions.count == matches.count, collisions.first?.objectID == matches.first?.objectID else {
+            throw HostError.message("W06 durable identity or GID was replaced")
+        }
+    }
+    return matches.first
+}
+
+func verifySupportedDeletionFinalState(_ inventory: SupportedDeletionInventory,
+                                       context: NSManagedObjectContext) throws {
+    for state in inventory.retained {
+        guard let object = try resolveDeletionObject(state, context: context),
+              try deletionFingerprint(object) == state.finalFingerprint else {
+            throw HostError.message("W06 retained object differs from its projected state: \(state.objectURI)")
+        }
+    }
+    for state in inventory.accounts {
+        let account = try reviewedAccount(state.gid, ownerURI: inventory.ownerURI, currency: state.currency, context: context)
+        guard account.objectID.uriRepresentation().absoluteString == state.objectURI,
+              try nativeDecimal(account, "ballance") == decimalValue(state.finalCache, field: "W06 final cache"),
+              try investmentLedger(account) == decimalValue(state.finalBalance, field: "W06 final balance") else {
+            throw HostError.message("W06 final account financial state differs")
+        }
+    }
+    for state in inventory.holdings {
+        let holding = try fetchExactObject(entityName: "InvestmentHolding", gid: state.gid, context: context)
+        guard holding.objectID.uriRepresentation().absoluteString == state.objectURI,
+              let account = holding.value(forKey: "investmentAccount") as? NSManagedObject,
+              account.value(forKey: "GID") as? String == state.accountGID,
+              holding.value(forKey: "symbol") as? String == state.symbol,
+              (holding.value(forKey: "investmentObjectType") as? NSNumber)?.intValue == state.assetType,
+              try investmentUnits(holding, account: account) == decimalValue(state.finalUnits, field: "W06 final quantity") else {
+            throw HostError.message("W06 final holding state differs")
+        }
+    }
+}
+
+func inspectSupportedDeletion(_ plan: WriterPlanV2, context: NSManagedObjectContext,
+                              saved: Bool = false) throws -> WriterResultV2 {
+    guard let coordinator = context.persistentStoreCoordinator else { throw HostError.message("W06 missing coordinator") }
+    try requireReviewedRuntime(plan, coordinator: coordinator)
+    let operation = plan.operations[0]
+    guard let inventory = operation.deletionInventory else { throw HostError.message("W06 deletion has no reviewed inventory") }
+    let states = inventory.targets.map { $0.object } + inventory.dependents
+    let objects = try states.map { try resolveDeletionObject($0, context: context) }
+    let present = objects.compactMap { $0 }
+    let classification: String
+    if present.count == objects.count {
+        let observed = try supportedDeletionInventory(gids: inventory.targets.map { $0.object.gid! }, context: context)
+        classification = observed == inventory ? "retry_safe" : "unknown"
+    } else if present.isEmpty {
+        try verifySupportedDeletionFinalState(inventory, context: context)
+        classification = saved ? "applied" : "noop"
+    } else {
+        classification = "unknown"
+    }
+    let success = classification == "applied" || classification == "noop"
+    let primary = inventory.targets[0].object
+    var item = WriterOperationResultV2(operationID: operation.operationID,
+        status: success ? classification : "unknown", transactionEntity: operation.transactionEntity,
+        transactionGID: operation.transactionGID, durableURI: primary.objectURI,
+        durableNumericID: primary.objectURI.components(separatedBy: "/p").last,
+        oldPayeeGID: nil, newPayeeGID: nil, postcondition: nil)
+    if success { item.supportedDeletionPostcondition = supportedDeletionPostcondition(inventory) }
+    return WriterResultV2(contractVersion: 2, planID: plan.planID, planDigest: plan.planDigest,
+        classification: classification, verified: success, operations: [item])
+}
+
+func deleteSupportedTransactionsV2(_ plan: WriterPlanV2, context: NSManagedObjectContext,
+                                  requireStopped: () throws -> Void) throws -> WriterResultV2 {
+    let before = try inspectSupportedDeletion(plan, context: context)
+    if before.classification == "noop" { return before }
+    guard before.classification == "retry_safe", let inventory = plan.operations[0].deletionInventory else {
+        throw HostError.message("W06 reviewed deletion closure is stale or partially absent")
+    }
+    // Resolve the entire closure before marking any object for deletion.
+    let states = inventory.targets.map { $0.object } + inventory.dependents
+    let objects = try states.map { state -> NSManagedObject in
+        guard let object = try resolveDeletionObject(state, context: context) else { throw HostError.message("W06 closure changed before deletion") }
+        return object
+    }
+    try requireStopped()
+    for object in objects { context.delete(object) }
+    if usesFixtureBalanceCache(context) {
+        for state in inventory.accounts {
+            let account = try reviewedAccount(state.gid, ownerURI: inventory.ownerURI, currency: state.currency, context: context)
+            account.setValue(nativeDouble(try decimalValue(state.finalCache, field: "W06 fixture cache")), forKey: "ballance")
+        }
+    }
+    context.processPendingChanges()
+    guard Set(context.deletedObjects.map { $0.objectID.uriRepresentation().absoluteString }) ==
+          Set(supportedDeletionPostcondition(inventory).deletedObjectURIs) else {
+        throw HostError.message("W06 native cascade differs from reviewed closure")
+    }
+    try verifySupportedDeletionFinalState(inventory, context: context)
+    try requireStopped()
+#if MONEYWIZ_TOOLS_TESTING
+    if writerTestCrashPoint == .beforeSave { _exit(86) }
+#endif
+    try context.save()
+#if MONEYWIZ_TOOLS_TESTING
+    if writerTestCrashPoint == .afterSave { _exit(87) }
+#endif
+    let readback = NSManagedObjectContext(concurrencyType: .privateQueueConcurrencyType)
+    readback.persistentStoreCoordinator = context.persistentStoreCoordinator
+    var result: Result<WriterResultV2, Error> = .failure(HostError.message("W06 fresh read-back did not run"))
+    readback.performAndWait {
+        result = Result {
+            let verified = try inspectSupportedDeletion(plan, context: readback, saved: true)
+            guard verified.classification == "applied" else { throw HostError.message("W06 independent read-back differs") }
+            return verified
+        }
+    }
+    return try result.get()
+}
+
+func preflightSupportedDeletionAtStore(_ plan: WriterPlanV2, storeURL: URL,
+                                       modelURL: URL) throws -> WriterResultV2? {
+    // A rejected plan must not enable persistent-history tables by opening the
+    // store writable. Inspect first, then repeat all guards in the write context.
+    let container = try loadContainer(storeURL: storeURL, modelURL: modelURL,
+        expectedChecksum: plan.modelChecksum, readOnly: true)
+    let inspection = try recoverPlanV2(plan, container: container)
+    if inspection.classification == "noop" { return inspection }
+    guard inspection.classification == "retry_safe" else {
+        throw HostError.message("W06 reviewed deletion closure is stale or partially absent")
+    }
+    return nil
+}
+
 func run() throws {
     let invocation = Array(CommandLine.arguments.dropFirst())
     if invocation.first == "--model-checksum" {
@@ -5287,6 +5968,12 @@ func run() throws {
         configureTransformers()
         let inventory = try inspectPayeeInventory(invocation)
         FileHandle.standardOutput.write(try JSONEncoder().encode(inventory))
+        FileHandle.standardOutput.write(Data([0x0A]))
+        return
+    }
+    if invocation.first == "--coredata-deletion-inventory" {
+        configureTransformers()
+        FileHandle.standardOutput.write(try JSONEncoder().encode(inspectSupportedDeletionInventory(invocation)))
         FileHandle.standardOutput.write(Data([0x0A]))
         return
     }
@@ -5361,6 +6048,10 @@ func run() throws {
         try requireReviewedApplication(plan.appIdentity, storeUUID: plan.storeIdentity.storeUUID,
             checksum: plan.modelChecksum, storeURL: arguments.store,
             allowLiveTestFlight: plan.capability == "write.adjust-balance-investment-total")
+        if plan.capability == "write.delete-supported-transactions" && !arguments.recoverOnly,
+           let noop = try preflightSupportedDeletionAtStore(plan, storeURL: arguments.store, modelURL: arguments.model) {
+            return try JSONEncoder().encode(noop)
+        }
         let container = try loadContainer(
             storeURL: arguments.store, modelURL: arguments.model,
             expectedChecksum: plan.modelChecksum, readOnly: arguments.recoverOnly

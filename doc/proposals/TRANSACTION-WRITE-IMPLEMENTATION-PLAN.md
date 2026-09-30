@@ -12,11 +12,14 @@ proposal to put P2/P3 in later releases.
 
 Update (2026-09-30): the bounded W01–W09 contracts are integrated through
 [PR #15](https://github.com/marcomc/moneywiz-tools/pull/15). The additional W05
-ordinary balance, investment cash and existing-asset quantity variants are under
-validation on `feat/w05-balance-units`; ordinary/cash/stock live trials, app
+ordinary balance, investment cash and existing-asset quantity variants are
+integrated through PR #16 at `d037afb`; ordinary/cash/stock live trials, app
 read-back, iCloud export and verified cleanup are complete. Forex quantity has
-disposable-store coverage. Supported-record deletion and first-Buy
-holding creation remain separate W06 and W08 extensions. See the current
+disposable-store coverage. The W06 supported-record deletion extension has
+completed fictional live app/sync acceptance and exact cleanup; final publication
+gates remain tracked in TODO. First-Buy holding creation is the next separate W08
+extension. The active user goal authorizes squash merge after local READY and
+current-head clean Codex review. See the current
 [Adjust Balance contract](../TRANSACTION-ADJUST-BALANCE.md) and TODO for gates.
 
 ## Purpose and related documents

@@ -17,6 +17,7 @@ compatibility is defined per write path.
 | W05 ordinary balance, investment cash and existing-asset quantity | Enabled; live trial accepted for ordinary balances, cash and stock quantity | Setapp MoneyWiz 2026.37.1 build 449; exact model, store and balance unit; Forex quantity tested on disposable stores. |
 | W07 reciprocal zero-fee transfer replacement | Enabled; live trial accepted | Exact reviewed Setapp app, model and store identity. |
 | W06 delete one investment-total adjustment | Enabled for authorized trials | Setapp MoneyWiz 2026.37.1 build 449, exact model and reviewed store identity. |
+| W06 delete supported transactions | Enabled; live trial accepted | Exact reviewed Setapp app/model/store; explicitly selected complete dependency closure. |
 | W08 investment cash events and Buy/Sell | Enabled for authorized trials | Setapp MoneyWiz 2026.37.1 build 449, exact model and reviewed store identity. |
 | Merge exact-normalized duplicate payees | Enabled for authorized trials | Exact reviewed model, app, store and complete reference inventory. |
 | Merge similar-name payees | Enabled for authorized trials | W09 requires one approved review-map row and the complete reference inventory. |
@@ -53,9 +54,19 @@ on a second device; Forex quantity has disposable-store acceptance only.
 Account coverage does not expand operation-specific semantics: W05 retains
 the reviewed no-holdings GBP investment-total contract alongside its explicit
 ordinary balance, investment cash and existing-asset quantity variants. W06
-still deletes only the reviewed investment-total adjustment, and W08
+additionally deletes the eight supported transaction entities with explicit
+refund/transfer closure and owned dependency cleanup. W08
 Buy/Sell requires an existing owned holding. Runtime capability entries remain
 enabled until the current implementation change completes independent review.
+
+The W06 extension passed native live deletion of 15 exported fictional rows
+and installed Python-client deletion of three further exported rows. Coverage
+includes refund-only retention, complete withdrawal/refund groups, reciprocal
+transfers, categories, cash and stock quantity adjustments, Buy/Sell, dividends
+and fees. Replay and recovery passed. Original ledgers, balances, quantities and
+manual-price archives were restored, and the three retained TEST rows stayed
+unchanged. After cleanup the app reported **Up to Date** and the exact exported
+record metadata was absent. No second-device check is claimed for these rows.
 
 No backup requirement is imposed by the command. The operator remains
 responsible for deciding their own recovery posture before modifying

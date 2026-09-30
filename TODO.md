@@ -155,7 +155,8 @@ currencies, investment cash and stock quantity; app read-back, iCloud export and
 cleanup restored original financial data while preserving the three retained
 TEST rows. Forex quantity has disposable-store coverage. Fresh installed-bundle
 validation passed: 917 tests on TestFlight and 55 on Setapp, including the
-Setapp-specific reference-store case. Current-head GitHub review remains pending.
+Setapp-specific reference-store case. PR #16 passed current-head GitHub review
+and merged at `d037afb`.
 
 ## P2 preparation: W06 guarded deletion
 
@@ -178,6 +179,22 @@ These snapshots do not establish deletion semantics for other transaction types.
 
 Linked transfers, scheduled records, holdings and ordinary transaction types
 remain outside this first variant until their native deletion behavior is known.
+
+### W06 supported-record extension
+
+Entry: W05 extensions merged through PR #16 at `d037afb`.
+Implementation branch: `feat/w06-supported-deletion`. The finite contract is
+[Supported Transaction Deletion](doc/TRANSACTION-DELETION.md).
+
+| Deliverable | Current evidence / remaining gate |
+| --- | --- |
+| Eight supported transaction entities and exact owned closure | Native model inventory inspected; 68 source native tests passed, including historical-price preservation and refusal |
+| Python/native input parity and exact receipt proof | Invalid-plan tests passed; eight altered native receipt proofs refused |
+| Installed planning, journaled apply, replay and recovery | Disposable CLI tests and live Python-client apply/replay/recovery passed; four journal entries verified |
+| Current actual-store identity and retained TEST protection | Verified current Setapp identity and read-only inventory on a coherent copy |
+| Native counterpart policy, live app/sync acceptance and cleanup | Native withdrawal deletion includes its refunds; 15 native and three client targets exported then deleted; financial state and three retained TEST rows restored |
+| Full fresh installed suite, privacy, lint and independent review closure | Pending integrated final gate |
+| PR, current-head Codex clean, squash merge and scoped cleanup | Pending; authorized by the active user goal |
 
 ## P2 preparation: W07 transfer replacement
 
