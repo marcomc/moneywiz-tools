@@ -275,6 +275,7 @@ DISPOSABLE_WRITE_CAPABILITIES = DISPOSABLE_CREATE_CAPABILITIES | {
     "write.investment-income",
     "write.investment-expense",
     "write.investment-buy",
+    "write.investment-buy-new-holding",
     "write.investment-sell",
     "write.merge-exact-payees",
     "write.merge-approved-fuzzy-payees",

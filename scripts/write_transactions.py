@@ -589,9 +589,15 @@ def build_investment_plan(request: Mapping[str, Any]) -> dict[str, Any]:
         "quantity", "unit_price", "fee", "fee_currency",
         "expected_prior_cash", "expected_prior_units",
     }
+    if operation.get("kind") == "investment_buy_new_holding":
+        required |= {"holding_type", "holding_description"}
     optional = {"description"} if "description" in operation else set()
     if set(operation) != required | optional or operation.get("kind") not in INVESTMENT_POLICIES:
         raise PlanValidationError("operation has unknown or missing W08 fields")
+    if operation["kind"] == "investment_buy_new_holding":
+        if operation["holding_gid"] is not None:
+            raise PlanValidationError("W08 first Buy request must leave holding_gid null")
+        operation["holding_gid"] = f"{operation['account_gid']}-{operation['holding_symbol']}-0"
     for field in ("amount", "quantity", "unit_price", "fee", "expected_prior_cash"):
         operation[field] = normalize_decimal(operation[field], f"operation.{field}")
     for field in ("expected_prior_units",):

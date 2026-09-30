@@ -121,3 +121,44 @@ def test_w08_receipt_requires_derived_state() -> None:
     result["operations"][0]["investment_details"]["expected_final_units"] = "13"
     with pytest.raises(PlanValidationError, match="W08 receipt"):
         validate_result(plan, result)
+
+
+def first_buy_request(*, holding_type: str = "Stock") -> dict:
+    value = request()
+    value["operation"].update(kind="investment_buy_new_holding", holding_gid=None,
+                              holding_symbol="FIRST", asset_type=0, expected_prior_units="0",
+                              holding_type=holding_type, holding_description="Synthetic first holding")
+    return value
+
+
+def test_first_buy_derives_native_account_symbol_gid() -> None:
+    plan = build_investment_plan(first_buy_request())
+    operation = plan["operations"][0]
+    assert plan["capability"] == "write.investment-buy-new-holding"
+    assert operation["holding_gid"] == "investment-1-FIRST-0"
+    assert operation["expected_final_units"] == "2"
+    assert operation["expected_final_cash"] == "78"
+    assert validate_plan(plan) == plan
+
+
+@pytest.mark.parametrize("field,value", [
+    ("holding_gid", "existing"), ("holding_type", "Unknown"),
+    ("holding_type", None), ("holding_type", []),
+    ("holding_description", " "), ("holding_description", True),
+    ("holding_description", " name"), ("holding_description", "name\u00a0"),
+    ("holding_description", "\u001c"), ("holding_symbol", None),
+    ("holding_symbol", " FIRST"), ("asset_type", 1), ("asset_type", False),
+    ("expected_prior_units", "1"), ("account_mode", "aggregate"),
+])
+def test_first_buy_request_rejects_unreviewed_creation(field, value) -> None:
+    payload = first_buy_request()
+    payload["operation"][field] = value
+    with pytest.raises(PlanValidationError):
+        build_investment_plan(payload)
+
+
+def test_first_buy_rejects_sub_native_quantity_precision() -> None:
+    payload = first_buy_request()
+    payload["operation"].update(quantity="0.000000001", unit_price="10000000", amount="-1.01")
+    with pytest.raises(PlanValidationError, match="first Buy"):
+        build_investment_plan(payload)

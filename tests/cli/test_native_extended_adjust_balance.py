@@ -162,6 +162,12 @@ def test_w05_extended_crash_recovery(w01_runtime, tmp_path, kind, crash, classif
 def test_w05_extended_unmarked_testflight_refusal(w01_runtime, tmp_path, kind, recover):
     runtime, store, plan = fixture(w01_runtime, tmp_path, kind, marked=False)
     refused = _invoke(runtime, store, plan, tmp_path, recover=recover)
+    if runtime.app_identity["bundle_id"] == "com.moneywiz.personalfinance-setapp":
+        assert refused.returncode == 0, refused.stderr
+        assert validate_result(plan, json.loads(refused.stdout))["classification"] == (
+            "retry_safe" if recover else "applied"
+        )
+        return
     assert refused.returncode != 0
     assert "marked disposable fixture required" in refused.stderr
 

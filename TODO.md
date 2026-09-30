@@ -193,8 +193,8 @@ Implementation branch: `feat/w06-supported-deletion`. The finite contract is
 | Installed planning, journaled apply, replay and recovery | Disposable CLI tests and live Python-client apply/replay/recovery passed; four journal entries verified |
 | Current actual-store identity and retained TEST protection | Verified current Setapp identity and read-only inventory on a coherent copy |
 | Native counterpart policy, live app/sync acceptance and cleanup | Native withdrawal deletion includes its refunds; 15 native and three client targets exported then deleted; financial state and three retained TEST rows restored |
-| Full fresh installed suite, privacy, lint and independent review closure | Pending integrated final gate |
-| PR, current-head Codex clean, squash merge and scoped cleanup | Pending; authorized by the active user goal |
+| Full fresh installed suite, privacy, lint and independent review closure | Complete: 988 full installed tests, 123 Setapp complement tests and 17 publication tests; privacy/lint and independent review passed |
+| PR, current-head Codex clean, squash merge and scoped cleanup | PR #17 merged at `9ffc516`; reviewed head `2e1f0fe` clean; branch removed |
 
 ## P2 preparation: W07 transfer replacement
 
@@ -221,7 +221,8 @@ show ordinary investment cash events and linked Buy/Sell rows. Aggregate
 accounts must not acquire invented holdings or assetless Sell transactions.
 Model-48 holdings have no mutable current-units attribute; units and investment
 cash are derived from transaction history and must be checked independently.
-Only marked disposable stores are authorized for implementation validation.
+The bounded contracts are integrated through PR #15; reviewed Setapp live
+admission and fictional application/sync acceptance are complete.
 
 | ID | Deliverable | Acceptance | State |
 | --- | --- | --- | --- |
@@ -230,8 +231,23 @@ Only marked disposable stores are authorized for implementation validation.
 | P3-W08-03 | Buy/Sell plans | Bind existing holding, asset identity/type, positive quantity and price, commission/currency, account cash and holding units | Implemented for existing holdings; disposable validation passed |
 | P3-W08-04 | Native atomic persistence | One guarded save; exact derived cash and unit deltas, unchanged unrelated objects, fresh-context read-back | Implemented; disposable persistence and read-back passed |
 | P3-W08-05 | Recovery and refusal | Verified no-op replay, before/after-save recovery; reject stale, ambiguous, FX and unsupported zero-value shapes | Implemented; replay, crash and refusal checks passed |
-| P3-W08-06 | Bundle validation and independent review | Installed bundle, privacy scan, regressions, local READY and current-head GitHub review | Fresh bundle and direct admission passed; 709 integrated and 29 installed tests passed; independent local review clean; GitHub review pending |
-| P3-W08-07 | Application and sync acceptance | MoneyWiz reopen/history and operation-specific sync evidence before live promotion | Pending separate live-write authorization |
+| P3-W08-06 | Bundle validation and independent review | Installed bundle, privacy scan, regressions, local READY and current-head GitHub review | Complete for the bounded contracts integrated through PR #15 |
+| P3-W08-07 | Application and sync acceptance | MoneyWiz reopen/history and operation-specific sync evidence before live promotion | Authorized fictional live trials, app/export acceptance and cleanup complete |
+
+### W08 first-Buy holding extension
+
+Entry: W06 extension merged through PR #17 at `9ffc516`.
+Branch: `feat/w08-first-buy-holding`. The active goal authorizes implementation,
+fictional Revolut acceptance, publication and merge after the required gates.
+
+| Deliverable | Evidence / remaining gate |
+| --- | --- |
+| Native first-Buy reference and cleanup | Native Stock Buy/holding fields and NSDate-keyed price archive captured; both fictional records removed; ledger, units and retained TEST rows restored; app cash and iCloud verified |
+| Strict plans, ownership, duplicate protection and atomic persistence | Implemented as `investment_buy_new_holding`; live admission binds the reviewed Setapp app/model/store/owner identity |
+| Empty/existing portfolio, native holding types, replay and crash recovery | 124 candidate regressions passed, including all native holding type choices and crash/refusal cases |
+| Existing-holding Buy/Sell, installed bundle and direct admission | Candidate installed coverage passed, including 44 Setapp first-Buy checks; fresh full installed, publication and privacy gates required before PR |
+| Fictional live first Buy, app/export acceptance and cleanup | Installed first Buy and subsequent Buy/Sell, replay/recovery, native app and exact iCloud export/deletion verified; financial baseline and retained TEST restored |
+| Independent review, current-head Codex clean, squash merge and cleanup | Promotion requires local READY and current-head Codex clean; same coordinator and ledger retained for W08 |
 
 ## P3 preparation: W09 payee merges
 

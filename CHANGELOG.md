@@ -43,6 +43,11 @@
 - W08 guarded investment income, expense and existing-holding Buy/Sell plans
   on marked disposable model-48 stores and the reviewed live Setapp runtime,
   with cash and units preflight, atomic persistence, read-back and recovery.
+- W08 first-Buy plans creating a manual investment holding and its transaction
+  atomically, with native asset metadata and manual price history, duplicate
+  protection, durable holding receipts and interruption recovery on disposable
+  model-48 stores and the reviewed Setapp runtime. Fictional live trials verified
+  first Buy, subsequent Buy/Sell, app/iCloud acceptance and complete cleanup.
 - W09 exact and individually approved fuzzy payee merge plans on marked
   disposable model-48 stores and the reviewed live Setapp runtime, with complete
   native reference migration, one-save deletion, fresh read-back and recovery.

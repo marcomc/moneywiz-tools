@@ -45,6 +45,38 @@ prior units. Buy amount is `-(quantity × price + fee)`; Sell amount is
 negative resulting unit count. Trades have no category split or cash-event
 type. Zero-value, FX and assetless trades are outside this contract.
 
+## First Buy creating a holding
+
+`investment_buy_new_holding` uses the separate
+`write.investment-buy-new-holding` capability on marked disposable model-48
+stores and the reviewed Setapp runtime. It creates one manual `InvestmentHolding` and its
+first Buy in the same save. Existing-holding Buy/Sell keep their existing contract.
+
+Use the same request fields as Buy, with `holding_gid: null`, `asset_type: 0`,
+`expected_prior_units: "0"`, and explicit `holding_type` and
+`holding_description` strings. `holding_type` must be a choice from the native
+investment editor, such as `Stock`, `ETF`, `Commodity` or `Other`.
+The plan derives the native holding GID as `account_gid-symbol-0`. Quantity
+supports at most eight decimal places. The holding has zero opening shares,
+the reviewed unit price, and an NSDate-keyed manual price entry at UTC midnight
+on the transaction date. Online-price and online-banking flags remain off.
+
+The first Buy works in an empty InvestmentAccount or alongside other holdings.
+It refuses an existing symbol in that account, a colliding GID, another owner,
+stale cash, and a holding without its corresponding Buy. Replay verifies both
+objects and returns their durable identities. The receipt includes
+`holding_creation`; the Python client checks its GID, type, description and URI.
+
+Native Forex accounts create currency holdings through Exchange, which is a
+distinct operation. This first-Buy contract does not create Forex holdings.
+
+Authorized fictional Setapp trials verified first Buy and subsequent Buy/Sell
+through the installed client, journal replay/recovery, native app cash and units,
+and operation-specific iCloud export. All new trial transactions and the empty
+fictional holding were removed; existing financial history, holding metadata and
+the intentionally retained TEST rows matched the baseline after app sync.
+Second-device acceptance was not performed for these temporary records.
+
 The host verifies the account and holding ownership, cash and unit history,
 then checks the persisted transaction and derived state. Replay returns a
 verified no-op; recovery distinguishes an unchanged store from a completed
