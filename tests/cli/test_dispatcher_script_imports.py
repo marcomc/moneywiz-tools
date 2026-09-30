@@ -271,7 +271,9 @@ def test_architecture_docs_bound_open_work_to_future_writer_evolution() -> None:
     swift_host = (repo_root / "scripts/moneywiz_tools_host.swift").read_text()
 
     assert "Generic write helpers" not in srs
-    assert "only verified live write is payee reassignment" in srs
+    assert "an enabled or verified" in srs
+    assert "Version-2 apply and recovery independently enforce" in srs
+    assert "individually approved fuzzy pair plans" in srs
     assert "Core Data owns `Z_OPT` initialization and updates" in concepts
     assert "creation sequence still needs a pre/post capture" not in concepts
 

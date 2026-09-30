@@ -2,8 +2,8 @@
 
 W04 changes only the native `reconciled` attribute of selected existing
 transactions. `reconcile` and `unreconcile` have separate capabilities. Both
-are restricted to invented, marked model-48 stores; live use requires later
-MoneyWiz application and sync acceptance.
+are enabled for authorized Setapp MoneyWiz 2026.37.1 build 449 live execution.
+TestFlight regression stores require the disposable metadata marker.
 
 ## Build and review a plan
 
@@ -19,7 +19,7 @@ Use `transaction unreconcile` for a correction, with a nonempty
 `source_scope` and a nonempty `operations` array. Each operation names an
 ordinary deposit, withdrawal or refund by exact entity and GID, its account
 GID, expected prior `reconciled` value, and exact native `status` and `flags`.
-Active native status `1` is required. The native status and flags are raw guards;
+Native status `1` or the app-observed cleared status `2` is required. The native status and flags are raw guards;
 their business meanings are not inferred or changed. Reconcile expects `false`
 and sets `true`; unreconcile expects `true` and sets `false`.
 
@@ -28,8 +28,9 @@ and sets `true`; unreconcile expects `true` and sets `false`.
 verified balance, matching source/parsed counts, and the sorted unique GIDs of
 **every** transaction in the account. It is the reviewer's attestation of source
 evidence; a caller-supplied `true` does not itself verify a bank statement.
-The native host compares the GID inventory and cached balance with the store
-before saving and during independent read-back. A snapshot's cached balance is
+The native host compares the complete GID inventory and reviewed balance with
+the store before saving and during independent read-back. Live balances use
+the ledger; invented fixture balances use their cache. A snapshot's cached balance is
 not external-source evidence. Keep the request and plan private.
 
 ## Apply and recover

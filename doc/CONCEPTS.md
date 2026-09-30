@@ -67,7 +67,8 @@ This document captures important conventions in the MoneyWiz database that help 
 
 - Do not use raw SQL as a product write path.
 - Use a named `moneywiz` operation only after
-  `moneywiz compatibility --capability NAME` reports `verified`.
+  `moneywiz compatibility --capability NAME` reports `enabled` or `verified`,
+  and satisfy the operation-specific reviewed runtime and plan guards.
 - Treat a SQLite transaction as atomicity only, not as a replacement for a
   Core Data persistent-history transaction.
 - Version every live-write rule by MoneyWiz app build, Core Data model

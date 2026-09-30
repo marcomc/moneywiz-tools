@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -22,7 +23,7 @@ from writer_client import WriterClient, WriterClientError
 
 
 def new_store(runtime: W01Runtime, directory: Path, *, units: bool,
-              marked: bool = True) -> tuple[Path, dict]:
+              marked: bool = True, account_entity: str = "InvestmentAccount") -> tuple[Path, dict]:
     store = directory / "w08-disposable.sqlite"
     flag = "--w08-units" if units else "--w08-aggregate"
     if not marked:
@@ -30,7 +31,7 @@ def new_store(runtime: W01Runtime, directory: Path, *, units: bool,
     completed = subprocess.run(
         [str(runtime.fixture_builder), "--store", str(store), "--model",
          str(runtime.model), flag],
-        cwd=directory, env=runtime.environment, capture_output=True, text=True,
+        cwd=directory, env={**runtime.environment, "MONEYWIZ_TEST_ACCOUNT_ENTITY": account_entity}, capture_output=True, text=True,
         check=False,
     )
     assert completed.returncode == 0, completed.stderr
@@ -81,6 +82,7 @@ def inspect(runtime: W01Runtime, store: Path, write_plan: dict,
     return json.loads(completed.stdout)
 
 
+@pytest.mark.parametrize("account_entity", ["InvestmentAccount", "ForexAccount"])
 @pytest.mark.parametrize("kind,aggregate", [
     ("investment_income", True),
     ("investment_expense", False),
@@ -88,9 +90,9 @@ def inspect(runtime: W01Runtime, store: Path, write_plan: dict,
     ("investment_sell", False),
 ])
 def test_w08_applies_replays_and_recovers(
-    w01_runtime: W01Runtime, tmp_path: Path, kind: str, aggregate: bool
+    w01_runtime: W01Runtime, tmp_path: Path, kind: str, aggregate: bool, account_entity: str
 ) -> None:
-    store, identity = new_store(w01_runtime, tmp_path, units=not aggregate)
+    store, identity = new_store(w01_runtime, tmp_path, units=not aggregate, account_entity=account_entity)
     write_plan = plan(w01_runtime, identity, kind, aggregate=aggregate)
     before = _invoke(w01_runtime, store, write_plan, tmp_path, recover=True)
     assert before.returncode == 0, before.stderr
@@ -225,3 +227,25 @@ def test_w08_crash_boundary_recovers(
     recovered = _invoke(w01_runtime, store, write_plan, tmp_path, recover=True)
     assert recovered.returncode == 0, recovered.stderr
     assert validate_result(write_plan, json.loads(recovered.stdout))["classification"] == expected
+
+
+def test_cash_ledger_rounds_native_double_residue_to_cents(w01_runtime, tmp_path):
+    store, identity = new_store(w01_runtime, tmp_path, units=False)
+    with sqlite3.connect(store) as connection:
+        connection.execute("UPDATE ZSYNCOBJECT SET ZOPENINGBALANCE=? WHERE ZGID=?",
+                           (100.00000000000001, "w08-investment"))
+    request = investment_request("investment_income", aggregate=True)
+    request.update(store_identity={"store_uuid": identity["store_uuid"]},
+                   owner_uri=identity["owner_uri"], app_identity=w01_runtime.app_identity,
+                   expected_account_gid="w08-investment")
+    request["operation"].update(account_gid="w08-investment", payee_gid="w08-payee",
+                                tag_gids=[], category_splits=[{"category_gid":"w08-income", "amount":"2"}],
+                                description="TEST W08 visible description")
+    write_plan = build_investment_plan(request)
+    applied = _invoke(w01_runtime, store, write_plan, tmp_path)
+    assert applied.returncode == 0, applied.stderr
+    assert validate_result(write_plan, json.loads(applied.stdout))["classification"] == "applied"
+    assert inspect(w01_runtime, store, write_plan, tmp_path)["attributes"]["desc"] == "TEST W08 visible description"
+    with sqlite3.connect(store) as connection:
+        assert connection.execute("SELECT ZOPENINGBALANCE FROM ZSYNCOBJECT WHERE ZGID=?",
+                                  ("w08-investment",)).fetchone()[0] == 100.00000000000001

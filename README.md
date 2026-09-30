@@ -135,7 +135,9 @@ dispatcher keeps the development defaults under `doc/`. `--out-md` and
 
 The product has no generic raw-SQL mutation command. Every live write uses the
 bundled Core Data host, requires `--apply`, and is admitted only when the
-detected schema profile lists that operation as `verified`:
+detected schema profile lists that operation as `enabled` or `verified`.
+Version-2 plans also require the exact reviewed application, model and store
+identity at the native apply and recovery boundaries:
 
 ~~~sh
 moneywiz reassign-payees-by-id --from-payee-id 1234 --show-plan
@@ -153,8 +155,9 @@ moneywiz merge-duplicate-payees --show-plan \
 The legacy group command's apply path remains blocked. `moneywiz payee merge`
 builds a reviewed exact or individually approved fuzzy plan using the complete
 native reference inventory. It migrates references and deletes the source only
-on marked disposable model-48 stores; live merge capabilities remain blocked
-pending application and sync acceptance. See [Functions Reference](FUNCTIONS.md)
+on marked disposable model-48 stores or the reviewed live Setapp runtime.
+See [Live Write Compatibility](doc/LIVE-WRITE-COMPATIBILITY.md) for acceptance
+evidence and [Functions Reference](FUNCTIONS.md)
 for the decision flow.
 
 The reassignment command can reuse an existing destination payee or create one
@@ -169,14 +172,10 @@ The exact-duplicate policy and the approval-only fuzzy map are documented in
 [Payee Consolidation](doc/PAYEE-CONSOLIDATION.md).
 
 Version-2 plans support W01 creation, W02 scalar edits and W03 assignment
-replacement experiments on
-explicitly marked disposable stores. `moneywiz transaction create --help`
-describes plan generation;
-reviewed plans use `moneywiz write apply` and the durable recovery journal.
-Live income, expense and refund creation remain blocked pending application
-acceptance. W02 and W03 remain blocked for live stores; use
-`moneywiz transaction edit --help` or `moneywiz transaction assign --help`
-for guarded planning. See
+replacement on marked disposable stores and the reviewed live Setapp runtime.
+`moneywiz transaction create --help`, `moneywiz transaction edit --help` and
+`moneywiz transaction assign --help` describe guarded planning; reviewed plans
+use `moneywiz write apply` and the durable recovery journal. See
 [Transaction Creation](doc/TRANSACTION-CREATION.md) and
 [Transaction Editing](doc/TRANSACTION-EDITING.md), and
 [Transaction Assignment](doc/TRANSACTION-ASSIGNMENT.md).
@@ -195,7 +194,9 @@ moneywiz compatibility --format json
 An unknown profile is diagnostic-only. Profile selection includes the exact
 Core Data model checksum, so a future model that retains the same tables and
 columns is not treated as the verified model. A listed operation may be
-`verified`, `supported`, or `blocked`; only `verified` permits a live write.
+`enabled`, `verified`, `supported`, or `blocked`. Live writes require `enabled`
+or `verified` plus the operation-specific runtime and plan guards; `supported`
+alone does not authorize mutation.
 Table and JSON output use the same nonzero status for unknown profiles and
 blocked or unknown requested capabilities.
 

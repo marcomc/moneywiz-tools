@@ -190,3 +190,67 @@ def test_native_and_python_share_the_same_private_store_lock(
         )
         assert inherited.returncode == 0, inherited.stderr
         assert inherited.stdout.strip() == "locked"
+
+
+@pytest.mark.parametrize("character", ["\u001c", "\u0085", "\u00a0", "\u2007", "\u202f", "\u3000"])
+def test_description_whitespace_rejected_by_both_ingresses(native_plan_validator, tmp_path, character):
+    from write_plan import PlanValidationError, compute_digest
+    raw = request()
+    raw["operation"].update(description="TEST description", reporting_exchange_rate="1")
+    validated = build_plan(raw)
+    bad = character + "TEST description"
+    raw["operation"]["description"] = bad
+    with pytest.raises(PlanValidationError):
+        build_plan(raw)
+    validated["operations"][0]["description"] = bad
+    validated["operations"][0]["expected_postcondition"]["description"] = bad
+    validated["plan_digest"] = compute_digest(validated)
+    source = tmp_path / "whitespace.json"
+    source.write_text(json.dumps(validated))
+    result = subprocess.run([str(native_plan_validator), str(source)], capture_output=True, text=True)
+    assert result.returncode == 2
+
+
+@pytest.mark.parametrize("value", [True, 2.0, "2"])
+def test_contract_integer_type_is_exact_across_runtimes(native_plan_validator, tmp_path, value):
+    from write_plan import PlanValidationError, compute_digest
+    validated = build_plan(request())
+    validated["contract_version"] = value
+    validated["plan_digest"] = compute_digest(validated)
+    with pytest.raises(PlanValidationError):
+        validate_plan(validated)
+    source = tmp_path / "integer.json"
+    source.write_text(json.dumps(validated))
+    result = subprocess.run([str(native_plan_validator), str(source)], capture_output=True, text=True)
+    assert result.returncode == 2
+
+
+def test_description_zero_width_text_is_preserved_across_runtimes(native_plan_validator, tmp_path):
+    raw = request()
+    raw["operation"].update(description="\u200bTEST", reporting_exchange_rate="1")
+    validated = build_plan(raw)
+    source = tmp_path / "zero-width.json"
+    source.write_text(json.dumps(validated))
+    result = subprocess.run([str(native_plan_validator), str(source)], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == validated["plan_digest"]
+
+
+@pytest.mark.parametrize("field", ["plan_id", "source_event_id", "expected_account_gid"])
+@pytest.mark.parametrize("whitespace", ["\u001c", "\u2007"])
+def test_envelope_identity_whitespace_rejected_by_both_ingresses(
+    native_plan_validator, tmp_path, field, whitespace
+):
+    from write_plan import PlanValidationError, compute_digest
+
+    payload = validate_plan(plan())
+    payload[field] += whitespace
+    payload["plan_digest"] = compute_digest(payload)
+    with pytest.raises(PlanValidationError):
+        validate_plan(payload)
+    source = tmp_path / "identity-whitespace.json"
+    source.write_text(json.dumps(payload), encoding="utf-8")
+    result = subprocess.run([str(native_plan_validator), str(source)],
+                            capture_output=True, text=True, check=False)
+    assert result.returncode == 2
+    assert "nonblank trimmed text" in result.stderr

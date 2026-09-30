@@ -25,7 +25,7 @@ supported path for live MoneyWiz database writes.
 - [The product CLI is `moneywiz`](#the-product-cli-is-moneywiz) — `moneywiz-cli` is not part of the supported user interface.
 - [The reassignment writer uses contract version 1](#the-reassignment-writer-uses-contract-version-1) — Python submits bounded intent and the native host validates and saves it.
 - [Upstream updates are explicit and verified](#upstream-updates-are-explicit-and-verified) — each intake is reviewed before the product pin changes.
-- [Define the schema-profile support policy](tickets/schema-profile-support-policy.md) — recognized profiles are readable; live persistence requires a verified write capability.
+- [Define the schema-profile support policy](tickets/schema-profile-support-policy.md) — recognized profiles are readable; the initial verified-only policy is extended by the current [live capability contract](../LIVE-WRITE-COMPATIBILITY.md).
 - [Define evidence for a verified write profile](tickets/verified-write-profile-evidence.md) — capability evidence combines automated profile tests with a controlled MoneyWiz acceptance run.
 - [Define the compatibility register and retention policy](tickets/compatibility-register-retention-policy.md) — every release supports its declared entries; removal requires explicit deprecation.
 
@@ -38,8 +38,8 @@ supported path for live MoneyWiz database writes.
 
 ## Not yet specified
 
-- Contract evolution beyond the implemented reassignment-only version 1
-  exchange.
+- Operation variants beyond the implemented version-2 W01–W09 contracts. See
+  [Writer Recovery](../WRITER-RECOVERY.md) for the current exchange.
 - The future GUI interaction model; this map only reserves its product and
   writer boundaries.
 
@@ -92,6 +92,8 @@ reassignment operations. The bundled host independently validates those fields,
 preflights the complete plan, saves through Core Data, and returns JSON counts
 for created payees, reassigned transactions, merged payees, and migrated
 relationships. Version 1 rejects empty, merge, mixed, and unsupported payloads.
+Version 2 separately implements reviewed typed W01–W09 plans and durable
+recovery; it does not broaden the version-1 reassignment payload.
 
 ## Upstream updates are explicit and verified
 

@@ -125,7 +125,8 @@ func runFixtureInspection(_ args: [String]) throws {
     for key in transaction.entity.relationshipsByName.keys.sorted() {
         relationships[key] = try fixtureRelationshipIDs(transaction, key)
     }
-    let account = transaction.value(forKey: "account") as? NSManagedObject
+    let account = supportedAccountEntities.contains(transaction.entity.name ?? "")
+        ? transaction : transaction.value(forKey: "account") as? NSManagedObject
     let result: [String: Any] = [
         "entity": transaction.entity.name ?? "",
         "object_uri": transaction.objectID.uriRepresentation().absoluteString,
@@ -281,7 +282,7 @@ func runFixtureWriter() throws {
                 try runFixtureCrash(args)
             }
             guard (args.count == 4 || args.count == 5), args[0] == "--store", args[2] == "--model",
-                  args.count == 4 || ["--unmarked", "--w06", "--w06-unmarked", "--w06-linked",
+                  args.count == 4 || ["--unmarked", "--w06", "--w06-backdated", "--w06-unmarked", "--w06-linked",
                     "--w07-source", "--w07-paired", "--w07-reverse", "--w07-ambiguous",
                     "--w07-unmarked", "--w07-voided", "--w08-aggregate",
                     "--w08-units", "--w08-unmarked", "--w09-exact",
@@ -298,7 +299,7 @@ func runFixtureWriter() throws {
             container.persistentStoreDescriptions = [description]
             var error: Error?; container.loadPersistentStores { _, value in error = value }; if let error { throw error }
             guard let persistentStore = container.persistentStoreCoordinator.persistentStores.first else { throw HostError.message("fixture has no persistent store") }
-            if args.count == 4 || ["--w06", "--w06-linked", "--w07-source",
+            if args.count == 4 || ["--w06", "--w06-backdated", "--w06-linked", "--w07-source",
                 "--w07-paired", "--w07-reverse", "--w07-ambiguous",
                 "--w07-voided", "--w08-aggregate", "--w08-units",
                 "--w09-exact", "--w09-fuzzy", "--w09-untrimmed",
@@ -363,9 +364,9 @@ func runFixtureWriter() throws {
                 let destinationCurrency = reverse ? "GBP" : "EUR"
                 let sourceAmount = reverse ? -23.0 : -20.0
                 let destinationAmount = reverse ? 20.0 : 23.0
-                let source = try fixtureAccount("CashAccount", gid: "w07-source",
+                let source = try fixtureAccount(ProcessInfo.processInfo.environment["MONEYWIZ_TEST_ACCOUNT_ENTITY"] ?? "CashAccount", gid: "w07-source",
                     name: "W07 source", opening: 100, balance: 80, user: user, context: c)
-                let destination = try fixtureAccount("CashAccount", gid: "w07-destination",
+                let destination = try fixtureAccount(ProcessInfo.processInfo.environment["MONEYWIZ_TEST_ACCOUNT_ENTITY"] ?? "CashAccount", gid: "w07-destination",
                     name: "W07 destination", opening: 50, balance: paired ? 73 : 50,
                     user: user, context: c)
                 try fixtureSet(source, "currencyName", sourceCurrency)
@@ -442,7 +443,7 @@ func runFixtureWriter() throws {
             }
             if args.count == 5 && args[4].hasPrefix("--w08-") {
                 let units = args[4] == "--w08-units"
-                let account = try fixtureAccount("InvestmentAccount", gid: "w08-investment",
+                let account = try fixtureAccount(ProcessInfo.processInfo.environment["MONEYWIZ_TEST_ACCOUNT_ENTITY"] ?? "InvestmentAccount", gid: "w08-investment",
                     name: "W08 investment", opening: 100, balance: 0, user: user, context: c)
                 try fixtureSet(account, "archived", false)
                 let payee = try fixtureObject("Payee", c)
@@ -499,7 +500,7 @@ func runFixtureWriter() throws {
                 FileHandle.standardOutput.write(Data([10]))
                 return
             }
-            if args.count == 5 && ["--w06", "--w06-unmarked", "--w06-linked"].contains(args[4]) {
+            if args.count == 5 && ["--w06", "--w06-backdated", "--w06-unmarked", "--w06-linked"].contains(args[4]) {
                 let account = try fixtureObject("InvestmentAccount", c)
                 try fixtureSet(account, "GID", "w06-investment")
                 try fixtureSet(account, "name", "W06 investment")
@@ -532,6 +533,19 @@ func runFixtureWriter() throws {
                                    date: "2026-09-10T12:00:00Z")
                 let targetDate = "2026-09-11T12:00:00.408332Z"
                 let target = try adjustment("w06-target", amount: -2, total: 108, date: targetDate)
+                if args[4] == "--w06-backdated" {
+                    let row = try fixtureObject("DepositTransaction", c)
+                    try fixtureSet(row, "GID", "w06-backdated-cash")
+                    try fixtureSet(row, "amount", 0.01)
+                    try fixtureSet(row, "originalAmount", 0.01)
+                    try fixtureSet(row, "originalCurrency", "GBP")
+                    try fixtureSet(row, "originalExchangeRate", 1.0)
+                    try fixtureSet(row, "currencyExchangeRate", 1.0)
+                    try fixtureSet(row, "date", precisePlanTimestamp("2026-09-09T12:00:00Z"))
+                    try fixtureSet(row, "objectCreationDate", Date())
+                    try fixtureSet(row, "status", 2)
+                    try fixtureSet(row, "account", account)
+                }
                 if args[4] == "--w06-linked" {
                     let payee = try fixtureObject("Payee", c)
                     try fixtureSet(payee, "GID", "w06-dependent-payee")
@@ -552,7 +566,9 @@ func runFixtureWriter() throws {
                 FileHandle.standardOutput.write(Data([10]))
                 return
             }
-            let account = try fixtureObject("CashAccount", c)
+            let accountEntity = ProcessInfo.processInfo.environment["MONEYWIZ_TEST_ACCOUNT_ENTITY"] ?? "CashAccount"
+            guard supportedAccountEntities.contains(accountEntity) else { throw HostError.message("invalid fixture account type") }
+            let account = try fixtureObject(accountEntity, c)
             try fixtureSet(account,"GID","w01-account"); try fixtureSet(account,"name","W01"); try fixtureSet(account,"objectCreationDate",Date()); try fixtureSet(account,"openingBalance",10.0); try fixtureSet(account,"ballance",0.0); try fixtureSet(account,"currencyName","EUR"); try fixtureSet(account,"user",user)
             let payee = try fixtureObject("Payee", c); try fixtureSet(payee,"GID","w01-payee"); try fixtureSet(payee,"name","W01"); try fixtureSet(payee,"objectCreationDate",Date()); try fixtureSet(payee,"user",user)
             let secondPayee = try fixtureObject("Payee", c); try fixtureSet(secondPayee,"GID","w03-payee"); try fixtureSet(secondPayee,"name","W03"); try fixtureSet(secondPayee,"objectCreationDate",Date()); try fixtureSet(secondPayee,"user",user)
@@ -587,7 +603,7 @@ func runFixtureWriter() throws {
             try fixtureSet(flagged, "flags", 1)
             let inactive = try fixtureTransaction("WithdrawTransaction", gid: "w02-inactive", amount: -3,
                                                   account: account, payee: payee, tag: tag, context: c)
-            try fixtureSet(inactive, "status", 2)
+            try fixtureSet(inactive, "status", 0)
             let voided = try fixtureTransaction("WithdrawTransaction", gid: "w02-void", amount: -3,
                                                 account: account, payee: payee, tag: tag, context: c)
             try fixtureSet(voided, "voidCheque", 1)
@@ -603,6 +619,10 @@ func runFixtureWriter() throws {
             let fx = try fixtureTransaction("WithdrawTransaction", gid: "w02-fx", amount: -3,
                                             account: account, payee: payee, tag: tag, context: c)
             try fixtureSet(fx, "currencyExchangeRate", 1.1)
+            try fixtureSet(fx, "originalExchangeRate", 1.1)
+            let nativeEmptySchedule = try fixtureTransaction("WithdrawTransaction", gid: "w02-empty-schedule", amount: -3,
+                                                            account: account, payee: payee, tag: tag, context: c)
+            try fixtureSet(nativeEmptySchedule, "autoSkipLinkedScheduledTransactionGID", "")
             let otherAccount = try fixtureAccount("CashAccount", gid: "w01-other-account", name: "Other", opening: 10, balance: 0, user: user, context: c)
             _ = try fixtureWithdrawal("w01-other-original", account: otherAccount, context: c)
             _ = try fixtureAccount("BankChequeAccount", gid: "w01-bank-account", name: "Bank", opening: 0, balance: 0, user: user, context: c)

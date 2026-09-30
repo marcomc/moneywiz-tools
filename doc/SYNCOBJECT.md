@@ -28,10 +28,12 @@ A live payee affects more than a display name:
 - The associated Core Data object lifecycle must publish persistent history
   understood by the app and CloudKit.
 
-The current Core Data writer handles reassignment and destination creation.
-The Python CLI can plan exact duplicate groups, but native relationship
-migration and source-payee deletion are not implemented; the merge capability
-remains blocked. Similar-name candidates remain review-only CSV data.
+The Core Data writer handles reassignment and destination creation. W09 pair
+plans also migrate the complete inbound reference inventory and delete one
+source payee for an exact or individually approved fuzzy pair. The legacy
+duplicate-group apply capability remains blocked. See
+[Payee Consolidation](PAYEE-CONSOLIDATION.md) for the enabled runtime and approval
+requirements.
 
 ## Identity allocation
 

@@ -774,7 +774,7 @@ def test_unmarked_store_cannot_enter_edit_handler(
     assert "marked disposable fixture required" in rejected.stderr
 
 
-def test_direct_host_rejects_marked_store_without_fixture_identity(
+def test_direct_host_uses_owner_identity_instead_of_fixture_login(
     w01_runtime: W01Runtime, tmp_path: Path
 ) -> None:
     store, identity = _new_store(w01_runtime, tmp_path)
@@ -788,10 +788,17 @@ def test_direct_host_rejects_marked_store_without_fixture_identity(
         )
     plan = _edit_plan(w01_runtime, identity, source_event="marked-other-owner")
 
-    rejected = _invoke(w01_runtime, store, plan, tmp_path)
-    assert rejected.returncode == 2
-    assert "disposable CashAccount" in rejected.stderr
-    assert (
-        _inspect(w01_runtime, store, tmp_path, "WithdrawTransaction", "w02-withdraw")
-        == before
-    )
+    applied = _invoke(w01_runtime, store, plan, tmp_path)
+    assert applied.returncode == 0, applied.stderr
+    after = _inspect(w01_runtime, store, tmp_path, "WithdrawTransaction", "w02-withdraw")
+    _assert_preserved_except(before, after, changed_attributes={"notes"})
+
+
+def test_empty_native_schedule_metadata_is_not_a_schedule(w01_runtime, tmp_path):
+    store, identity = _new_store(w01_runtime, tmp_path)
+    plan = _edit_plan(w01_runtime, identity, gid="w02-empty-schedule")
+    before = _inspect(w01_runtime, store, tmp_path, "WithdrawTransaction", "w02-empty-schedule")
+    applied = _invoke(w01_runtime, store, plan, tmp_path)
+    assert applied.returncode == 0, applied.stderr
+    after = _inspect(w01_runtime, store, tmp_path, "WithdrawTransaction", "w02-empty-schedule")
+    _assert_preserved_except(before, after, changed_attributes={"notes"})

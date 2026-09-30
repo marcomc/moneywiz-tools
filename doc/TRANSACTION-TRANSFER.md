@@ -2,7 +2,8 @@
 
 W07 replaces one imported withdrawal and, when explicitly identified, its
 imported deposit with two new reciprocal native transfer legs. The source and
-destination must be active cash accounts of the same owner. The request binds
+destination must be active accounts of the same owner. Cash, cheque, savings,
+credit-card, loan, investment and forex accounts are supported. The request binds
 both accounts and cached balances, both currencies, each old row's GID and
 numeric ID, actual amounts and dates, a directional exchange rate, and a stable
 source-event ID. Send and Receive dates may differ.
@@ -21,7 +22,8 @@ moneywiz --db /private/path/disposable.sqlite write recover \
 
 Keep requests and plans private: they contain account and transaction details.
 The request uses the common version-2 envelope plus `destination_account` with
-`account_gid`, `currency_unit`, and `expected_cached_balance`. Its single
+`account_gid`, `currency_unit`, and `expected_cached_balance`. Live plans also
+require `balance_mode: "ledger"`; account caches are preserved. Its single
 `operation` has `kind: "replace_import_with_transfer"`, `operation_id`,
 `source_old`, optional `destination_old` (`null` when absent), `send_at`,
 `receive_at`, `sender_amount`, `recipient_amount`, `exchange_rate`, and
@@ -37,8 +39,9 @@ Existing business links outside the reviewed pair,
 ambiguous destination candidates, stale rows, changed balances and duplicate
 GIDs are rejected before mutation. The host deletes the old row or rows and
 their category assignments, creates two linked transfer rows, and saves the
-graph once. The source cached balance stays the same; a source-only conversion
-adds the recipient amount to the destination cached balance.
+graph once. Live balances derive from the ledger. On marked disposable fixtures,
+the source cached balance stays the same; a source-only conversion adds the
+recipient amount to the destination cached balance.
 
 The receipt reports both new GIDs and numeric IDs, old numeric IDs, reciprocal
 link verification and both resulting balances. A fresh Core Data context
@@ -48,7 +51,7 @@ payees and reconciliation values from identified old rows are carried over;
 without an old recipient row, recipient metadata starts empty. See
 [Writer Recovery](WRITER-RECOVERY.md) for journal handling.
 
-The `write.replace-import-with-transfer` capability is restricted to marked
-disposable model-48 stores. Nonzero fees need native reference evidence for
-their currency and amount rules. Live use requires separate MoneyWiz reopen and
-sync acceptance.
+The `write.replace-import-with-transfer` capability is enabled for reviewed
+Setapp MoneyWiz 2026.37.1 build 449, model 48. Marked disposable stores remain
+supported. Nonzero fees need native reference evidence for their currency and
+amount rules. Live use requires MoneyWiz reopen and sync acceptance.

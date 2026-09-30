@@ -8,7 +8,7 @@ separate from W04, which changes an existing transaction's `reconciled` flag.
 MoneyWiz TestFlight 2026.37.1 (build 449), model 48, created one native
 adjustment in a GBP investment account without holdings. Private before/after
 evidence is retained outside this repository. The account's total equals its
-opening balance plus the amounts of its `ReconcileTransaction` history, rounded
+opening balance plus the amounts of its transaction history, rounded
 to pence. Its cached `ballance` remained zero and its opening balance did not
 change. No `InvestmentAccountTotalValue` row was created.
 
@@ -17,14 +17,21 @@ The new row has `amount = target - prior`, `reconcileAmount = target`,
 `status = 2`, `flags = 0`, `reconciled = false`, `desc = "New balance"`, an empty
 note, and an account relationship. It has no holding, category, payee or tag.
 
-The writer supports only this `investment_total` variant in GBP. It requires
+The writer supports only this `investment_total` variant in GBP. Live execution
+is admitted for Setapp and TestFlight MoneyWiz 2026.37.1 build 449, retaining
+the previously verified TestFlight path. Other compatible model-48 builds are
+admitted only on marked disposable fixtures. It requires
 the exact app, model, store, owner, account, prior balance and date in the
 reviewed plan; refuses holdings, valuation history and unsupported transaction
 history; saves one row; then reads it back in a fresh context. A deterministic
 GID prevents a lost response from creating a duplicate. A matching target is a
 no-op. Historical adjustment timestamps must be unique for ordered balance
-verification. New plan dates at or before the latest account transaction are
-rejected.
+verification. Existing ordinary income, fees and reciprocal funding transfers
+are validated and included in the running balance. When cash activity exists,
+older adjustment targets are historical annotations: later backdated activity
+can change their reconstructed running balances. Adjustment-only histories
+retain strict target checks. Current balance, new target and delta are always
+checked. New plan dates at or before the latest account transaction are rejected.
 
 ## Capability boundary
 
@@ -46,7 +53,7 @@ numeric Core Data ID, account, amount, `reconcileAmount`, timestamp including
 fractional seconds, current balance, currency and deletion reason. The preview
 computes the balance after removing that amount. The native host checks the
 entire ordered adjustment history and rejects stale values, older targets,
-dependent relationships, holdings and other transaction types before one save.
+dependent relationships, holdings and unsupported transaction types before one save.
 It reads the target's absence and the resulting balance in a fresh context.
 The client requires the exact target to exist before preparing a new journal;
 recovery and replay of a prepared deletion leave an absent target unchanged.
@@ -54,6 +61,6 @@ recovery and replay of a prepared deletion leave an absent target unchanged.
 The app-created deletion reference removed only the selected business row and
 changed the account version in private before/after snapshots. A writer trial
 on a separately marked copy reproduced the balance change and `noop` replay.
-The `write.delete-adjust-balance-investment-total` live capability remains
-blocked: the Python client and native host require the disposable-store marker.
-Live app and sync acceptance needs separate authorization and evidence.
+The `write.delete-adjust-balance-investment-total` capability is enabled for
+Setapp MoneyWiz 2026.37.1 build 449 and the exact reviewed model and store.
+Marked disposable TestFlight fixtures remain supported for regression tests.

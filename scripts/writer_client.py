@@ -274,7 +274,9 @@ class WriterClient:
         return record
 
     def _require_operation_capability(self, plan: dict[str, Any]) -> None:
-        if plan["capability"] == ADJUST_BALANCE_CAPABILITY:
+        if plan["capability"] == ADJUST_BALANCE_CAPABILITY or (
+            plan.get("app_identity", {}).get("bundle_id") == "com.moneywiz.personalfinance-setapp"
+        ):
             try:
                 require_write_capability(self.store, plan["capability"])
             except CompatibilityError as exc:

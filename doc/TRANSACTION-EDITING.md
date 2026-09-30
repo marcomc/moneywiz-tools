@@ -3,15 +3,12 @@
 ## Capability and supported variants
 
 W02 edits exact existing transaction entity/GID pairs through the version-2
-native writer. Experiments require newly invented disposable stores using the
-same `MoneyWizToolsDisposableFixture: W01-v1` metadata boundary and invented
-fixture owner/account identity as W01, the exact model-48 checksum and installed
-TestFlight `2026.37.1` build `449`.
-`write.edit-transaction` remains blocked for live stores in the capability
-register. Neither a request nor an environment variable can promote it.
+native writer. The model-48 capability is enabled for authorized live execution
+on Setapp MoneyWiz 2026.37.1 build 449, with exact app and store identity checks.
+TestFlight regression stores require the disposable metadata marker.
 
 Supported entities are `DepositTransaction`, `WithdrawTransaction` and linked
-`RefundTransaction` in the evidenced same-currency `CashAccount` variant,
+`RefundTransaction` in all seven [supported account types](TRANSACTION-CREATION.md),
 including rows created by W01. The entity, GID, object identity, import/source
 metadata, owner and account stay unchanged. Reconciled records fail closed;
 `correction_mode` must explicitly be `reject_reconciled`. No alternative
@@ -32,7 +29,8 @@ MoneyWiz application processing or remote synchronization.
 
 Every changed field requires its exact prior value, including explicit null.
 Requests cannot contain unchanged fields, arbitrary native attributes, currency
-or exchange-rate changes. Text and date edits preserve existing category, tag,
+or exchange-rate changes. Live amount edits preserve the account cache and
+reporting exchange rate while changing the ledger. Text and date edits preserve existing category, tag,
 payee and refund relationships. Amount edits reject category/budget assignments
 because their numeric allocations require W03 ownership. They do not rescale
 or remove assignments implicitly.
@@ -40,8 +38,9 @@ or remove assignments implicitly.
 Transfers, adjustments (`ReconcileTransaction`), scheduled transactions,
 investment variants, unknown entities/fields, ownership changes and relationship
 mutations are refused. W03 assignments/splits use their own
-[disposable-only contract](TRANSACTION-ASSIGNMENT.md); W04 reconciliation flags
-and all P2/P3 operations remain disabled. Existing v1 payee reassignment is separate.
+[assignment contract](TRANSACTION-ASSIGNMENT.md); W04 reconciliation flags
+and P2/P3 operations use their own typed handlers. Existing v1 payee reassignment
+is separate.
 
 ## Request and apply
 
@@ -123,7 +122,7 @@ recovery. The release pins the read-completeness API revision
 is covered under [W01 validation](TRANSACTION-CREATION.md#reproducing-validation).
 
 The [W02 task ledger](../TODO.md#p1-w02-transaction-editing) separates implemented
-behavior, local validation, independent review and future acceptance. This work
-never reads or copies a live financial database. MoneyWiz reopen/history and
-remote-client sync acceptance require a separately authorized real session;
-the live capability gate remains blocked until direct evidence exists.
+behavior, local validation, independent review and acceptance. Synthetic tests
+never read or copy a live financial database. Separate authorized live trials
+and the user-confirmed second-device results are recorded in
+[Live Write Compatibility](LIVE-WRITE-COMPATIBILITY.md).

@@ -60,6 +60,7 @@ _OPERATION_FIELDS = {
     "note",
     "refund_reference",
 }
+_CREATION_OPTIONAL_FIELDS = {"description", "reporting_exchange_rate"}
 
 
 def _mapping(value: object, field: str) -> dict[str, Any]:
@@ -74,7 +75,8 @@ def build_plan(request: Mapping[str, Any]) -> dict[str, Any]:
     if set(raw) != _ENVELOPE_FIELDS | {"operation"}:
         raise PlanValidationError("request has unknown or missing fields")
     operation_request = _mapping(raw.pop("operation"), "operation")
-    if set(operation_request) != _OPERATION_FIELDS:
+    optional_fields = set(operation_request) & _CREATION_OPTIONAL_FIELDS
+    if set(operation_request) != _OPERATION_FIELDS | optional_fields:
         raise PlanValidationError("operation has unknown or missing fields")
     kind = operation_request["kind"]
     if kind not in CREATE_OPERATION_POLICIES:
@@ -128,6 +130,12 @@ def build_plan(request: Mapping[str, Any]) -> dict[str, Any]:
         "refund_reference": operation_request["refund_reference"],
         "expected_balance_delta": amount,
     }
+    for field in optional_fields:
+        value = operation_request[field]
+        operation[field] = (
+            normalize_decimal(value, f"operation.{field}")
+            if field == "reporting_exchange_rate" else value
+        )
     operation["expected_postcondition"] = {
         field: deepcopy(operation[field])
         for field in (
@@ -147,6 +155,9 @@ def build_plan(request: Mapping[str, Any]) -> dict[str, Any]:
             "expected_balance_delta",
         )
     }
+    operation["expected_postcondition"].update(
+        {field: operation[field] for field in optional_fields}
+    )
     return validate_plan(
         {
             "contract_version": CONTRACT_VERSION,
@@ -492,7 +503,8 @@ def build_investment_plan(request: Mapping[str, Any]) -> dict[str, Any]:
         "quantity", "unit_price", "fee", "fee_currency",
         "expected_prior_cash", "expected_prior_units",
     }
-    if set(operation) != required or operation.get("kind") not in INVESTMENT_POLICIES:
+    optional = {"description"} if "description" in operation else set()
+    if set(operation) != required | optional or operation.get("kind") not in INVESTMENT_POLICIES:
         raise PlanValidationError("operation has unknown or missing W08 fields")
     for field in ("amount", "quantity", "unit_price", "fee", "expected_prior_cash"):
         operation[field] = normalize_decimal(operation[field], f"operation.{field}")
@@ -541,6 +553,8 @@ def build_investment_plan(request: Mapping[str, Any]) -> dict[str, Any]:
             "category_splits", "tag_gids", "note", "refund_reference", "expected_balance_delta",
         )
     }
+    if "description" in optional:
+        operation["expected_postcondition"]["description"] = operation["description"]
     plan = {
         "contract_version": CONTRACT_VERSION,
         "operation_schema_version": OPERATION_SCHEMA_VERSION,
