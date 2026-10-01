@@ -1963,6 +1963,14 @@ func validateTransferRecipientEditShape(_ raw: [String: Any], plan: WriterPlanV2
                 throw HostError.message("W10 \(field).\(name) must be canonical decimal text")
             }
         }
+        let exchangeRate = try decimalValue(row["exchange_rate"] as? String ?? "",
+                                            field: "W10 \(field).exchange_rate")
+        let fee = try decimalValue(row["fee"] as? String ?? "", field: "W10 \(field).fee")
+        let originalFee = try decimalValue(row["original_fee"] as? String ?? "",
+                                           field: "W10 \(field).original_fee")
+        guard exchangeRate > 0, fee >= 0, originalFee >= 0 else {
+            throw HostError.message("W10 \(field) has an invalid rate or fee")
+        }
         _ = try precisePlanTimestamp(occurred)
     }
     try validateLeg(sender, entity: "TransferWithdrawTransaction", field: "sender")

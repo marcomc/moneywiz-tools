@@ -107,6 +107,26 @@ def test_live_capability_admission_rejects_build_below_floor(monkeypatch, tmp_pa
     assert calls == []
 
 
+def test_fixture_marker_is_checked_before_inspecting_installed_app(monkeypatch, tmp_path):
+    payload = build_plan(creation_request())
+    checked = []
+
+    monkeypatch.setattr(writer_client, "is_canonical_store_path", lambda *_a, **_kw: False)
+    monkeypatch.setattr(
+        writer_client, "inspect_app",
+        lambda _path: pytest.fail("fixture admission must not inspect an installed app"),
+    )
+    monkeypatch.setattr(
+        writer_client, "require_disposable_write_capability",
+        lambda _store, capability: checked.append(capability),
+    )
+
+    client = WriterClient(tmp_path / "host", tmp_path / "model", tmp_path / "fixture.sqlite")
+    client._require_operation_capability(payload)
+
+    assert checked == [payload["capability"]]
+
+
 def test_apply_retry_rechecks_persistence_without_replaying(execution, monkeypatch):
     client, payload, journal = execution
     calls = []

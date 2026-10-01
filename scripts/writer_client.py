@@ -297,16 +297,18 @@ class WriterClient:
             return
         try:
             app_identity = plan["app_identity"]
-            app = inspect_app(Path(app_identity["path"]))
-            if is_canonical_store_path(self.store, bundle_identifier=app.bundle_identifier):
-                if app.bundle_identifier != app_identity["bundle_id"] or app.version != app_identity["version"]:
-                    raise RuntimeIdentityError("reviewed MoneyWiz app identity differs")
-                if (app.build is None or not app.build.isascii() or not app.build.isdigit()
-                        or int(app.build) < MINIMUM_LIVE_WRITER_BUILD):
-                    raise RuntimeIdentityError("MoneyWiz build is below the minimum live-writer build")
-                require_write_capability(self.store, plan["capability"])
-            else:
+            bundle_id = app_identity["bundle_id"]
+            if not is_canonical_store_path(self.store, bundle_identifier=bundle_id):
                 require_disposable_write_capability(self.store, plan["capability"])
+                return
+
+            app = inspect_app(Path(app_identity["path"]))
+            if app.bundle_identifier != bundle_id or app.version != app_identity["version"]:
+                raise RuntimeIdentityError("reviewed MoneyWiz app identity differs")
+            if (app.build is None or not app.build.isascii() or not app.build.isdigit()
+                    or int(app.build) < MINIMUM_LIVE_WRITER_BUILD):
+                raise RuntimeIdentityError("MoneyWiz build is below the minimum live-writer build")
+            require_write_capability(self.store, plan["capability"])
         except (CompatibilityError, OSError, ValueError, RuntimeIdentityError) as exc:
             raise WriterClientError(str(exc)) from exc
 

@@ -6,6 +6,7 @@ import json
 import sqlite3
 import subprocess
 import sys
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
@@ -17,7 +18,7 @@ import writer_client
 from test_native_transaction_create import W01Runtime, w01_runtime
 from test_transaction_create import request as envelope
 from write_journal import JournalPaths, JournalStore
-from write_plan import validate_result
+from write_plan import PlanValidationError, compute_digest, validate_plan, validate_result
 from write_transactions import build_transfer_recipient_plan
 from writer_client import WriterClient
 
@@ -135,6 +136,36 @@ def test_native_transfer_recipient_refuses_unmarked_store(
     attempted = _run(w01_runtime, tmp_path, store)
     assert attempted.returncode == 2
     assert "marked disposable fixture required" in attempted.stderr
+    assert _transfer_rows(store)["w10-recipient"][1] == "w10-previous"
+
+
+@pytest.mark.parametrize(("leg", "field", "value"), [
+    ("sender", "exchange_rate", "0"),
+    ("sender", "exchange_rate", "-1"),
+    ("sender", "fee", "-1"),
+    ("recipient", "original_fee", "-1"),
+])
+def test_native_transfer_recipient_rejects_invalid_rate_or_fee_even_with_valid_digest(
+    w01_runtime: W01Runtime, tmp_path: Path, leg: str, field: str, value: str,
+) -> None:
+    store, identity = _fixture(w01_runtime, tmp_path)
+    plan = _plan(w01_runtime, tmp_path, identity)
+    malformed = deepcopy(plan)
+    expected_pair = malformed["operations"][0]["expected_pair"]
+    if field == "exchange_rate":
+        expected_pair["sender"][field] = value
+        expected_pair["recipient"][field] = value
+    else:
+        expected_pair[leg][field] = value
+    malformed["plan_digest"] = compute_digest(malformed)
+    (tmp_path / "plan.json").write_text(json.dumps(malformed), encoding="utf-8")
+
+    with pytest.raises(PlanValidationError, match="invalid rate or fee"):
+        validate_plan(malformed)
+    attempted = _run(w01_runtime, tmp_path, store)
+
+    assert attempted.returncode == 2
+    assert "invalid rate or fee" in attempted.stderr
     assert _transfer_rows(store)["w10-recipient"][1] == "w10-previous"
 
 
