@@ -24,6 +24,11 @@ These rules do not apply outside of work under `moneywiz-tools/`.
   for a fixture-only operation must enforce the disposable-store marker checked
   by the Python client. Approved live operations must independently check the
   reviewed app, model and store identity before writing.
+- For installed native validation, set both `MONEYWIZ_TEST_APP_PATH` and
+  `MONEYWIZ_TEST_MODEL_PATH`, then inspect every skip and map it to its fixture
+  producer. Keep the disposable-marker producer distinct from unmarked
+  negative fixtures; an otherwise successful bundle-only run is not admission
+  evidence.
 - Run integrated Python validation with
   `uv run --with pytest python -m pytest`; this keeps pytest and project
   dependencies on the same interpreter when pytest is not a declared dependency.
@@ -32,6 +37,18 @@ These rules do not apply outside of work under `moneywiz-tools/`.
   ingress check and native decoding boundary. Capture input bytes once, then
   parse and hash that same capture; cover cross-runtime boundary values plus
   source changes between digest and parsing with positive and negative tests.
+- When enabling or changing a writer capability, update the minimum active
+  operator, release, design, and mapping documentation consumers, while
+  preserving historical and legacy-exclusion records. Test its positive and
+  negative cases on the runtime and store edition that each case supports.
+- Treat fixture cache deltas as fixture semantics, not evidence of live account
+  balances. Before adding a balance guard, compare account cache, opening
+  balance, full ledger, and application display; cover supported account
+  subtypes and backdated cash history.
+- For retained Core Data transformables, preserve the finite observed archive
+  contract rather than accepting generic serializable shapes. Cover persisted
+  positive, refusal, apply/recovery, and retained-dependency paths; reject
+  unobserved key and value types even if generic serialization would succeed.
 
 ## Distributable bundle validation
 
