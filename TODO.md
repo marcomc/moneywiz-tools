@@ -276,6 +276,132 @@ payment plans and info cards. Only marked disposable stores are admitted.
 
 ## Propositions
 
+### Future writer extensions beyond the completed 0.3.0 scope
+
+Requested on 2026-10-01. These are future implementation specifications; they do
+not change the supported 0.3.0 contracts or activate additional live capabilities.
+Each deliverable needs its own reviewed operation contract and PR. Native
+before/after references must establish the semantics before a guard is relaxed.
+Common acceptance: strict Python/native plan parity, exact runtime/model/store
+admission, atomic Core Data mutation, independent read-back, journal replay and
+save-boundary recovery, installed positive/refusal tests on explicit app/model
+editions, and authorized fictional app/iCloud acceptance with exact cleanup.
+Update active operator, release, design and field-mapping consumers when enabling
+an operation. Keep private references and financial evidence outside this repo.
+
+- [ ] **FUT-WRITE-01: Create Forex holdings through native Exchange.**
+  Existing Forex quantities can be adjusted; first-Buy holding creation currently
+  applies only to InvestmentAccount. See [Investment Transactions](doc/TRANSACTION-INVESTMENT.md).
+  - Capture an app-created Exchange into a new currency holding and a subsequent
+    Exchange using an existing holding. Map both legs, signed units, account
+    cash, currencies, rates, dates, holding identity and inverse relationships.
+  - Add a dedicated Exchange plan and capability. Bind both currency positions,
+    expected cash/units and source-event identity; create a missing holding and
+    all native exchange records in one save without duplicating existing symbols.
+  - Define persisted postconditions and recovery for both new/existing holdings;
+    refuse stale state, wrong ownership, duplicate events and incomplete pairs.
+  - Acceptance: both native-supported directions work on empty and existing Forex
+    portfolios; replay creates no additional holding or leg; cash, units, native
+    display and exported records agree. Keep stock first-Buy behavior unchanged.
+
+- [ ] **FUT-WRITE-02: Replace imported transfers with nonzero FX fees.**
+  W07 currently admits zero-fee replacement only.
+  See [Transfer Replacement](doc/TRANSACTION-TRANSFER.md).
+  - Capture native before/after fee-bearing transfers for the supported account
+    currency pairs. Establish which leg owns the fee, its currency, whether it
+    is included in either amount, and whether a separate fee record is required.
+  - Extend the typed plan, native preflight and receipt with explicit fee fields
+    and the observed gross/net equations; preserve original source evidence and
+    both dates. Do not infer fee currency from the account or transfer direction.
+  - Save the reciprocal pair and any native fee dependency atomically; include
+    every generated identity and both resulting balances in replay/recovery.
+  - Acceptance: source-only and paired-import replacement pass for both supported
+    directions and fee placements, including rounding boundaries. Ambiguous fees
+    refuse before mutation; existing zero-fee plans retain their behavior.
+
+- [ ] **FUT-WRITE-03: Extend remaining balance/deletion currencies.**
+  Ordinary balance, investment cash, asset-quantity adjustments and generic
+  supported-transaction deletion still admit GBP/EUR/USD/CAD. Aggregate-total
+  creation and dedicated latest deletion already use the reviewed fiat/crypto
+  catalogs. See [Adjust Balance](doc/TRANSACTION-ADJUST-BALANCE.md) and
+  [Transaction Deletion](doc/TRANSACTION-DELETION.md).
+  - Map the currency restrictions and rounding in each affected Python ingress,
+    native inventory, preflight, postcondition and recovery path. Reuse catalog
+    resolution where its operation-specific native semantics match.
+  - Capture references establishing account-currency precision, reporting rates
+    and asset-unit precision for the added forms. Keep money and units distinct;
+    a target stays in the account currency rather than becoming a converted value.
+  - Bind required precision/rate metadata in plans and receipts; extend deletion
+    projections and retained-history checks consistently. Preserve valid legacy
+    plans and reject unknown identifiers or mismatched precision before mutation.
+  - Acceptance: each affected operation covers supported catalog precision classes
+    0/2/3/6/8, fiat/crypto identifiers, rate and rounding boundaries, replay and
+    recovery; existing four-currency and aggregate-total cases remain unchanged.
+
+- [ ] **FUT-WRITE-04: Adjust investment totals with holdings/valuation history.**
+  The current aggregate-total contract requires no holdings, valuation history
+  or cached investment cash. See [Adjust Balance](doc/TRANSACTION-ADJUST-BALANCE.md).
+  - Compare native Adjust Balance before/after data for a portfolio with holdings,
+    cash activity and `InvestmentAccountTotalValue` history. Establish how the app
+    derives total value and which transaction, price or valuation records change.
+  - Define a separate explicit balance unit and plan for the observed mechanism,
+    binding cash, units, prices, currencies and valuation history that affect the
+    target. Do not remove the existing aggregate guards to admit this shape.
+  - Implement the native dependency closure and verify target/delta, preserved
+    holdings and earlier valuations; expose the evidenced date restrictions and
+    reject stale or ambiguous valuation inputs. Preserve retained archive types.
+  - Acceptance: target value matches the app, cash/units/prices change only as
+    specified by the native reference, and replay/recovery preserve the same
+    valuation state. Existing no-holdings adjustments retain their contract.
+
+- [ ] **FUT-WRITE-05: Support explicit mutation of special transaction graphs.**
+  Current editing covers ordinary supported fields/entities; deletion refuses
+  Exchange, budget-transfer, scheduled links and unsupported void/status forms.
+  See [Transaction Editing](doc/TRANSACTION-EDITING.md) and
+  [Transaction Deletion](doc/TRANSACTION-DELETION.md).
+  - Inventory each excluded entity/status and its native relationships. Capture
+    app edits/deletions separately for Exchange, budget transfers, scheduled
+    templates versus occurrences, and native void/unvoid behavior.
+  - Split these into independent typed operations with explicit mutable fields,
+    required group selection and dependency closure. Establish whether a native
+    action edits, voids or deletes before choosing the writer operation.
+  - Cover resulting balances, units, budget allocations, recurrence history,
+    shared dependencies and retained objects. Never admit arbitrary SyncObject
+    mutation or silently delete a scheduled template with one occurrence.
+  - Acceptance per operation: persisted positive and refusal cases, atomic
+    mutation, apply/recovery and retained-dependency checks; unrelated records
+    remain unchanged. Exchange mutation depends on FUT-WRITE-01 semantics.
+
+- [ ] **FUT-WRITE-06: Delete an explicitly selected empty holding.**
+  W06 transaction deletion intentionally retains holdings, including zero-unit
+  positions. A holding-removal operation must remain separately requested.
+  - Capture native removal of a zero-unit holding, including manual price
+    archives, portfolio valuations, history and CloudKit relationships.
+  - Add a read-only inventory and dedicated deletion plan binding holding GID,
+    account/owner, zero derived units and the complete observed dependency graph.
+  - Refuse remaining business transactions, nonzero units, shared dependencies
+    or unsupported retained archives. Remove only the proven owned closure; do
+    not attach automatic holding deletion to ordinary transaction deletion.
+  - Acceptance: app and exported metadata no longer contain the selected holding,
+    account cash and valuations follow the native reference, and unrelated
+    holdings/history remain unchanged; replay/recovery verify the same absence.
+
+- [ ] **FUT-WRITE-07: Extend reviewed live runtime compatibility.**
+  Live admission is currently tied to reviewed app builds/model/store identities;
+  matching a model or finding an installed app does not enable every write path.
+  - Build a per-capability admission/acceptance matrix for additional Setapp and
+    TestFlight builds, binding bundle ID, version/build, compiled model checksum
+    and store identity independently in Python and native entry points.
+  - Check model aliases, currency catalogs and retained transformable contracts
+    for each edition. Capture new native references only where semantics differ;
+    preserve fixture-only admission until that operation has acceptance evidence.
+  - Run installed positive/refusal and recovery cases with explicit
+    `MONEYWIZ_TEST_APP_PATH` and `MONEYWIZ_TEST_MODEL_PATH`. Map every skip to its
+    fixture producer; keep marked fixtures distinct from unmarked negative cases.
+  - Acceptance: every promoted path has authorized app/sync evidence on its named
+    edition; unreviewed or mismatched builds still refuse without mutation.
+    Record second-device verification separately from local/iCloud-export proof.
+
 - [ ] **Audit redundant read compatibility after integrating the new API pin.**
   With Tools pinned to `moneywiz-api` commit `401c919`, compare any Tools read
   adapters with the API completeness and schema-profile contracts. Remove only

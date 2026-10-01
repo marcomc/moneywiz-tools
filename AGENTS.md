@@ -28,7 +28,12 @@ These rules do not apply outside of work under `moneywiz-tools/`.
   `MONEYWIZ_TEST_MODEL_PATH`, then inspect every skip and map it to its fixture
   producer. Keep the disposable-marker producer distinct from unmarked
   negative fixtures; an otherwise successful bundle-only run is not admission
-  evidence.
+  evidence. Inspect the persisted fixture entities and relationships before
+  selecting an operation; do not change production admission to accommodate
+  an invalid fixture. Assert the reviewed runtime-edition admission contract.
+- Isolate installed native-test journal and plan identities per store. Before
+  retrying an unknown outcome, inspect journal preimages and compare pre-write
+  and post-failure financial rows to establish whether a mutation occurred.
 - Run integrated Python validation with
   `uv run --with pytest python -m pytest`; this keeps pytest and project
   dependencies on the same interpreter when pytest is not a declared dependency.
