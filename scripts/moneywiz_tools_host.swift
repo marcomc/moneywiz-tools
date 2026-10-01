@@ -221,6 +221,9 @@ func validatePlanScalarTypes(_ value: Any, key: String = "") throws {
         let identities: Set<String> = ["plan_id", "owner_uri", "source_event_id",
             "store_uuid", "bundle_id", "version", "path", "model_path",
             "expected_account_gid", "account_gid", "operation_id", "transaction_gid",
+            "recipient_transaction_gid", "transaction_numeric_id", "peer_transaction_gid",
+            "peer_account_gid", "peer_currency_unit", "currency_unit", "payee_gid",
+            "original_fee_currency",
             "original_transaction_gid", "target_payee_gid", "expected_old_payee_gid",
             "holding_gid", "holding_symbol", "investment_symbol", "gid", "object_uri",
             "source_evidence_refs", "tag_gids", "transaction_gids",
@@ -550,6 +553,7 @@ struct WriterPlanV2: Decodable {
     let sourceEventID: String
     let sourceScope: ReconcileSourceScope?
     let destinationAccount: TransferDestinationAccount?
+    let previousDestinationAccount: TransferDestinationAccount?
     let operations: [WriterOperationV2]
 
     enum CodingKeys: String, CodingKey {
@@ -573,6 +577,7 @@ struct WriterPlanV2: Decodable {
         case sourceEventID = "source_event_id"
         case sourceScope = "source_scope"
         case destinationAccount = "destination_account"
+        case previousDestinationAccount = "previous_destination_account"
         case operations
     }
 }
@@ -658,6 +663,62 @@ struct TransferOldRow: Decodable {
     }
 }
 
+struct TransferLegSnapshot: Decodable {
+    let transactionEntity: String
+    let transactionGID: String
+    let transactionNumericID: String
+    let accountGID: String
+    let amount: String
+    let currencyUnit: String
+    let occurredAt: String
+    let status: Int
+    let flags: Int
+    let reconciled: Bool
+    let note: String?
+    let description: String?
+    let fee: String
+    let originalFee: String
+    let originalFeeCurrency: String?
+    let originalAmount: String
+    let peerAmount: String
+    let peerCurrencyUnit: String
+    let exchangeRate: String
+    let peerTransactionGID: String
+    let peerAccountGID: String
+    let payeeGID: String?
+    let tagGIDs: [String]
+    let categoryAssignmentURIs: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case transactionEntity = "transaction_entity", transactionGID = "transaction_gid"
+        case transactionNumericID = "transaction_numeric_id", accountGID = "account_gid"
+        case amount, currencyUnit = "currency_unit", occurredAt = "occurred_at"
+        case status, flags, reconciled, note, description, fee
+        case originalFee = "original_fee", originalFeeCurrency = "original_fee_currency"
+        case originalAmount = "original_amount", peerAmount = "peer_amount"
+        case peerCurrencyUnit = "peer_currency_unit", exchangeRate = "exchange_rate"
+        case peerTransactionGID = "peer_transaction_gid", peerAccountGID = "peer_account_gid"
+        case payeeGID = "payee_gid"
+        case tagGIDs = "tag_gids", categoryAssignmentURIs = "category_assignment_uris"
+    }
+}
+
+struct TransferPairSnapshot: Decodable {
+    let sender: TransferLegSnapshot
+    let recipient: TransferLegSnapshot
+}
+
+struct TransferRecipientEditDetails: Encodable {
+    let recipientGID: String
+    let recipientNumericID: String
+    let recipientURI: String
+    let reciprocalLinksVerified = true
+    enum CodingKeys: String, CodingKey {
+        case recipientGID = "recipient_gid", recipientNumericID = "recipient_numeric_id"
+        case recipientURI = "recipient_uri", reciprocalLinksVerified = "reciprocal_links_verified"
+    }
+}
+
 struct WriterOperationV2: Decodable {
     let operationID: String
     let kind: String
@@ -688,6 +749,7 @@ struct WriterOperationV2: Decodable {
     let expectedBalanceDelta: String?
     let changes: [String: EditScalar]?
     let expectedPrior: [String: EditScalar]?
+    let expectedPair: TransferPairSnapshot?
     let correctionMode: String?
     let target: AssignmentState?
     let expectedAssignments: AssignmentState?
@@ -757,6 +819,7 @@ struct WriterOperationV2: Decodable {
         case expectedBalanceDelta = "expected_balance_delta"
         case changes
         case expectedPrior = "expected_prior"
+        case expectedPair = "expected_pair"
         case correctionMode = "correction_mode"
         case target
         case expectedAssignments = "expected_assignments"
@@ -945,6 +1008,23 @@ struct TransferPostcondition: Encodable {
     }
 }
 
+struct TransferRecipientEditPostcondition: Encodable {
+    let senderGID: String
+    let recipientGID: String
+    let senderAccountGID: String
+    let previousDestinationAccountGID: String
+    let destinationAccountGID: String
+    let recipientAmount: String
+    let receiveAt: String
+    enum CodingKeys: String, CodingKey {
+        case senderGID = "sender_gid", recipientGID = "recipient_gid"
+        case senderAccountGID = "sender_account_gid"
+        case previousDestinationAccountGID = "previous_destination_account_gid"
+        case destinationAccountGID = "destination_account_gid"
+        case recipientAmount = "recipient_amount", receiveAt = "receive_at"
+    }
+}
+
 struct TransferDetails: Encodable {
     let recipientGID: String
     let recipientNumericID: String
@@ -1046,6 +1126,8 @@ struct WriterOperationResultV2: Encodable {
     var deleteAdjustmentPostcondition: DeleteAdjustmentPostcondition? = nil
     var supportedDeletionPostcondition: SupportedDeletionPostcondition? = nil
     var transferPostcondition: TransferPostcondition? = nil
+    var transferRecipientEditPostcondition: TransferRecipientEditPostcondition? = nil
+    var transferRecipientEditDetails: TransferRecipientEditDetails? = nil
     var transferDetails: TransferDetails? = nil
     var investmentDetails: InvestmentDetails? = nil
     var holdingCreation: HoldingCreation? = nil
@@ -1061,6 +1143,8 @@ struct WriterOperationResultV2: Encodable {
         case newPayeeGID = "new_payee_gid"
         case postcondition
         case transferDetails = "transfer_details"
+        case transferRecipientEditPostcondition = "transfer_recipient_edit_postcondition"
+        case transferRecipientEditDetails = "transfer_recipient_edit_details"
         case investmentDetails = "investment_details"
         case holdingCreation = "holding_creation"
     }
@@ -1076,6 +1160,8 @@ struct WriterOperationResultV2: Encodable {
         try container.encode(oldPayeeGID, forKey: .oldPayeeGID)
         try container.encode(newPayeeGID, forKey: .newPayeeGID)
         try container.encodeIfPresent(transferDetails, forKey: .transferDetails)
+        try container.encodeIfPresent(transferRecipientEditPostcondition, forKey: .transferRecipientEditPostcondition)
+        try container.encodeIfPresent(transferRecipientEditDetails, forKey: .transferRecipientEditDetails)
         try container.encodeIfPresent(investmentDetails, forKey: .investmentDetails)
         try container.encodeIfPresent(holdingCreation, forKey: .holdingCreation)
         if let supportedDeletionPostcondition { try container.encode(supportedDeletionPostcondition, forKey: .postcondition) }
@@ -1180,6 +1266,11 @@ func validateWriterPlanV2(_ plan: WriterPlanV2, rawPlan: [String: Any]) throws {
     if w04 { requiredKeys.insert("source_scope") }
     let w07 = plan.capability == "write.replace-import-with-transfer"
     if w07 { requiredKeys.insert("destination_account") }
+    let w10 = plan.capability == "write.reassign-transfer-recipient"
+    if w10 {
+        requiredKeys.insert("previous_destination_account")
+        requiredKeys.insert("destination_account")
+    }
     guard Set(rawPlan.keys) == requiredKeys else {
         throw HostError.message("writer v2 plan contains unknown or missing fields")
     }
@@ -1231,6 +1322,10 @@ func validateWriterPlanV2(_ plan: WriterPlanV2, rawPlan: [String: Any]) throws {
             try validateTransferShape(rawOperation, plan: plan)
             continue
         }
+        if kind == "reassign_transfer_recipient" {
+            try validateTransferRecipientEditShape(rawOperation, plan: plan)
+            continue
+        }
         if kind == "create_income" || kind == "create_expense" || kind == "create_refund" ||
            ["investment_income", "investment_expense", "investment_buy", "investment_buy_new_holding", "investment_sell"].contains(kind) {
             try validateCreationOperationShape(rawOperation, plan: plan)
@@ -1246,7 +1341,7 @@ func validateWriterPlanV2(_ plan: WriterPlanV2, rawPlan: [String: Any]) throws {
           plan.operationSchemaVersion == 1,
           plan.profileID == policy.profileID,
           plan.modelChecksum == policy.modelChecksum,
-          (plan.capability == policy.capability || extendedAdjustPolicies.values.contains(where: { $0.capability == plan.capability }) || ["write.create-income", "write.create-expense", "write.create-refund", "write.edit-transaction", "write.assign-payee-categories", "write.reconcile", "write.unreconcile", "write.adjust-balance-investment-total", "write.delete-adjust-balance-investment-total", "write.delete-supported-transactions", "write.replace-import-with-transfer", "write.investment-income", "write.investment-expense", "write.investment-buy", "write.investment-buy-new-holding", "write.investment-sell"].contains(plan.capability)),
+          (plan.capability == policy.capability || extendedAdjustPolicies.values.contains(where: { $0.capability == plan.capability }) || ["write.create-income", "write.create-expense", "write.create-refund", "write.edit-transaction", "write.assign-payee-categories", "write.reconcile", "write.unreconcile", "write.adjust-balance-investment-total", "write.delete-adjust-balance-investment-total", "write.delete-supported-transactions", "write.replace-import-with-transfer", "write.reassign-transfer-recipient", "write.investment-income", "write.investment-expense", "write.investment-buy", "write.investment-buy-new-holding", "write.investment-sell"].contains(plan.capability)),
           moneyWizBundleIdentifiers.contains(plan.appIdentity.bundleID),
           !isBlank(plan.appIdentity.version),
           !isBlank(plan.appIdentity.path),
@@ -1286,6 +1381,30 @@ func validateWriterPlanV2(_ plan: WriterPlanV2, rawPlan: [String: Any]) throws {
             throw HostError.message("W07 destination account guard is invalid")
         }
         _ = try decimalValue(destination.expectedCachedBalance, field: "W07 destination balance")
+    }
+    if w10 {
+        guard let destination = plan.destinationAccount,
+              let previous = plan.previousDestinationAccount else {
+            throw HostError.message("W10 current and target destination accounts are required")
+        }
+        for (name, account, rawKey) in [("current", previous, "previous_destination_account"), ("target", destination, "destination_account")] {
+            guard let rawAccount = rawPlan[rawKey] as? [String: Any],
+                  Set(rawAccount.keys) == Set(["account_gid", "currency_unit", "expected_cached_balance"])
+                    .union(account.balanceMode == nil ? [] : ["balance_mode"]),
+                  account.balanceMode == nil || account.balanceMode == "ledger",
+                  !isBlank(account.accountGID),
+                  account.currencyUnit.range(of: "^[A-Z]{3}$", options: .regularExpression) != nil else {
+                throw HostError.message("W10 \(name) destination account guard is invalid")
+            }
+            _ = try decimalValue(account.expectedCachedBalance, field: "W10 \(name) destination balance")
+        }
+        guard plan.currencyUnit.range(of: "^[A-Z]{3}$", options: .regularExpression) != nil,
+              destination.currencyUnit == previous.currencyUnit,
+              destination.accountGID != previous.accountGID,
+              destination.accountGID != plan.expectedAccountGID else {
+            throw HostError.message("W10 target account must be distinct and keep the recipient currency")
+        }
+        _ = try decimalValue(plan.expectedCachedAccountBalance, field: "W10 source balance")
     }
     let calculatedDigest = try canonicalV2Digest(rawPlan)
     guard plan.planDigest == calculatedDigest else {
@@ -1328,6 +1447,9 @@ func validateWriterPlanV2(_ plan: WriterPlanV2, rawPlan: [String: Any]) throws {
     }
     if w07 && (plan.operations.count != 1 || plan.operations[0].kind != "replace_import_with_transfer") {
         throw HostError.message("W07 requires exactly one atomic transfer replacement")
+    }
+    if w10 && (plan.operations.count != 1 || plan.operations[0].kind != "reassign_transfer_recipient") {
+        throw HostError.message("W10 requires exactly one linked-transfer recipient edit")
     }
     if ["write.investment-income", "write.investment-expense", "write.investment-buy", "write.investment-buy-new-holding", "write.investment-sell"].contains(plan.capability) &&
        (plan.operations.count != 1 || !plan.operations[0].kind.hasPrefix("investment_")) {
@@ -1393,6 +1515,21 @@ func validateWriterPlanV2(_ plan: WriterPlanV2, rawPlan: [String: Any]) throws {
                   let recipientGID = operation.recipientTransactionGID,
                   transactionGIDs.insert(recipientGID).inserted else {
                 throw HostError.message("W07 operation identity differs from its envelope")
+            }
+            continue
+        }
+        if operation.kind == "reassign_transfer_recipient" {
+            guard operation.capability == plan.capability,
+                  operation.ownerURI == plan.ownerURI,
+                  operation.sourceEventID == plan.sourceEventID,
+                  operation.transactionEntity == "TransferWithdrawTransaction",
+                  operation.expectedPair?.sender.transactionGID == operation.transactionGID,
+                  operation.expectedPair?.recipient.transactionGID == operation.recipientTransactionGID,
+                  operationIDs.insert(operation.operationID).inserted,
+                  transactionGIDs.insert(operation.transactionGID).inserted,
+                  let recipientGID = operation.recipientTransactionGID,
+                  transactionGIDs.insert(recipientGID).inserted else {
+                throw HostError.message("W10 operation identities differ from its reviewed pair")
             }
             continue
         }
@@ -1746,6 +1883,142 @@ func validateTransferShape(_ raw: [String: Any], plan: WriterPlanV2) throws {
     ]
     guard NSDictionary(dictionary: post).isEqual(to: expected) else {
         throw HostError.message("W07 postcondition differs from reviewed transfer")
+    }
+}
+
+func validateTransferRecipientEditShape(_ raw: [String: Any], plan: WriterPlanV2) throws {
+    let required: Set<String> = [
+        "operation_id", "kind", "capability", "transaction_entity", "transaction_gid",
+        "recipient_transaction_gid", "owner_uri", "source_event_id", "expected_pair",
+        "expected_postcondition",
+    ]
+    guard Set(raw.keys) == required,
+          raw["kind"] as? String == "reassign_transfer_recipient",
+          raw["capability"] as? String == "write.reassign-transfer-recipient",
+          raw["transaction_entity"] as? String == "TransferWithdrawTransaction",
+          raw["owner_uri"] as? String == plan.ownerURI,
+          raw["source_event_id"] as? String == plan.sourceEventID,
+          let pair = raw["expected_pair"] as? [String: Any],
+          Set(pair.keys) == ["sender", "recipient"],
+          let sender = pair["sender"] as? [String: Any],
+          let recipient = pair["recipient"] as? [String: Any] else {
+        throw HostError.message("W10 operation contains unknown or missing fields")
+    }
+    let legKeys: Set<String> = [
+        "transaction_entity", "transaction_gid", "transaction_numeric_id", "account_gid",
+        "amount", "currency_unit", "occurred_at", "status", "flags", "reconciled",
+        "note", "description", "fee", "original_fee", "original_fee_currency",
+        "original_amount", "peer_amount", "peer_currency_unit", "exchange_rate",
+        "peer_transaction_gid", "peer_account_gid", "payee_gid", "tag_gids", "category_assignment_uris",
+    ]
+    func validateLeg(_ row: [String: Any], entity: String, field: String) throws {
+        guard Set(row.keys) == legKeys,
+              row["transaction_entity"] as? String == entity,
+              let gid = row["transaction_gid"] as? String, !isBlank(gid),
+              gid == gid.trimmingCharacters(in: planWhitespace),
+              let numericID = row["transaction_numeric_id"] as? String,
+              let parsedID = Int(numericID), parsedID > 0, String(parsedID) == numericID,
+              let accountGID = row["account_gid"] as? String, !isBlank(accountGID),
+              accountGID == accountGID.trimmingCharacters(in: planWhitespace),
+              let peerGID = row["peer_transaction_gid"] as? String, !isBlank(peerGID),
+              peerGID == peerGID.trimmingCharacters(in: planWhitespace),
+              let peerAccountGID = row["peer_account_gid"] as? String, !isBlank(peerAccountGID),
+              peerAccountGID == peerAccountGID.trimmingCharacters(in: planWhitespace),
+              row["amount"] is String,
+              let currency = row["currency_unit"] as? String,
+              currency.range(of: "^[A-Z]{3}$", options: .regularExpression) != nil,
+              let peerCurrency = row["peer_currency_unit"] as? String,
+              peerCurrency.range(of: "^[A-Z]{3}$", options: .regularExpression) != nil,
+              let occurred = row["occurred_at"] as? String,
+              let status = row["status"] as? Int, [1, 2].contains(status),
+              let flags = row["flags"] as? Int, flags >= 0,
+              row["reconciled"] is Bool,
+              row["note"] is String || row["note"] is NSNull,
+              row["description"] is String || row["description"] is NSNull,
+              row["original_fee_currency"] is String || row["original_fee_currency"] is NSNull,
+              row["payee_gid"] is String || row["payee_gid"] is NSNull,
+              (row["note"] as? String).map({ $0 == $0.trimmingCharacters(in: planWhitespace) }) ?? true,
+              (row["description"] as? String).map({ $0 == $0.trimmingCharacters(in: planWhitespace) }) ?? true,
+              (row["original_fee_currency"] as? String).map({
+                  $0 == $0.trimmingCharacters(in: planWhitespace)
+                    && $0.range(of: "^[A-Z]{3}$", options: .regularExpression) != nil
+              }) ?? true,
+              (row["payee_gid"] as? String).map({
+                  !isBlank($0) && $0 == $0.trimmingCharacters(in: planWhitespace)
+              }) ?? true,
+              let tags = row["tag_gids"] as? [String], tags == Array(Set(tags)).sorted(),
+              tags.allSatisfy({ !isBlank($0) && $0 == $0.trimmingCharacters(in: planWhitespace) }),
+              let categories = row["category_assignment_uris"] as? [String],
+              categories == Array(Set(categories)).sorted(),
+              categories.allSatisfy({ !isBlank($0) && $0 == $0.trimmingCharacters(in: planWhitespace) }) else {
+            throw HostError.message("W10 \(field) snapshot contains invalid identity or scalar types")
+        }
+        let decimalFields = ["amount", "fee", "original_fee", "original_amount", "peer_amount", "exchange_rate"]
+        for name in decimalFields {
+            guard let value = row[name] as? String else {
+                throw HostError.message("W10 \(field).\(name) must be canonical decimal text")
+            }
+            let decimal = try decimalValue(value, field: "W10 \(field).\(name)")
+            guard NSDecimalNumber(decimal: decimal).stringValue == value else {
+                throw HostError.message("W10 \(field).\(name) must be canonical decimal text")
+            }
+        }
+        let exchangeRate = try decimalValue(row["exchange_rate"] as? String ?? "",
+                                            field: "W10 \(field).exchange_rate")
+        let fee = try decimalValue(row["fee"] as? String ?? "", field: "W10 \(field).fee")
+        let originalFee = try decimalValue(row["original_fee"] as? String ?? "",
+                                           field: "W10 \(field).original_fee")
+        guard exchangeRate > 0, fee >= 0, originalFee >= 0 else {
+            throw HostError.message("W10 \(field) has an invalid rate or fee")
+        }
+        _ = try precisePlanTimestamp(occurred)
+    }
+    try validateLeg(sender, entity: "TransferWithdrawTransaction", field: "sender")
+    try validateLeg(recipient, entity: "TransferDepositTransaction", field: "recipient")
+    guard let previous = plan.previousDestinationAccount,
+          let target = plan.destinationAccount,
+          let senderGID = sender["transaction_gid"] as? String,
+          let recipientGID = recipient["transaction_gid"] as? String,
+          let senderAmountText = sender["amount"] as? String,
+          let recipientAmountText = recipient["amount"] as? String,
+          let senderPeerAmountText = sender["peer_amount"] as? String,
+          let recipientPeerAmountText = recipient["peer_amount"] as? String,
+          let senderRate = sender["exchange_rate"] as? String,
+          let recipientRate = recipient["exchange_rate"] as? String,
+          (raw["transaction_gid"] as? String) == senderGID,
+          (raw["recipient_transaction_gid"] as? String) == recipientGID,
+          (sender["peer_transaction_gid"] as? String) == recipientGID,
+          (recipient["peer_transaction_gid"] as? String) == senderGID,
+          (sender["account_gid"] as? String) == plan.expectedAccountGID,
+          (recipient["account_gid"] as? String) == previous.accountGID,
+          (sender["peer_account_gid"] as? String) == previous.accountGID,
+          (recipient["peer_account_gid"] as? String) == plan.expectedAccountGID,
+          (sender["currency_unit"] as? String) == plan.currencyUnit,
+          (recipient["currency_unit"] as? String) == previous.currencyUnit,
+          (sender["peer_currency_unit"] as? String) == previous.currencyUnit,
+          (recipient["peer_currency_unit"] as? String) == plan.currencyUnit,
+          target.currencyUnit == previous.currencyUnit,
+          target.accountGID != previous.accountGID,
+          target.accountGID != plan.expectedAccountGID,
+          try decimalValue(senderAmountText, field: "W10 sender amount") < 0,
+          try decimalValue(recipientAmountText, field: "W10 recipient amount") > 0,
+          try decimalValue(senderPeerAmountText, field: "W10 sender peer amount") == decimalValue(recipientAmountText, field: "W10 recipient amount"),
+          try decimalValue(recipientPeerAmountText, field: "W10 recipient peer amount") == decimalValue(senderAmountText, field: "W10 sender amount"),
+          senderRate == recipientRate else {
+        throw HostError.message("W10 transfer pair or account identities are not reciprocal")
+    }
+    let expectedPostcondition: [String: Any] = [
+        "sender_gid": senderGID,
+        "recipient_gid": recipientGID,
+        "sender_account_gid": plan.expectedAccountGID,
+        "previous_destination_account_gid": previous.accountGID,
+        "destination_account_gid": target.accountGID,
+        "recipient_amount": recipientAmountText,
+        "receive_at": recipient["occurred_at"] as? String ?? "",
+    ]
+    guard let postcondition = raw["expected_postcondition"] as? [String: Any],
+          postcondition as NSDictionary == expectedPostcondition as NSDictionary else {
+        throw HostError.message("W10 postcondition differs from the reviewed transfer pair")
     }
 }
 
@@ -3594,6 +3867,273 @@ func transferAccounts(_ plan: WriterPlanV2, context: NSManagedObjectContext)
     return (sender, recipient)
 }
 
+struct TransferRecipientEditInspection {
+    let receipt: WriterResultV2
+    let senderAccount: NSManagedObject
+    let previousDestinationAccount: NSManagedObject
+    let destinationAccount: NSManagedObject
+    let sender: NSManagedObject
+    let recipient: NSManagedObject
+    let alreadyReassigned: Bool
+}
+
+func transferRecipientEditAccounts(_ plan: WriterPlanV2, context: NSManagedObjectContext)
+    throws -> (NSManagedObject, NSManagedObject, NSManagedObject) {
+    guard let coordinator = context.persistentStoreCoordinator,
+          let previous = plan.previousDestinationAccount,
+          let destination = plan.destinationAccount else {
+        throw HostError.message("W10 current and target destination accounts are required")
+    }
+    try requireReviewedRuntime(plan, coordinator: coordinator)
+    let fixtureCache = usesFixtureBalanceCache(context)
+    guard (previous.balanceMode == "ledger") == !fixtureCache,
+          (destination.balanceMode == "ledger") == !fixtureCache else {
+        throw HostError.message("W10 destination balance modes differ from native store semantics")
+    }
+    let sender = try reviewedAccount(plan.expectedAccountGID, ownerURI: plan.ownerURI,
+                                     currency: plan.currencyUnit, context: context)
+    let oldDestination = try reviewedAccount(previous.accountGID, ownerURI: plan.ownerURI,
+                                              currency: previous.currencyUnit, context: context)
+    let newDestination = try reviewedAccount(destination.accountGID, ownerURI: plan.ownerURI,
+                                              currency: destination.currencyUnit, context: context)
+    guard sender.objectID != oldDestination.objectID,
+          sender.objectID != newDestination.objectID,
+          oldDestination.objectID != newDestination.objectID else {
+        throw HostError.message("W10 sender, current recipient and target accounts must be distinct")
+    }
+    return (sender, oldDestination, newDestination)
+}
+
+func verifyTransferLegSnapshot(_ object: NSManagedObject, snapshot: TransferLegSnapshot,
+                               account: NSManagedObject, owner: NSManagedObject) throws {
+    let expectedAmount = try decimalValue(snapshot.amount, field: "W10 amount")
+    let expectedPeerAmount = try decimalValue(snapshot.peerAmount, field: "W10 peer amount")
+    let expectedOriginalAmount = try decimalValue(snapshot.originalAmount, field: "W10 original amount")
+    let expectedFee = try decimalValue(snapshot.fee, field: "W10 fee")
+    let expectedOriginalFee = try decimalValue(snapshot.originalFee, field: "W10 original fee")
+    let expectedRate = try decimalValue(snapshot.exchangeRate, field: "W10 exchange rate")
+    guard object.entity.name == snapshot.transactionEntity,
+          object.value(forKey: "GID") as? String == snapshot.transactionGID,
+          durableNumericID(object.objectID) == snapshot.transactionNumericID,
+          (object.value(forKey: "account") as? NSManagedObject)?.objectID == account.objectID,
+          object.value(forKey: "originalCurrency") as? String == snapshot.currencyUnit,
+          object.value(forKey: snapshot.transactionEntity == "TransferWithdrawTransaction"
+            ? "originalRecipientCurrency" : "originalSenderCurrency") as? String == snapshot.peerCurrencyUnit,
+          try nativeDecimal(object, "amount") == expectedAmount,
+          try nativeDecimal(object, "originalAmount") == expectedOriginalAmount,
+          try nativeDecimal(object, snapshot.transactionEntity == "TransferWithdrawTransaction"
+            ? "originalRecipientAmount" : "originalSenderAmount") == expectedPeerAmount,
+          try nativeDecimal(object, "fee") == expectedFee,
+          try nativeDecimal(object, "originalFee") == expectedOriginalFee,
+          object.value(forKey: "originalFeeCurrency") as? String == snapshot.originalFeeCurrency,
+          try nativeDecimal(object, "originalExchangeRate") == expectedRate,
+          try nativeDecimal(object, "currencyExchangeRate") == expectedRate,
+          (object.value(forKey: "status") as? NSNumber)?.intValue == snapshot.status,
+          (object.value(forKey: "flags") as? NSNumber)?.intValue == snapshot.flags,
+          (object.value(forKey: "reconciled") as? NSNumber)?.boolValue == snapshot.reconciled,
+          object.value(forKey: "notes") as? String == snapshot.note,
+          object.value(forKey: "desc") as? String == snapshot.description,
+          payeeGID(object) == snapshot.payeeGID,
+          let date = object.value(forKey: "date") as? Date,
+          abs(date.timeIntervalSince(try precisePlanTimestamp(snapshot.occurredAt))) < 0.000001 else {
+        throw HostError.message("W10 transfer leg differs from its reviewed snapshot")
+    }
+    let tags = try relatedObjects(object, "tags").map { tag -> String in
+        guard let gid = tag.value(forKey: "GID") as? String,
+              (tag.value(forKey: "user") as? NSManagedObject)?.objectID == owner.objectID else {
+            throw HostError.message("W10 tag is missing a same-owner GID")
+        }
+        return gid
+    }.sorted()
+    guard tags == snapshot.tagGIDs,
+          try relatedObjects(object, "categoriesAssigments").map({ $0.objectID.uriRepresentation().absoluteString }).sorted()
+            == snapshot.categoryAssignmentURIs else {
+        throw HostError.message("W10 transfer tags or category assignments differ from the reviewed snapshot")
+    }
+}
+
+func transferRecipientEditPostcondition(_ plan: WriterPlanV2,
+                                        operation: WriterOperationV2) throws -> TransferRecipientEditPostcondition {
+    guard let pair = operation.expectedPair,
+          let previous = plan.previousDestinationAccount,
+          let destination = plan.destinationAccount else {
+        throw HostError.message("W10 postcondition is incomplete")
+    }
+    return TransferRecipientEditPostcondition(
+        senderGID: pair.sender.transactionGID,
+        recipientGID: pair.recipient.transactionGID,
+        senderAccountGID: pair.sender.accountGID,
+        previousDestinationAccountGID: previous.accountGID,
+        destinationAccountGID: destination.accountGID,
+        recipientAmount: pair.recipient.amount,
+        receiveAt: pair.recipient.occurredAt)
+}
+
+func transferRecipientEditReceipt(_ plan: WriterPlanV2, operation: WriterOperationV2,
+                                  classification: String, sender: NSManagedObject? = nil,
+                                  recipient: NSManagedObject? = nil) throws -> WriterResultV2 {
+    let success = classification == "applied" || classification == "noop"
+    var item = WriterOperationResultV2(
+        operationID: operation.operationID, status: success ? classification : "unknown",
+        transactionEntity: "TransferWithdrawTransaction", transactionGID: operation.transactionGID,
+        durableURI: success ? sender?.objectID.uriRepresentation().absoluteString : nil,
+        durableNumericID: success ? sender.map { durableNumericID($0.objectID) } : nil,
+        oldPayeeGID: nil, newPayeeGID: nil, postcondition: nil)
+    if success, let recipient {
+        item.transferRecipientEditPostcondition = try transferRecipientEditPostcondition(plan, operation: operation)
+        item.transferRecipientEditDetails = TransferRecipientEditDetails(
+            recipientGID: operation.recipientTransactionGID!,
+            recipientNumericID: durableNumericID(recipient.objectID),
+            recipientURI: recipient.objectID.uriRepresentation().absoluteString)
+    }
+    return WriterResultV2(contractVersion: 2, planID: plan.planID, planDigest: plan.planDigest,
+        classification: classification, verified: success, operations: [item])
+}
+
+func inspectTransferRecipientEdit(_ plan: WriterPlanV2, context: NSManagedObjectContext,
+                                  saved: Bool = false) throws -> TransferRecipientEditInspection {
+    let operation = plan.operations[0]
+    guard let pair = operation.expectedPair,
+          let previous = plan.previousDestinationAccount,
+          let destination = plan.destinationAccount else {
+        throw HostError.message("W10 missing expected pair or destination accounts")
+    }
+    let (senderAccount, oldDestination, newDestination) = try transferRecipientEditAccounts(plan, context: context)
+    let sender = try fetchExactObject(entityName: pair.sender.transactionEntity,
+                                     gid: pair.sender.transactionGID, context: context)
+    let recipient = try fetchExactObject(entityName: pair.recipient.transactionEntity,
+                                        gid: pair.recipient.transactionGID, context: context)
+    guard let senderOwner = senderAccount.value(forKey: "user") as? NSManagedObject,
+          senderOwner.objectID.uriRepresentation().absoluteString == plan.ownerURI else {
+        throw HostError.message("W10 sender account owner differs from the reviewed plan")
+    }
+    let recipientAccount = recipient.value(forKey: "account") as? NSManagedObject
+    let senderRecipientAccount = sender.value(forKey: "recipientAccount") as? NSManagedObject
+    let before = recipientAccount?.objectID == oldDestination.objectID
+        && senderRecipientAccount?.objectID == oldDestination.objectID
+    let after = recipientAccount?.objectID == newDestination.objectID
+        && senderRecipientAccount?.objectID == newDestination.objectID
+    let amount = try decimalValue(pair.recipient.amount, field: "W10 recipient amount")
+    let sourcePrior = try decimalValue(plan.expectedCachedAccountBalance, field: "W10 source balance")
+    let oldPrior = try decimalValue(previous.expectedCachedBalance, field: "W10 previous destination balance")
+    let newPrior = try decimalValue(destination.expectedCachedBalance, field: "W10 target destination balance")
+    let fixtureCache = usesFixtureBalanceCache(context)
+    let sourceBalance = try nativeDecimal(senderAccount, "ballance")
+    let oldBalance = try nativeDecimal(oldDestination, "ballance")
+    let newBalance = try nativeDecimal(newDestination, "ballance")
+    let beforeBalances = sourceBalance == sourcePrior && oldBalance == oldPrior && newBalance == newPrior
+    let afterBalances = sourceBalance == sourcePrior
+        && oldBalance == (fixtureCache ? oldPrior - amount : oldPrior)
+        && newBalance == (fixtureCache ? newPrior + amount : newPrior)
+    guard sender.objectID != recipient.objectID,
+          (sender.value(forKey: "account") as? NSManagedObject)?.objectID == senderAccount.objectID,
+          (recipient.value(forKey: "senderAccount") as? NSManagedObject)?.objectID == senderAccount.objectID,
+          (sender.value(forKey: "recipientTransaction") as? NSManagedObject)?.objectID == recipient.objectID,
+          (recipient.value(forKey: "senderTransaction") as? NSManagedObject)?.objectID == sender.objectID,
+          try relatedObjects(sender, "categoriesAssigments").map({ $0.objectID.uriRepresentation().absoluteString }).sorted() == pair.sender.categoryAssignmentURIs,
+          try relatedObjects(recipient, "categoriesAssigments").map({ $0.objectID.uriRepresentation().absoluteString }).sorted() == pair.recipient.categoryAssignmentURIs else {
+        throw HostError.message("W10 transfer pair links or assignments are not reciprocal")
+    }
+    try verifyTransferLegSnapshot(sender, snapshot: pair.sender, account: senderAccount, owner: senderOwner)
+    try verifyTransferLegSnapshot(recipient, snapshot: pair.recipient,
+        account: before ? oldDestination : newDestination, owner: senderOwner)
+    guard (before && beforeBalances) || (after && afterBalances) else {
+        return TransferRecipientEditInspection(
+            receipt: try transferRecipientEditReceipt(plan, operation: operation, classification: "unknown"),
+            senderAccount: senderAccount, previousDestinationAccount: oldDestination,
+            destinationAccount: newDestination, sender: sender, recipient: recipient,
+            alreadyReassigned: after)
+    }
+    if before {
+        guard !saved else { throw HostError.message("W10 persisted recipient reassignment is missing") }
+        return TransferRecipientEditInspection(
+            receipt: try transferRecipientEditReceipt(plan, operation: operation, classification: "retry_safe"),
+            senderAccount: senderAccount, previousDestinationAccount: oldDestination,
+            destinationAccount: newDestination, sender: sender, recipient: recipient,
+            alreadyReassigned: false)
+    }
+    return TransferRecipientEditInspection(
+        receipt: try transferRecipientEditReceipt(plan, operation: operation, classification: saved ? "applied" : "noop",
+            sender: sender, recipient: recipient),
+        senderAccount: senderAccount, previousDestinationAccount: oldDestination,
+        destinationAccount: newDestination, sender: sender, recipient: recipient,
+        alreadyReassigned: true)
+}
+
+func transferRecipientEditPreimages(_ inspection: TransferRecipientEditInspection,
+                                    context: NSManagedObjectContext) throws -> [CreationPreimage] {
+    var allowedByID: [NSManagedObjectID: Set<String>] = [
+        inspection.sender.objectID: ["relationship:recipientAccount"],
+        inspection.recipient.objectID: ["relationship:account"],
+    ]
+    for account in [inspection.previousDestinationAccount, inspection.destinationAccount] {
+        allowedByID[account.objectID, default: []].formUnion([
+            "relationship:transactionsHistory",
+            "relationship:reverseTransferWithdrawTransactionrecipientAccount",
+        ])
+        if usesFixtureBalanceCache(context) { allowedByID[account.objectID, default: []].insert("attribute:ballance") }
+    }
+    var result: [CreationPreimage] = []
+    for entityName in ["SyncObject", "CategoryAssigment"] {
+        for object in try context.fetch(NSFetchRequest<NSManagedObject>(entityName: entityName)) {
+            var fingerprint = try immutableTransactionFingerprint(object)
+            if object.entity.relationshipsByName["payee"] != nil {
+                fingerprint["relationship:payee"] = (object.value(forKey: "payee") as? NSManagedObject)
+                    .map { $0.objectID.uriRepresentation().absoluteString as NSString } ?? NSNull()
+            }
+            let allowed = allowedByID[object.objectID] ?? []
+            result.append(CreationPreimage(objectID: object.objectID,
+                fingerprint: fingerprint.filter { !allowed.contains($0.key) }, allowedKeys: allowed))
+        }
+    }
+    return result
+}
+
+func reassignTransferRecipientV2(_ plan: WriterPlanV2, context: NSManagedObjectContext,
+                                 requireStopped: () throws -> Void) throws -> WriterResultV2 {
+    let before = try inspectTransferRecipientEdit(plan, context: context)
+    if before.receipt.classification == "noop" { return before.receipt }
+    guard before.receipt.classification == "retry_safe" else {
+        throw HostError.message("W10 transfer pair, target accounts or balances differ from the reviewed plan")
+    }
+    let preimages = try transferRecipientEditPreimages(before, context: context)
+    let amount = try decimalValue(plan.operations[0].expectedPair!.recipient.amount,
+                                  field: "W10 recipient amount")
+    try requireStopped()
+    before.sender.setValue(before.destinationAccount, forKey: "recipientAccount")
+    before.recipient.setValue(before.destinationAccount, forKey: "account")
+    if usesFixtureBalanceCache(context) {
+        let oldPrior = try decimalValue(plan.previousDestinationAccount!.expectedCachedBalance,
+                                        field: "W10 previous destination balance")
+        let newPrior = try decimalValue(plan.destinationAccount!.expectedCachedBalance,
+                                        field: "W10 target destination balance")
+        before.previousDestinationAccount.setValue(nativeDouble(oldPrior - amount), forKey: "ballance")
+        before.destinationAccount.setValue(nativeDouble(newPrior + amount), forKey: "ballance")
+    }
+    try verifyCreationPreimages(preimages, context: context)
+#if MONEYWIZ_TOOLS_TESTING
+    if writerTestCrashPoint == .beforeSave { _exit(86) }
+#endif
+    try context.save()
+#if MONEYWIZ_TOOLS_TESTING
+    if writerTestCrashPoint == .afterSave { _exit(87) }
+#endif
+    let readback = NSManagedObjectContext(concurrencyType: .privateQueueConcurrencyType)
+    readback.persistentStoreCoordinator = context.persistentStoreCoordinator
+    var result: Result<WriterResultV2, Error> = .failure(HostError.message("W10 read-back did not run"))
+    readback.performAndWait {
+        result = Result {
+            let persisted = try inspectTransferRecipientEdit(plan, context: readback, saved: true)
+            guard persisted.receipt.classification == "applied" else {
+                throw HostError.message("W10 independent transfer-pair read-back differs")
+            }
+            try verifyCreationPreimages(preimages, context: readback)
+            return persisted.receipt
+        }
+    }
+    return try result.get()
+}
+
 func transferOldObject(_ row: TransferOldRow, account: NSManagedObject,
                        context: NSManagedObjectContext) throws -> NSManagedObject {
     let object = try fetchExactObject(entityName: row.transactionEntity,
@@ -4038,6 +4578,10 @@ func recoverPlanV2(_ plan: WriterPlanV2, container: NSPersistentContainer,
                 result = .success(try inspectTransfer(plan, context: context).receipt)
                 return
             }
+            if plan.capability == "write.reassign-transfer-recipient" {
+                result = .success(try inspectTransferRecipientEdit(plan, context: context).receipt)
+                return
+            }
             if let operation = plan.operations.first, operation.kind.hasPrefix("investment_") {
                 result = .success(try inspectInvestment(operation, plan: plan, context: context))
                 return
@@ -4116,6 +4660,10 @@ func writePlanV2(
             }
             if plan.capability == "write.replace-import-with-transfer" {
                 result = .success(try replaceImportWithTransferV2(plan, context: context, requireStopped: requireStopped))
+                return
+            }
+            if plan.capability == "write.reassign-transfer-recipient" {
+                result = .success(try reassignTransferRecipientV2(plan, context: context, requireStopped: requireStopped))
                 return
             }
             if let operation = plan.operations.first, operation.kind.hasPrefix("investment_") {
@@ -4247,23 +4795,34 @@ func requireCreationFixture(_ coordinator: NSPersistentStoreCoordinator) throws 
     }
 }
 
+let minimumLiveWriterBuild = 449
+
+func isCanonicalMoneyWizStore(_ storeURL: URL, bundleID: String) -> Bool {
+    let home = FileManager.default.homeDirectoryForCurrentUser
+    let container = home.appendingPathComponent("Library/Containers", isDirectory: true)
+        .appendingPathComponent(bundleID, isDirectory: true)
+        .appendingPathComponent("Data", isDirectory: true)
+    let accepted = [
+        container.appendingPathComponent("Library/Application Support/MoneyWiz_iCloud.sqlite"),
+        container.appendingPathComponent("Documents/.AppData/ipadMoneyWiz.sqlite"),
+    ].map { $0.resolvingSymlinksInPath().standardizedFileURL.path }
+    return accepted.contains(storeURL.resolvingSymlinksInPath().standardizedFileURL.path)
+}
+
 func requireReviewedApplication(_ identity: AppIdentity, storeUUID: String,
-                                checksum: String, storeURL: URL,
-                                allowLiveTestFlight: Bool = false) throws {
+                                checksum: String, storeURL: URL) throws {
     let appURL = URL(fileURLWithPath: identity.path).resolvingSymlinksInPath()
     let modelURL = URL(fileURLWithPath: identity.modelPath).resolvingSymlinksInPath()
     let metadata = try NSPersistentStoreCoordinator.metadataForPersistentStore(
         ofType: NSSQLiteStoreType, at: storeURL, options: nil)
     let disposable = metadata["MoneyWizToolsDisposableFixture"] as? String == "W01-v1"
-    if identity.bundleID != "com.moneywiz.personalfinance-setapp" && !allowLiveTestFlight && !disposable {
-        throw HostError.message("TestFlight writes remain blocked; marked disposable fixture required")
-    }
+    let build = Bundle(url: appURL)?.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+    let supportsLiveWriter = build.flatMap(Int.init).map { $0 >= minimumLiveWriterBuild } ?? false
+    let isLiveStore = isCanonicalMoneyWizStore(storeURL, bundleID: identity.bundleID)
     guard let app = Bundle(url: appURL),
           moneyWizBundleIdentifiers.contains(identity.bundleID),
           app.bundleIdentifier == identity.bundleID,
           app.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String == identity.version,
-          disposable || (identity.version == "2026.37.1" &&
-              app.object(forInfoDictionaryKey: "CFBundleVersion") as? String == "449"),
           modelURL.path.hasPrefix(appURL.path + "/"),
           checksum == supportedWriterPolicy.modelChecksum,
           try readModelChecksum(at: modelURL) == checksum,
@@ -4273,10 +4832,11 @@ func requireReviewedApplication(_ identity: AppIdentity, storeUUID: String,
     guard metadata[modelChecksumMetadataKey] as? String == checksum else {
         throw HostError.message("reviewed store model checksum differs")
     }
-    if identity.bundleID != "com.moneywiz.personalfinance-setapp" && !allowLiveTestFlight {
-        guard metadata["MoneyWizToolsDisposableFixture"] as? String == "W01-v1" else {
-            throw HostError.message("TestFlight writes remain blocked; marked disposable fixture required")
-        }
+    guard disposable || isLiveStore else {
+        throw HostError.message("marked disposable fixture required for a store outside the canonical MoneyWiz app container")
+    }
+    guard disposable || supportsLiveWriter else {
+        throw HostError.message("MoneyWiz build is below the minimum live-writer build")
     }
 }
 
@@ -4288,8 +4848,7 @@ func requireReviewedRuntime(_ plan: WriterPlanV2,
         throw HostError.message("writer runtime model or store differs from reviewed plan")
     }
     try requireReviewedApplication(plan.appIdentity, storeUUID: plan.storeIdentity.storeUUID,
-        checksum: plan.modelChecksum, storeURL: storeURL,
-        allowLiveTestFlight: plan.capability == "write.adjust-balance-investment-total")
+        checksum: plan.modelChecksum, storeURL: storeURL)
 }
 
 let supportedAccountEntities: Set<String> = [
@@ -6203,8 +6762,8 @@ func run() throws {
                     URL(fileURLWithPath: plan.appIdentity.modelPath).resolvingSymlinksInPath().path else {
                 throw HostError.message("W09 selected model differs from reviewed plan")
             }
-            try requireReviewedApplication(plan.appIdentity, storeUUID: plan.storeIdentity.storeUUID,
-                checksum: plan.modelChecksum, storeURL: arguments.store)
+        try requireReviewedApplication(plan.appIdentity, storeUUID: plan.storeIdentity.storeUUID,
+            checksum: plan.modelChecksum, storeURL: arguments.store)
             let container = try loadContainer(
                 storeURL: arguments.store, modelURL: arguments.model,
                 expectedChecksum: plan.modelChecksum, readOnly: arguments.recoverOnly
@@ -6235,9 +6794,8 @@ func run() throws {
               plan.storeIdentity.storeUUID == actualStoreIdentity else {
             throw HostError.message("writer v2 runtime store or model identity does not match reviewed plan")
         }
-        try requireReviewedApplication(plan.appIdentity, storeUUID: plan.storeIdentity.storeUUID,
-            checksum: plan.modelChecksum, storeURL: arguments.store,
-            allowLiveTestFlight: plan.capability == "write.adjust-balance-investment-total")
+            try requireReviewedApplication(plan.appIdentity, storeUUID: plan.storeIdentity.storeUUID,
+                checksum: plan.modelChecksum, storeURL: arguments.store)
         if plan.capability == "write.delete-supported-transactions" && !arguments.recoverOnly,
            let noop = try preflightSupportedDeletionAtStore(plan, storeURL: arguments.store, modelURL: arguments.model) {
             return try JSONEncoder().encode(noop)

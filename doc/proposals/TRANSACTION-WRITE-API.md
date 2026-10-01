@@ -9,6 +9,12 @@ for P2/P3 to use future release branches; phase labels continue to describe
 dependencies and evidence gates. See the [implementation plan](TRANSACTION-WRITE-IMPLEMENTATION-PLAN.md)
 for current coordination and status.
 
+Release-scope update (2026-10-01): W10, reassignment of the recipient account
+for an existing linked transfer pair, is also added to `release/0.3.0` as its
+own operation and PR. The user also confirmed that MoneyWiz bundle channel must
+not gate admission; supported official builds at or above the minimum build
+remain subject to exact app, model and canonical-store checks.
+
 Delivery tracking, confirmed scope and progressive task preparation are recorded
 in the [implementation plan](TRANSACTION-WRITE-IMPLEMENTATION-PLAN.md).
 
@@ -223,6 +229,7 @@ or prune history as part of these commands.
 | W07 | Convert/link transfer and FX, P2 | Source ID, destination account and optional existing counterpart; both actual amounts/dates, fees and rate; one atomic native pair, reciprocal links, no duplicate import or orphan |
 | W08 | Investment Buy/Sell and cash events, P3 | Asset identity/type, quantity, quote unit, price, commission/currency; verify cash and holdings independently; no invented units; aggregate income-sale method stays W01 |
 | W09 | Exact and approved fuzzy payee merge, P3 | Consume approved rows only, explicit survivor, owner/evidence and relationship inventory; pending/rejected no-op; migrate current/scheduled/refund/history-relevant relationships using native rules |
+| W10 | Reassign a linked transfer recipient, P2 extension | Bind both complete existing legs and three same-owner accounts; atomically update both account links; preserve transaction identities and all other leg state; verify persisted pair and recovery |
 
 W02 scalar implementation and disposable validation are specified in
 [Transaction Editing](../TRANSACTION-EDITING.md). Relationship assignment and

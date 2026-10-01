@@ -13,8 +13,9 @@ The current writer implements and is verified for:
 - Creating a destination payee when reassignment requires one.
 - Saving through the installed MoneyWiz Tools.app host.
 
-Version-2 plans also implement the finite W01–W09 operations on the reviewed
-live Setapp runtime or marked disposable stores. W09 migrates the complete
+Version-2 plans also implement the finite W01–W10 operations on a supported
+MoneyWiz bundle at build 449 or newer with its canonical store, or on a marked
+disposable store. Bundle channel does not determine admission. W09 migrates the complete
 native reference inventory and deletes one source payee for an exact or
 individually approved fuzzy pair. The legacy group capability
 `write.merge-duplicate-payees` remains blocked. See
@@ -87,7 +88,7 @@ capability payloads fail closed.
 
 Version 2 adds a strict shared envelope, expected old values, reviewed digest,
 store/owner/app binding, durable per-operation IDs and independent persisted
-read-back. The P1F payee bridge remains supported. W01–W09 handlers accept
+read-back. The P1F payee bridge remains supported. W01–W10 handlers accept
 only their documented variants, with independent native app/model/store checks
 on apply and recovery. See [Transaction Creation](TRANSACTION-CREATION.md) and
 [Live Write Compatibility](LIVE-WRITE-COMPATIBILITY.md) for the supported

@@ -102,7 +102,7 @@ def test_w05_matching_target_noop_has_no_transaction() -> None:
     assert validate_result(plan, receipt(plan, "noop", durable=False))
 
 
-def test_w05_client_respects_capability_gate(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_w05_client_requires_fixture_capability_for_noncanonical_store(monkeypatch: pytest.MonkeyPatch) -> None:
     plan = build_adjust_balance_plan(request())
     checked: list[str] = []
 
@@ -110,7 +110,7 @@ def test_w05_client_respects_capability_gate(monkeypatch: pytest.MonkeyPatch) ->
         checked.append(capability)
         raise CompatibilityError("blocked")
 
-    monkeypatch.setattr(writer_client, "require_write_capability", reject)
+    monkeypatch.setattr(writer_client, "require_disposable_write_capability", reject)
     client = writer_client.WriterClient(Path("host"), Path("model"), Path("store"))
     with pytest.raises(writer_client.WriterClientError, match="blocked"):
         client._require_operation_capability(plan)

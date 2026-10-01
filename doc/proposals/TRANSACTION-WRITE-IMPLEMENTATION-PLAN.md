@@ -5,7 +5,7 @@ Status (2026-09-28): P0, P1F and P1/W01–W04 implementation is integrated on
 observed GBP investment-total variant is active on `feat/p2-w05-adjust-balance`;
 its app and iCloud export acceptance is complete.
 The user has confirmed that the complete P0/P1F/P1/P2/P3 roadmap, including
-W01–W09, belongs to release `0.3.0`. W01–W04 are already integrated; keep each
+W01–W10, belongs to release `0.3.0`. W01–W04 are already integrated; keep each
 remaining operation in a separate PR and leave new PRs open for user inspection.
 Do not merge on the user's behalf. This 2026-09-28 decision supersedes the earlier
 proposal to put P2/P3 in later releases.
@@ -51,7 +51,7 @@ operation. Track development and application acceptance separately.
 | Document | Responsibility |
 | --- | --- |
 | This plan | Delivery order, decisions, coordination, acceptance and progress |
-| [Transaction write API proposal](TRANSACTION-WRITE-API.md) | Technical source map, W01–W09 operation contracts and evidence questions |
+| [Transaction write API proposal](TRANSACTION-WRITE-API.md) | Technical source map, W01–W10 operation contracts and evidence questions |
 | [Project TODO](../../TODO.md) | Existing propositions and progressively refined executable work |
 | Private MoneyWiz notes in Obsidian | User policies, source evidence, session reports and financial details |
 
@@ -65,8 +65,8 @@ No proposed command or roadmap entry constitutes an enabled write capability.
 | --- | --- |
 | First delivery: P0, shared writer foundation and P1/W01–W04 | Confirmed by user |
 | New release version and first release branch: `0.3.0`, `release/0.3.0` | Confirmed by user |
-| Full implementation scope: P0/P1F/P1/P2/P3 and W01–W09 in `release/0.3.0`, with a separate PR per operation | Confirmed by user on 2026-09-28; supersedes the earlier future-release split for P2/P3 |
-| Initial application acceptance target: MoneyWiz TestFlight | Confirmed; rediscover exact app, store and model during execution |
+| Full implementation scope: P0/P1F/P1/P2/P3 and W01–W10 in `release/0.3.0`, with a separate PR per operation | W01–W09 confirmed on 2026-09-28; W10 added by the user on 2026-10-01 |
+| Application admission | Supported official MoneyWiz bundle at build 449 or newer, with exact app/model/store checks; channel is not an admission criterion |
 | Use Obsidian for private recovery/session information | Confirmed in principle |
 | Create detailed TODO tasks progressively as each phase is prepared | Requested by user |
 | Integrate the complete P0/P1F/P1/P2/P3 roadmap on `release/0.3.0`; separate operation branches and independent GitHub review | Confirmed by the user's 2026-09-28 scope decision; new PRs stay open for the user's merge |
@@ -136,7 +136,7 @@ this planning update does not change the installed product version.
 | Work | Branch / PR target | Integration condition |
 | --- | --- | --- |
 | P0 documentation baseline | `release/0.3.0` | Documentation validation; separate from executable changes |
-| Each W01–W09 implementation | Separate `feat/<task-id>-<topic>` branch from the current `release/0.3.0` head | PR targets `release/0.3.0`; independent GitHub review and required checks; leave open for user inspection |
+| Each W01–W10 implementation | Separate `feat/<task-id>-<topic>` branch from the current `release/0.3.0` head | PR targets `release/0.3.0`; independent GitHub review and required checks; leave open for user inspection |
 | P0/P1F/P1/P2/P3 | Integrated sequentially on `release/0.3.0` | Respect prerequisites; refine phase tasks; synthetic validation does not promote live capability |
 | Completed 0.3.0 delivery | Full planned scope on `release/0.3.0` | Required implementation and acceptance evidence complete; main merge and publication require separate authorization |
 
@@ -260,6 +260,7 @@ retain existing supported fallbacks until independently verified.
 | W05 | Create native Adjust Balance transactions | Target versus delta; cash/total/asset units; date rules for the installed build; matching-target no-op |
 | W06 | Guarded deletion of supported records | Exact target and dependency inventory; native history/deletion behavior; no unrelated loss |
 | W07 | Convert/link transfer and FX records | Native conversion or replacement rules; reciprocal links; actual amounts, fees, dates and duplicate prevention |
+| W10 | Reassign recipient account on an existing transfer pair | Preserve both transaction identities and all non-account fields; same-owner distinct accounts; atomic reciprocal account-link update and persisted read-back |
 
 Require complete evidence for both accounts and both legs of a transfer. Preserve
 source-event identity and report old/new IDs if conversion replaces objects. An

@@ -601,7 +601,7 @@ def test_native_model_checksum_inspection_uses_explicit_host(
     ]
 
 
-def test_default_store_candidates_are_edition_scoped(tmp_path: Path) -> None:
+def test_default_store_candidates_follow_bundle_container(tmp_path: Path) -> None:
     candidates = runtime_identity.default_store_candidates(
         home=tmp_path,
         bundle_identifier=runtime_identity.TESTFLIGHT_BUNDLE_IDENTIFIER,
@@ -615,6 +615,27 @@ def test_default_store_candidates_are_edition_scoped(tmp_path: Path) -> None:
         tmp_path
         / "Library/Containers/com.moneywiz.personalfinance/Data/Documents/.AppData"
         / "ipadMoneyWiz.sqlite",
+    )
+
+
+@pytest.mark.parametrize(
+    "bundle_identifier",
+    [runtime_identity.SETAPP_BUNDLE_IDENTIFIER, runtime_identity.TESTFLIGHT_BUNDLE_IDENTIFIER],
+)
+def test_canonical_store_admission_is_supported_for_either_bundle(
+    tmp_path: Path, bundle_identifier: str
+) -> None:
+    store = runtime_identity.default_store_candidates(
+        home=tmp_path, bundle_identifier=bundle_identifier
+    )[0]
+
+    assert runtime_identity.is_canonical_store_path(
+        store, home=tmp_path, bundle_identifier=bundle_identifier
+    )
+    assert not runtime_identity.is_canonical_store_path(
+        tmp_path / "unmarked.sqlite",
+        home=tmp_path,
+        bundle_identifier=bundle_identifier,
     )
 
 

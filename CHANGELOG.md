@@ -51,6 +51,9 @@
 - W09 exact and individually approved fuzzy payee merge plans on marked
   disposable model-48 stores and the reviewed live Setapp runtime, with complete
   native reference migration, one-save deletion, fresh read-back and recovery.
+- W10 reassignment of the recipient account on an existing linked transfer pair,
+  preserving both transaction identities and all reviewed transaction fields,
+  with atomic relationship updates, persisted read-back and crash recovery.
 - Private recovery journals, consistent pre-write snapshots, durable results,
   source-event retry guards and explicit retention cleanup.
 - Read-only runtime identity discovery binding the application edition/build,
@@ -66,9 +69,10 @@
   deletion to the reviewed MoneyWiz fiat and crypto currency catalogs, with
   native precision checks and explicit reporting rates. Preserve existing
   GBP plans, deterministic replay and recovery.
-- Enable the implemented W01–W09 variants for Setapp MoneyWiz 2026.37.1 build
-  449, with independent native app/model/store checks on apply and recovery.
-  Retain the verified W05 TestFlight 2026.37.1 build 449 live path.
+- Admit implemented W01–W10 writes for a supported official MoneyWiz bundle at
+  build 449 or newer when the exact app, model and canonical-store identities
+  match. Bundle channel does not affect admission; marked disposable fixtures
+  remain the isolated test path.
 - Admit all seven concrete account subtypes for ordinary creation, editing,
   assignment, reconciliation and transfer replacement. Live writes preserve
   cached account balances and validate the ledger; disposable fixtures retain

@@ -27,6 +27,7 @@ LEGACY_TESTFLIGHT_APP = Path("/Applications/MoneyWiz 2026.app")
 
 CURRENT_STORE_LEAF = Path("Data/Library/Application Support/MoneyWiz_iCloud.sqlite")
 LEGACY_STORE_LEAF = Path("Data/Documents/.AppData/ipadMoneyWiz.sqlite")
+MINIMUM_LIVE_WRITER_BUILD = 449
 
 
 class RuntimeIdentityError(Exception):
@@ -516,6 +517,19 @@ def default_store_candidates(
         home_directory / "Library/Containers" / identifier / leaf
         for identifier in identifiers
         for leaf in (CURRENT_STORE_LEAF, LEGACY_STORE_LEAF)
+    )
+
+
+def is_canonical_store_path(
+    store_path: Path, *, bundle_identifier: str, home: Path | None = None
+) -> bool:
+    """Return whether a store is in the selected app's canonical container."""
+    canonical = store_path.expanduser().resolve(strict=False)
+    return any(
+        candidate.resolve(strict=False) == canonical
+        for candidate in default_store_candidates(
+            home=home, bundle_identifier=bundle_identifier
+        )
     )
 
 

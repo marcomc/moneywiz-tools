@@ -12,6 +12,12 @@ from pathlib import Path
 from typing import Any
 
 from compatibility import CompatibilityError, require_disposable_write_capability, require_write_capability
+from runtime_identity import (
+    MINIMUM_LIVE_WRITER_BUILD,
+    RuntimeIdentityError,
+    inspect_app,
+    is_canonical_store_path,
+)
 from write_journal import JournalError, JournalStore, store_lock
 from write_plan import (
     ADJUST_BALANCE_CAPABILITY,
@@ -19,6 +25,7 @@ from write_plan import (
     DELETE_ADJUSTMENT_CAPABILITY,
     SUPPORTED_DELETION_CAPABILITY,
     TRANSFER_CAPABILITY,
+    TRANSFER_RECIPIENT_CAPABILITY,
     ASSIGN_CAPABILITY,
     CREATE_CAPABILITIES,
     EDIT_CAPABILITY,
@@ -276,28 +283,33 @@ class WriterClient:
         return record
 
     def _require_operation_capability(self, plan: dict[str, Any]) -> None:
-        if plan["capability"] == ADJUST_BALANCE_CAPABILITY or (
-            plan.get("app_identity", {}).get("bundle_id") == "com.moneywiz.personalfinance-setapp"
-        ):
-            try:
-                require_write_capability(self.store, plan["capability"])
-            except CompatibilityError as exc:
-                raise WriterClientError(str(exc)) from exc
-            return
         if plan["capability"] not in {
             *CREATE_CAPABILITIES, EDIT_CAPABILITY, ASSIGN_CAPABILITY,
-            *EXTENDED_ADJUST_CAPABILITIES,
+            ADJUST_BALANCE_CAPABILITY, *EXTENDED_ADJUST_CAPABILITIES,
             DELETE_ADJUSTMENT_CAPABILITY,
             SUPPORTED_DELETION_CAPABILITY,
             TRANSFER_CAPABILITY,
+            TRANSFER_RECIPIENT_CAPABILITY,
             *INVESTMENT_CAPABILITIES,
             *PAYEE_MERGE_CAPABILITIES.values(),
             *(policy[0] for policy in RECONCILE_CAPABILITIES.values()),
         }:
             return
         try:
-            require_disposable_write_capability(self.store, plan["capability"])
-        except CompatibilityError as exc:
+            app_identity = plan["app_identity"]
+            bundle_id = app_identity["bundle_id"]
+            if not is_canonical_store_path(self.store, bundle_identifier=bundle_id):
+                require_disposable_write_capability(self.store, plan["capability"])
+                return
+
+            app = inspect_app(Path(app_identity["path"]))
+            if app.bundle_identifier != bundle_id or app.version != app_identity["version"]:
+                raise RuntimeIdentityError("reviewed MoneyWiz app identity differs")
+            if (app.build is None or not app.build.isascii() or not app.build.isdigit()
+                    or int(app.build) < MINIMUM_LIVE_WRITER_BUILD):
+                raise RuntimeIdentityError("MoneyWiz build is below the minimum live-writer build")
+            require_write_capability(self.store, plan["capability"])
+        except (CompatibilityError, OSError, ValueError, RuntimeIdentityError) as exc:
             raise WriterClientError(str(exc)) from exc
 
     def apply(

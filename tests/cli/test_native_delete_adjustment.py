@@ -110,14 +110,9 @@ def test_w06_refuses_unmarked_and_stale_targets(
     store, identity = _store(w01_runtime, tmp_path, marked=False)
     plan = _plan(w01_runtime, identity)
     rejected = _invoke(w01_runtime, store, plan, tmp_path)
-    if w01_runtime.app_identity["bundle_id"] == "com.moneywiz.personalfinance-setapp":
-        assert rejected.returncode == 0, rejected.stderr
-        assert validate_result(plan, json.loads(rejected.stdout))["classification"] == "applied"
-        assert _target_count(store) == 0
-    else:
-        assert rejected.returncode != 0
-        assert "marked disposable fixture required" in rejected.stderr
-        assert _target_count(store) == 1
+    assert rejected.returncode != 0
+    assert "marked disposable fixture required" in rejected.stderr
+    assert _target_count(store) == 1
 
     marked_path = tmp_path / "marked"
     marked_path.mkdir()
@@ -137,13 +132,6 @@ def test_w06_direct_entrypoints_refuse_unmarked_store(
     store, identity = _store(w01_runtime, tmp_path, marked=False)
     plan = _plan(w01_runtime, identity)
     rejected = _invoke(w01_runtime, store, plan, tmp_path, recover=recover, direct=True)
-    if w01_runtime.app_identity["bundle_id"] == "com.moneywiz.personalfinance-setapp":
-        assert rejected.returncode == 0, rejected.stderr
-        assert validate_result(plan, json.loads(rejected.stdout))["classification"] == (
-            "retry_safe" if recover else "applied"
-        )
-        assert _target_count(store) == (1 if recover else 0)
-        return
     assert rejected.returncode != 0
     assert "marked disposable fixture required" in rejected.stderr
     assert _target_count(store) == 1

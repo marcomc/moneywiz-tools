@@ -176,10 +176,6 @@ def test_w08_rejects_unmarked_store(
     store, identity = new_store(w01_runtime, tmp_path, units=False, marked=False)
     write_plan = plan(w01_runtime, identity, "investment_income", aggregate=True)
     result = _invoke(w01_runtime, store, write_plan, tmp_path)
-    if w01_runtime.app_identity["bundle_id"] == "com.moneywiz.personalfinance-setapp":
-        assert result.returncode == 0, result.stderr
-        assert validate_result(write_plan, json.loads(result.stdout))["classification"] == "applied"
-        return
     assert result.returncode == 2
     assert "marked disposable fixture required" in result.stderr
 
@@ -212,11 +208,6 @@ def test_w08_writer_client_refuses_unmarked_store_before_journal(
         "MONEYWIZ_JOURNAL_DIR": str(tmp_path / "journal"),
     }))
     client = WriterClient(w01_runtime.fixture_builder, w01_runtime.model, store)
-    if w01_runtime.app_identity["bundle_id"] == "com.moneywiz.personalfinance-setapp":
-        assert client.apply(write_plan, write_plan["plan_digest"], journal)["classification"] == "applied"
-        assert client.recover(write_plan, journal)["classification"] == "noop"
-        assert journal.load(write_plan["plan_id"])["state"] == "verified"
-        return
     with pytest.raises(WriterClientError, match="disposable"):
         client.apply(write_plan, write_plan["plan_digest"], journal)
     assert not list(journal.entries.iterdir())

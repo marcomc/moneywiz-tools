@@ -590,12 +590,7 @@ def test_unmarked_store_cannot_enter_creation_handler(
     plan = _plan(w01_runtime, identity, source_event="unmarked")
     rejected = _invoke(w01_runtime, store, plan, tmp_path)
     assert rejected.returncode == 2
-    expected = (
-        "explicit reviewed reporting exchange rate"
-        if w01_runtime.app_identity["bundle_id"] == "com.moneywiz.personalfinance-setapp"
-        else "marked disposable fixture required"
-    )
-    assert expected in rejected.stderr
+    assert "marked disposable fixture required" in rejected.stderr
 
 
 def test_cumulative_refund_guard_counts_existing_links(

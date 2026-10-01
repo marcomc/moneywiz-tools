@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import copy
 import sqlite3
+from types import SimpleNamespace
 
 import pytest
 import writer_client
 from test_write_plan import plan
+from test_transaction_create import request as creation_request
 from write_journal import JournalPaths, JournalStore
 from write_plan import validate_plan
+from write_transactions import build_plan
 from writer_client import WriterClient, WriterClientError
 
 
@@ -59,6 +62,69 @@ def test_apply_requires_exact_reviewed_digest_before_preparing(execution):
     with pytest.raises(WriterClientError, match="reviewed-digest"):
         client.apply(payload, "0" * 64, journal)
     assert not list(journal.entries.iterdir())
+
+
+@pytest.mark.parametrize("bundle_identifier", [
+    "com.moneywiz.personalfinance",
+    "com.moneywiz.personalfinance-setapp",
+])
+def test_live_capability_admission_uses_build_floor_for_either_bundle(
+    monkeypatch, tmp_path, bundle_identifier,
+):
+    payload = build_plan(creation_request())
+    payload["app_identity"].update(
+        bundle_id=bundle_identifier, version="2026.38.1",
+        path=str(tmp_path / "MoneyWiz.app"),
+    )
+    store = tmp_path / "canonical.sqlite"
+    calls = []
+    monkeypatch.setattr(writer_client, "inspect_app", lambda _path: SimpleNamespace(
+        bundle_identifier=bundle_identifier, version="2026.38.1", build="452",
+    ))
+    monkeypatch.setattr(writer_client, "is_canonical_store_path", lambda *_a, **_kw: True)
+    monkeypatch.setattr(writer_client, "require_write_capability",
+                        lambda _store, capability: calls.append(capability))
+    monkeypatch.setattr(writer_client, "require_disposable_write_capability",
+                        lambda *_a: pytest.fail("canonical store used fixture admission"))
+
+    WriterClient(tmp_path / "host", tmp_path / "model", store)._require_operation_capability(payload)
+    assert calls == [payload["capability"]]
+
+
+def test_live_capability_admission_rejects_build_below_floor(monkeypatch, tmp_path):
+    payload = build_plan(creation_request())
+    calls = []
+    monkeypatch.setattr(writer_client, "inspect_app", lambda _path: SimpleNamespace(
+        bundle_identifier=payload["app_identity"]["bundle_id"],
+        version=payload["app_identity"]["version"], build="448",
+    ))
+    monkeypatch.setattr(writer_client, "is_canonical_store_path", lambda *_a, **_kw: True)
+    monkeypatch.setattr(writer_client, "require_write_capability",
+                        lambda *_a: calls.append("live"))
+    client = WriterClient(tmp_path / "host", tmp_path / "model", tmp_path / "canonical.sqlite")
+    with pytest.raises(WriterClientError, match="below the minimum"):
+        client._require_operation_capability(payload)
+    assert calls == []
+
+
+def test_fixture_marker_is_checked_before_inspecting_installed_app(monkeypatch, tmp_path):
+    payload = build_plan(creation_request())
+    checked = []
+
+    monkeypatch.setattr(writer_client, "is_canonical_store_path", lambda *_a, **_kw: False)
+    monkeypatch.setattr(
+        writer_client, "inspect_app",
+        lambda _path: pytest.fail("fixture admission must not inspect an installed app"),
+    )
+    monkeypatch.setattr(
+        writer_client, "require_disposable_write_capability",
+        lambda _store, capability: checked.append(capability),
+    )
+
+    client = WriterClient(tmp_path / "host", tmp_path / "model", tmp_path / "fixture.sqlite")
+    client._require_operation_capability(payload)
+
+    assert checked == [payload["capability"]]
 
 
 def test_apply_retry_rechecks_persistence_without_replaying(execution, monkeypatch):

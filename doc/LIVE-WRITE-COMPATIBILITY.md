@@ -11,14 +11,15 @@ compatibility is defined per write path.
 | Generic SQL mutation | Not a product capability | Do not infer iCloud compatibility from SQL success. |
 | Reassign a payee to an existing destination | Verified | Bundled Core Data writer. |
 | Reassign a payee and create its destination | Verified | Bundled Core Data writer. |
-| W01 income, expense and linked refund | Enabled; live trial accepted | Exact reviewed Setapp app, model and store identity. |
-| W02 edit, W03 assignment, W04 reconcile/unreconcile | Enabled; live trial accepted | Exact reviewed Setapp app, model and store identity. |
-| W05 Adjust Balance investment total | Verified | Setapp or TestFlight MoneyWiz 2026.37.1 build 449, exact model and reviewed store identity. |
-| W05 ordinary balance, investment cash and existing-asset quantity | Enabled; live trial accepted for ordinary balances, cash and stock quantity | Setapp MoneyWiz 2026.37.1 build 449; exact model, store and balance unit; Forex quantity tested on disposable stores. |
-| W07 reciprocal zero-fee transfer replacement | Enabled; live trial accepted | Exact reviewed Setapp app, model and store identity. |
-| W06 delete one investment-total adjustment | Enabled for authorized trials | Setapp MoneyWiz 2026.37.1 build 449, exact model and reviewed store identity. |
-| W06 delete supported transactions | Enabled; live trial accepted | Exact reviewed Setapp app/model/store; explicitly selected complete dependency closure. |
-| W08 investment cash events and Buy/Sell | Enabled for authorized trials | Setapp MoneyWiz 2026.37.1 build 449, exact model and reviewed store identity. |
+| W01 income, expense and linked refund | Enabled; live trial accepted | Supported MoneyWiz bundle, build 449 or newer, exact reviewed model and canonical store identity. |
+| W02 edit, W03 assignment, W04 reconcile/unreconcile | Enabled; live trial accepted | Supported MoneyWiz bundle, build 449 or newer, exact reviewed model and canonical store identity. |
+| W05 Adjust Balance investment total | Verified | Supported MoneyWiz bundle at build 449 or newer, exact model and reviewed store identity. |
+| W05 ordinary balance, investment cash and existing-asset quantity | Enabled; live trial accepted for ordinary balances, cash and stock quantity | Supported MoneyWiz bundle at build 449 or newer; exact model, store and balance unit; Forex quantity tested on disposable stores. |
+| W07 reciprocal zero-fee transfer replacement | Enabled; live trial accepted | Supported MoneyWiz bundle, build 449 or newer, exact reviewed model and canonical store identity. |
+| W10 linked transfer recipient reassignment | Enabled in the CLI; live app/sync acceptance pending | Supported MoneyWiz bundle, build 449 or newer, exact reviewed model and canonical store identity; all three owned accounts and both transfer legs must match the plan. |
+| W06 delete one investment-total adjustment | Enabled for authorized trials | Supported MoneyWiz bundle at build 449 or newer, exact model and reviewed store identity. |
+| W06 delete supported transactions | Enabled; live trial accepted | Supported MoneyWiz bundle at build 449 or newer, exact model and store; explicitly selected complete dependency closure. |
+| W08 investment cash events and Buy/Sell | Enabled for authorized trials | Supported MoneyWiz bundle at build 449 or newer, exact model and reviewed store identity. |
 | Merge exact-normalized duplicate payees | Enabled for authorized trials | Exact reviewed model, app, store and complete reference inventory. |
 | Merge similar-name payees | Enabled for authorized trials | W09 requires one approved review-map row and the complete reference inventory. |
 
@@ -32,7 +33,11 @@ stores exercise each subtype, preserving its metadata and account relationships.
 An online-banking connection does not exclude the account from these operations.
 
 Authorized synthetic W01–W09 trials passed on a private copy and the live Setapp
-store. Each applied plan passed replay and recovery without duplication.
+store. Each applied plan passed replay and recovery without duplication. The
+native admission gate is channel-neutral: either supported MoneyWiz bundle is
+eligible at build 449 or newer when the model and canonical store identities
+match. This build floor describes gate admission; it does not replace
+operation-specific trial evidence below.
 MoneyWiz displayed the bank rows, reciprocal FX transfer, investment cash and
 Buy/Sell events, payee migration and balance adjustment. Temporary investment,
 transfer and merge-reference rows were removed; three labelled bank TEST rows

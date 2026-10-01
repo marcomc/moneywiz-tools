@@ -1,9 +1,10 @@
 # Transaction assignment
 
 W03 replaces a payee and category splits on exact existing transaction IDs.
-Its model-48 capability is enabled for authorized Setapp MoneyWiz 2026.37.1
-build 449 live execution. TestFlight regression stores require the disposable
-metadata marker. Ordinary transactions use all seven supported account types.
+Its model-48 capability is enabled for supported MoneyWiz bundles at build 449
+or newer, with exact model and canonical store identity checks. Synthetic
+stores require the disposable metadata marker regardless of bundle channel.
+Ordinary transactions use all seven supported account types.
 
 ## Contract
 

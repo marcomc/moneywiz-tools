@@ -1,8 +1,9 @@
 # Investment transactions
 
 W08 creates one investment cash event or one Buy/Sell transaction on the exact
-model-48 store. Live execution is admitted for Setapp MoneyWiz 2026.37.1 build
-449; the TestFlight build remains available for marked disposable fixtures.
+model-48 store. Live execution is admitted for supported MoneyWiz bundles at
+build 449 or newer when the canonical store identity matches. Marked disposable
+fixtures are supported regardless of bundle channel.
 The plan binds an InvestmentAccount or ForexAccount, its owner and store identity, the account
 currency, a source-event ID, and the expected cash state. A Buy/Sell also binds
 an existing holding, its symbol and asset type, prior units, quantity, price and

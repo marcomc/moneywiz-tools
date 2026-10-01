@@ -8,7 +8,8 @@ W06 deletes explicitly selected `DepositTransaction`, `WithdrawTransaction`,
 `InvestmentSellTransaction` records through Core Data.
 
 The capability `write.delete-supported-transactions` is enabled for the reviewed
-Setapp MoneyWiz 2026.37.1 build 449/model-48 runtime and marked disposable stores.
+Supported official MoneyWiz bundles at build 449 or newer with the exact
+model-48 runtime and canonical store, plus marked disposable stores.
 Authorized fictional live trials verified ordinary records, refund-only and
 complete withdrawal/refund groups, reciprocal transfers, categorized expenses,
 investment cash, stock quantity, Buy/Sell, dividends and fees. Installed Python
@@ -118,7 +119,8 @@ before-save and after-save boundaries.
 - Deleting a Buy or quantity adjustment must leave a nonnegative derived holding
   quantity; deleting a Sell restores its signed units.
 - The operation retains holdings, including those left with zero units.
-- TestFlight writes require the persistent disposable-store marker. Live Setapp
-  admission independently checks the reviewed edition, build, model and store.
+- Noncanonical stores require the persistent disposable-store marker regardless
+  of bundle channel. Canonical live-store admission checks the supported bundle,
+  build, exact model and store identity.
 - Native history/sync export and second-device acceptance are separate evidence;
   a local deletion does not alone prove remote synchronization.

@@ -35,6 +35,11 @@ duplicate-group apply capability remains blocked. See
 [Payee Consolidation](PAYEE-CONSOLIDATION.md) for the enabled runtime and approval
 requirements.
 
+W10 reassignment of a linked transfer recipient updates the sender's
+`recipientAccount` and the existing recipient's `account` relationships in the
+same Core Data save. It preserves both transaction objects and reciprocal
+transaction links; see [Transaction Transfer](TRANSACTION-TRANSFER.md).
+
 ## Identity allocation
 
 Do not use `Z_PRIMARYKEY.Z_MAX` as a live object-ID allocator. The observed

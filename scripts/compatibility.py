@@ -272,6 +272,7 @@ DISPOSABLE_WRITE_CAPABILITIES = DISPOSABLE_CREATE_CAPABILITIES | {
     "write.delete-adjust-balance-investment-total",
     "write.delete-supported-transactions",
     "write.replace-import-with-transfer",
+    "write.reassign-transfer-recipient",
     "write.investment-income",
     "write.investment-expense",
     "write.investment-buy",
