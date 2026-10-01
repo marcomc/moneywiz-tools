@@ -40,14 +40,54 @@ moneywiz merge-duplicate-payees \
 moneywiz merge-duplicate-payees --apply --show-plan
 ~~~
 
-`--apply` is currently blocked by the compatibility gate before the native
-host can open or mutate the store. Exact-duplicate application remains pending
-until operation-specific Core Data and sync acceptance evidence is recorded.
+This legacy command's `--apply` is blocked by the compatibility gate before the
+native host can open or mutate the store. Use the separate W09 reviewed pair
+workflow below for enabled merge operations.
 
-For future acceptance work, the active MoneyWiz 2026 model exposes inbound
+### W09 reviewed merge plans
+
+`moneywiz payee merge` builds a version-2 plan for one explicit source and
+survivor. It reads the current Core Data graph without changing the store and
+includes every transaction, string-history item, scheduled handler, payment
+plan and info card that refers to the source. Review that inventory and the
+digest before applying it to a marked disposable model-48 store or the reviewed
+live Setapp runtime. The following example uses a disposable TestFlight fixture:
+
+~~~sh
+moneywiz --db /private/path/disposable.sqlite payee merge \
+  --kind exact --source-gid SOURCE_GID --survivor-gid SURVIVOR_GID \
+  --evidence-note 'Reviewed exact duplicate' --app /Applications/MoneyWiz.app \
+  --model '/Applications/MoneyWiz.app/Contents/Resources/MoneyWizDataModel.momd/MoneyWizDataModel 48.mom' \
+  --owner OWNER_ID --plan /private/path/merge-plan.json
+moneywiz write validate --plan /private/path/merge-plan.json
+moneywiz --db /private/path/disposable.sqlite write apply \
+  --plan /private/path/merge-plan.json --reviewed-digest REVIEWED_SHA256 \
+  --app /Applications/MoneyWiz.app \
+  --model '/Applications/MoneyWiz.app/Contents/Resources/MoneyWizDataModel.momd/MoneyWizDataModel 48.mom' \
+  --owner OWNER_ID --apply
+~~~
+
+For a similar-name pair, select `--kind fuzzy` and supply the exported
+`--fuzzy-map PATH`. Exactly one row must match the current owner, IDs and
+names, have `review_decision=approved`, name the chosen survivor in
+`approved_canonical_id`, and include review notes. `pending` and `rejected`
+rows produce no plan or write. Exact merges require normalized names to match
+and have their own capability; fuzzy approval never authorizes a different pair.
+
+The native host rechecks the complete reference inventory, moves each relation
+in one Core Data save, deletes the source and verifies the graph in a fresh
+context. Recovery distinguishes an unchanged source from a completed merge.
+Stale plans and unreviewed model relationships are refused. Both W09 capabilities
+are enabled for supported official MoneyWiz bundles at build 449 or newer, with
+exact app/model/store identity checks. See [Live Write Compatibility](LIVE-WRITE-COMPATIBILITY.md) for
+authorized trial and sync evidence.
+
+The active MoneyWiz 2026 model exposes inbound
 payee references from transactions, string history, scheduled transaction
 handlers, payment plans, and info cards. `User.payees` is ownership metadata.
-This relationship inventory does not authorize native merge mutation.
+W09 mutation requires this complete inventory and the operation-specific
+runtime guards; every noncanonical regression store must be marked disposable,
+regardless of the bundle used to run the tests.
 
 ## Similar-name approval map
 
@@ -67,8 +107,8 @@ least `0.88`. A simple numeric suffix, such as `Lidl2` versus `Lidl`, is
 excluded. Exact-normalized pairs are excluded because they are already part
 of the exact merge plan.
 
-The current command never reads the approval fields to write fuzzy pairs.
-That future operation requires an explicit, separately reviewed design.
+The legacy exact-group command never reads approval fields to write fuzzy pairs.
+The W09 reviewed merge planner reads only an explicitly supplied approved row.
 Exported payee names beginning with `=`, `+`, `-`, or `@` receive a leading
 apostrophe so spreadsheet applications keep the untrusted name as literal
 text. Classification uses a Unicode NFKC view and ignores leading Unicode
@@ -92,13 +132,14 @@ then record one of these reviewer decisions:
 
 | Decision | Values to record | Next action |
 | --- | --- | --- |
-| Same merchant | `review_decision=approved`; set `approved_canonical_id` to the survivor; add rationale in `review_notes`. | Search both names in **Preferences > Payees > Edit**, use the IDs to select the records, then merge and choose the survivor. |
+| Same merchant | `review_decision=approved`; set `approved_canonical_id` to the survivor; add rationale in `review_notes`. | Build and review one W09 fuzzy pair plan, then apply it through the enabled native path. |
 | Different merchants | `review_decision=rejected`; add rationale in `review_notes`. | Keep both payees. |
 | Not enough evidence | Leave `review_decision=pending`; optionally add a note. | Take no write action. |
 
-The CSV is an audit and review artifact only. Its fields are not parsed,
-validated, or applied by the current CLI, so editing a row does not change the
-database.
+The legacy group command does not parse the CSV approval fields for mutation.
+The W09 planner validates one approved row for the reviewed live or disposable
+merge path. Editing a
+row does not change the database.
 
 ### CSV editing example
 
@@ -118,7 +159,8 @@ explain the decision in `review_notes`:
 1,0.919,similarity>=0.88,1037,Merchant Example A,1892,Merchant Example B,rejected,,"Different merchants."
 ~~~
 
-These values document the decision but are not consumed by the current CLI.
-An approved merge must be performed through MoneyWiz's native
-**Preferences > Payees > Edit** workflow: search both names, use the CSV IDs to
-select the exact records, invoke merge, and choose the survivor.
+The legacy group command does not consume these approval fields.
+`moneywiz payee merge --kind fuzzy --fuzzy-map PATH` consumes one approved pair
+to build a fresh reviewed plan; `moneywiz write apply` executes it with the
+required digest and runtime guards. The native MoneyWiz
+**Preferences > Payees > Edit** workflow remains an alternative.

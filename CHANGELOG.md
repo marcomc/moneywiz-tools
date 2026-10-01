@@ -1,5 +1,95 @@
 # Changelog
 
+## [0.3.0] - 2026-10-01 - Enable Database Writes
+
+### Added
+
+- Shared version-2 writer plans and reviewed-digest apply/recovery commands,
+  preserving the version-1 payee interface.
+- W01 typed income, expense and refund creation experiments through the native
+  host on marked disposable stores and the reviewed live Setapp runtime, with
+  deterministic source-event identities, relationship validation and persisted
+  read-back.
+- W02 guarded scalar transaction edits on disposable model-48 stores and the
+  reviewed live Setapp runtime, preserving identity and relationships with
+  expected-prior checks, atomic balance/refund validation and interruption recovery.
+- W03 exact-ID payee and category split replacement on disposable model-48
+  stores and the reviewed live Setapp runtime, with prior-state guards,
+  owner/type/total validation, deliberate removal of obsolete assignments and
+  independent read-back.
+- W04 exact-ID reconcile and unreconcile plans on disposable model-48 stores
+  and the reviewed live Setapp runtime, with a complete-account inventory and
+  balance guard, preserved native status/flags, atomic save and interruption recovery.
+- W05 guarded GBP investment-total Adjust Balance plans for the observed
+  no-holdings account shape, with native `ReconcileTransaction` creation,
+  history checks and replay recovery. The observed GBP investment-total variant
+  passed live app read-back and iCloud export acceptance.
+- W05 explicit ordinary-account balance, investment cash and existing-asset
+  quantity adjustments, preserving account caches, holding metadata and the
+  existing GBP investment-total contract. Quantity adjustments support native
+  stock and Forex modes and remain compatible with subsequent Buy/Sell.
+- W06 exact-ID deletion of the latest GBP investment-total adjustment on marked
+  disposable stores and the reviewed live Setapp runtime, with history and
+  relationship guards, fresh read-back and interruption recovery.
+- W06 native-inventory plans and atomic deletion of supported ordinary and
+  investment transactions, with explicit transfer/refund closure, owned
+  dependency cleanup, retained-object guards, cash/quantity projections and
+  journal replay/recovery. Authorized Setapp live trials verified application
+  read-back, operation-specific iCloud export/deletion and exact cleanup.
+- W07 guarded replacement of an imported withdrawal and optional identified
+  deposit with reciprocal zero-fee transfer legs on marked disposable stores
+  and the reviewed live Setapp runtime. Both account balances, old/new identities,
+  links and replay are verified; nonzero fees remain unsupported.
+- W08 guarded investment income, expense and existing-holding Buy/Sell plans
+  on marked disposable model-48 stores and the reviewed live Setapp runtime,
+  with cash and units preflight, atomic persistence, read-back and recovery.
+- W08 first-Buy plans creating a manual investment holding and its transaction
+  atomically, with native asset metadata and manual price history, duplicate
+  protection, durable holding receipts and interruption recovery on disposable
+  model-48 stores and the reviewed Setapp runtime. Fictional live trials verified
+  first Buy, subsequent Buy/Sell, app/iCloud acceptance and complete cleanup.
+- W09 exact and individually approved fuzzy payee merge plans on marked
+  disposable model-48 stores and the reviewed live Setapp runtime, with complete
+  native reference migration, one-save deletion, fresh read-back and recovery.
+- W10 reassignment of the recipient account on an existing linked transfer pair,
+  preserving both transaction identities and all reviewed transaction fields,
+  with atomic relationship updates, persisted read-back and crash recovery.
+- Private recovery journals, consistent pre-write snapshots, durable results,
+  source-event retry guards and explicit retention cleanup.
+- Read-only runtime identity discovery binding the application edition/build,
+  store UUID, local owner identity and exact Core Data model checksum.
+- Reconciliation snapshots with explicit read completeness, relationship and
+  transfer audits, and timezone-aware date cutoffs.
+- Optional completeness diagnostics for account, transaction and holding lists;
+  partial reads return exit status 3 instead of appearing complete.
+
+### Changed
+
+- Extend aggregate investment-total Adjust Balance and latest-adjustment
+  deletion to the reviewed MoneyWiz fiat and crypto currency catalogs, with
+  native precision checks and explicit reporting rates. Preserve existing
+  GBP plans, deterministic replay and recovery.
+- Admit implemented W01–W10 writes for a supported official MoneyWiz bundle at
+  build 449 or newer when the exact app, model and canonical-store identities
+  match. Bundle channel does not affect admission; marked disposable fixtures
+  remain the isolated test path.
+- Admit all seven concrete account subtypes for ordinary creation, editing,
+  assignment, reconciliation and transfer replacement. Live writes preserve
+  cached account balances and validate the ledger; disposable fixtures retain
+  cache-delta checks.
+- Pin the fork's reviewed MoneyWiz API read-completeness revision for source
+  commands and the bundled app, while keeping native write capability checks
+  independent of read completeness.
+- Defined the 0.3.0 P0/P1F/P1 implementation and acceptance sequence, private
+  runtime-journal retention, and CLI-first reconciliation requirements.
+- Required local scoped remediation before each implementation PR and a clean,
+  current-head GitHub Codex review before integration into the release branch.
+
+Enabled variants have authorized live trial evidence documented in
+[Live Write Compatibility](doc/LIVE-WRITE-COMPATIBILITY.md). Independent review
+of the current implementation remains required; this entry does not promote
+enabled capabilities to verified or authorize additional operation variants.
+
 ## [0.2.1] - 2026-08-13
 
 ### Changed

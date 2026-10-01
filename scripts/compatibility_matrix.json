@@ -27,14 +27,36 @@
       },
       "evidence": {
         "moneywiz_application": "MoneyWiz 2026.32.1 (build 431)",
-        "last_observed_application": "MoneyWiz 2026.32.1 (build 433)",
+        "last_observed_application": "MoneyWiz 2026.37.1 (build 449)",
         "managed_object_model": "MoneyWizDataModel 48",
-        "observed_at": "2026-08-13"
+        "observed_at": "2026-09-28"
       },
       "capabilities": {
         "read.core": "supported",
         "write.reassign-payees-by-id": "verified",
-        "write.merge-duplicate-payees": "blocked"
+        "write.merge-duplicate-payees": "blocked",
+        "write.merge-exact-payees": "enabled",
+        "write.merge-approved-fuzzy-payees": "enabled",
+        "write.create-income": "enabled",
+        "write.create-expense": "enabled",
+        "write.create-refund": "enabled",
+        "write.edit-transaction": "enabled",
+        "write.assign-payee-categories": "enabled",
+        "write.reconcile": "enabled",
+        "write.unreconcile": "enabled",
+        "write.adjust-balance-investment-total": "verified",
+        "write.adjust-account-balance": "enabled",
+        "write.adjust-investment-cash": "enabled",
+        "write.adjust-asset-quantity": "enabled",
+        "write.delete-adjust-balance-investment-total": "enabled",
+        "write.delete-supported-transactions": "enabled",
+        "write.replace-import-with-transfer": "enabled",
+        "write.reassign-transfer-recipient": "enabled",
+        "write.investment-income": "enabled",
+        "write.investment-expense": "enabled",
+        "write.investment-buy": "enabled",
+        "write.investment-buy-new-holding": "enabled",
+        "write.investment-sell": "enabled"
       }
     },
     {

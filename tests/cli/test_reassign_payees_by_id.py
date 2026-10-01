@@ -12,6 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import reassign_payees_by_id
+import runtime_identity
 
 TRANSACTION_TYPES = (
     "DepositTransaction",
@@ -151,6 +152,66 @@ def test_resolve_model_accepts_exact_mom_manifest_leaf_without_appending_twice(
     monkeypatch.setenv("MONEYWIZ_APP", str(app))
 
     assert reassign_payees_by_id._resolve_model() == model
+
+
+def test_resolve_model_accepts_testflight_bundle(
+    fake_moneywiz_app: Callable[[], tuple[Path, Path, Path]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app, _model_directory, model = fake_moneywiz_app()
+    with (app / "Contents/Info.plist").open("wb") as info_file:
+        plistlib.dump({"CFBundleIdentifier": "com.moneywiz.personalfinance"}, info_file)
+    monkeypatch.delenv("MONEYWIZ_MODEL_PATH", raising=False)
+    monkeypatch.setenv("MONEYWIZ_APP", str(app))
+
+    assert reassign_payees_by_id._resolve_model() == model
+
+
+def test_resolve_model_preserves_writer_setapp_default_when_editions_coexist(
+    fake_moneywiz_app: Callable[[], tuple[Path, Path, Path]],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    setapp, _setapp_model_directory, setapp_model = fake_moneywiz_app()
+    with (setapp / "Contents/Info.plist").open("wb") as info_file:
+        plistlib.dump(
+            {
+                "CFBundleIdentifier": runtime_identity.SETAPP_BUNDLE_IDENTIFIER,
+                "CFBundleShortVersionString": "2026.1",
+                "CFBundleVersion": "4801",
+            },
+            info_file,
+        )
+    testflight = tmp_path / "MoneyWiz TestFlight.app"
+    testflight_model_directory = (
+        testflight / "Contents/Resources/MoneyWizDataModel.momd"
+    )
+    testflight_model_directory.mkdir(parents=True)
+    with (testflight / "Contents/Info.plist").open("wb") as info_file:
+        plistlib.dump(
+            {
+                "CFBundleIdentifier": runtime_identity.TESTFLIGHT_BUNDLE_IDENTIFIER,
+                "CFBundleShortVersionString": "2026.1",
+                "CFBundleVersion": "4801",
+            },
+            info_file,
+        )
+    with (testflight_model_directory / "VersionInfo.plist").open("wb") as version_file:
+        plistlib.dump(
+            {"NSManagedObjectModel_CurrentVersionName": "MoneyWizDataModel 48"},
+            version_file,
+        )
+    (testflight_model_directory / "MoneyWizDataModel 48.mom").touch()
+    monkeypatch.setattr(reassign_payees_by_id, "DEFAULT_MONEYWIZ_APP", setapp)
+    monkeypatch.setattr(runtime_identity, "DEFAULT_MONEYWIZ_APP", setapp)
+    monkeypatch.setattr(runtime_identity, "DEFAULT_TESTFLIGHT_APP", testflight)
+    monkeypatch.setattr(
+        runtime_identity, "LEGACY_TESTFLIGHT_APP", tmp_path / "missing-legacy.app"
+    )
+    monkeypatch.delenv("MONEYWIZ_APP", raising=False)
+    monkeypatch.delenv("MONEYWIZ_MODEL_PATH", raising=False)
+
+    assert reassign_payees_by_id._resolve_model() == setapp_model
 
 
 @pytest.mark.parametrize(

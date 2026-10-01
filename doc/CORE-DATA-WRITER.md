@@ -3,7 +3,7 @@
 ## Purpose and current scope
 
 The bundled Core Data writer is the live-store write path for product
-operations that have a verified capability. It exists because changing relationship
+operations that have an enabled or verified capability. It exists because changing relationship
 columns with raw SQLite does not create the Core Data persistent-history and
 CloudKit metadata that MoneyWiz expects.
 
@@ -13,13 +13,16 @@ The current writer implements and is verified for:
 - Creating a destination payee when reassignment requires one.
 - Saving through the installed MoneyWiz Tools.app host.
 
-The Python CLI can plan exact-normalized duplicate consolidation, but the
-native host does not implement relationship migration or source-payee deletion.
-The corresponding capability remains blocked. Verification is
-operation-specific.
+Version-2 plans also implement the finite W01–W10 operations on a supported
+MoneyWiz bundle at build 449 or newer with its canonical store, or on a marked
+disposable store. Bundle channel does not determine admission. W09 migrates the complete
+native reference inventory and deletes one source payee for an exact or
+individually approved fuzzy pair. The legacy group capability
+`write.merge-duplicate-payees` remains blocked. See
+[Live Write Compatibility](LIVE-WRITE-COMPATIBILITY.md) for runtime and acceptance
+boundaries and [Payee Consolidation](PAYEE-CONSOLIDATION.md) for pair approval.
 
-It is not a general live SQL writer and it never applies similar-name pairs
-from the approval map.
+It is not a general live SQL writer. Verification is operation-specific.
 
 ## Operational protocol
 
@@ -77,11 +80,20 @@ profile as `moneywiz-2026-model-48`. It allows
 `write.merge-duplicate-payees` before the host is launched.
 
 The Python preflight and Swift host both enforce the exact model checksum. The
-Python payload also binds the verified capability. Before it opens the
+Python payload also binds the verified capability. For version 1, before it opens the
 persistent store, the host requires the exact profile ID, checksum,
 `write.reassign-payees-by-id` capability, schema version 1, and a non-empty
 reassignment-only operation list. Schema 2, merge, mixed, blocked, and unknown
 capability payloads fail closed.
+
+Version 2 adds a strict shared envelope, expected old values, reviewed digest,
+store/owner/app binding, durable per-operation IDs and independent persisted
+read-back. The P1F payee bridge remains supported. W01–W10 handlers accept
+only their documented variants, with independent native app/model/store checks
+on apply and recovery. See [Transaction Creation](TRANSACTION-CREATION.md) and
+[Live Write Compatibility](LIVE-WRITE-COMPATIBILITY.md) for the supported
+contracts. Version 1 keeps its result and destination-payee creation behavior. See [Writer Recovery](WRITER-RECOVERY.md) for version-2 commands,
+journal retention and interrupted execution.
 
 The default model resolver reads the current-version leaf from the installed
 `MoneyWizDataModel.momd` manifest. It accepts the observed extensionless form
@@ -122,10 +134,11 @@ When multiple descriptions share one user-scoped normalized creation key, the
 lowest selected transaction ID supplies one deterministic display name for the
 entire group.
 
-`merge-duplicate-payees` has a separate exact-normalized Python plan. Its
-application remains unavailable: the capability gate rejects `--apply`, and
-the native host has no merge mutation route. Similar-name pairs stay pending
-in an approval CSV.
+`merge-duplicate-payees` retains its legacy exact-normalized Python plan and
+blocked `--apply` path. The separate version-2 `payee merge` command executes
+one reviewed exact pair or one approved fuzzy CSV row through the native W09
+writer. Pending and rejected rows remain no-ops; see
+[Payee Consolidation](PAYEE-CONSOLIDATION.md).
 
 See [Live Payee Structure](LIVE-PAYEE-STRUCTURE.md) for the recorded live
 mappings and [Live Write Compatibility](LIVE-WRITE-COMPATIBILITY.md) for the

@@ -24,14 +24,16 @@ dependencies after the bundle is installed.
 ## Safety requirements
 
 - Read operations must not mutate the store.
-- The only verified live write is payee reassignment through the bundled Core
-  Data host; other mutation paths are not product capabilities.
-- Exact duplicate planning must remain read-only while the native merge
-  implementation and capability are unavailable.
+- Live writes must use the bundled Core Data host and an enabled or verified
+  operation capability. Version-2 apply and recovery independently enforce the
+  reviewed app, model and store identity.
+- The legacy duplicate-group command must remain planning-only. W09 exact and
+  individually approved fuzzy pair plans require a complete native inventory
+  and operation-specific runtime guards.
 - `--apply` must not be run while MoneyWiz holds the persistent store open.
 - Ambiguous normalized payee matches must fail closed.
-- Similar-name pairs must remain pending until an explicit approval workflow
-  consumes them.
+- W09 similar-name plans must consume exactly one explicitly approved CSV row;
+  pending, rejected, stale and ambiguous pairs must fail closed.
 - A live write must be followed by app reopen and sync confirmation.
 
 ## Portability requirements

@@ -105,9 +105,9 @@ interface has four command groups:
 
 | Group | Commands | Access |
 | --- | --- | --- |
-| Reads | `users`, `accounts`, `categories`, `payees`, `tags`, `transactions`, `holdings` | Read-only database access |
-| Writes and plans | `reassign-payees-by-id`, `merge-duplicate-payees` | Dry-run by default; live apply is capability-gated |
-| Introspection | `compatibility`, `schema`, `summary`, `stats`, `record` | Read-only inspection and reports |
+| Reads | `users`, `accounts`, `categories`, `payees`, `tags`, `transactions`, `holdings`, `snapshot` | Read-only database access |
+| Writes and plans | `reassign-payees-by-id`, `merge-duplicate-payees`, `payee`, `transaction`, `write` | Reviewed plans; live apply is capability-gated |
+| Introspection | `identity`, `compatibility`, `schema`, `summary`, `stats`, `record` | Read-only inspection and reports |
 | Interactive | `shell` | Read-only API shell |
 
 Common read-only operations include:
@@ -135,7 +135,9 @@ dispatcher keeps the development defaults under `doc/`. `--out-md` and
 
 The product has no generic raw-SQL mutation command. Every live write uses the
 bundled Core Data host, requires `--apply`, and is admitted only when the
-detected schema profile lists that operation as `verified`:
+detected schema profile lists that operation as `enabled` or `verified`.
+Version-2 plans also require the exact reviewed application, model and store
+identity at the native apply and recovery boundaries:
 
 ~~~sh
 moneywiz reassign-payees-by-id --from-payee-id 1234 --show-plan
@@ -150,11 +152,13 @@ moneywiz merge-duplicate-payees --show-plan \
   --fuzzy-map "$HOME/payee-fuzzy-review.csv"
 ~~~
 
-The corresponding live merge capability is currently blocked pending separate
-Core Data acceptance evidence. The native host does not implement relationship
-migration or source-payee deletion. Use MoneyWiz 2026's
-`Preferences > Payees > Edit` merge action for approved pairs. The fuzzy CSV
-is review-only; see [Functions Reference](FUNCTIONS.md) for the decision flow.
+The legacy group command's apply path remains blocked. `moneywiz payee merge`
+builds a reviewed exact or individually approved fuzzy plan using the complete
+native reference inventory. It migrates references and deletes the source only
+on marked disposable model-48 stores or the reviewed live Setapp runtime.
+See [Live Write Compatibility](doc/LIVE-WRITE-COMPATIBILITY.md) for acceptance
+evidence and [Functions Reference](FUNCTIONS.md)
+for the decision flow.
 
 The reassignment command can reuse an existing destination payee or create one
 from the transaction description. It refuses ambiguous normalized matches
@@ -166,6 +170,15 @@ documented in
 [Live Write Compatibility](doc/LIVE-WRITE-COMPATIBILITY.md).
 The exact-duplicate policy and the approval-only fuzzy map are documented in
 [Payee Consolidation](doc/PAYEE-CONSOLIDATION.md).
+
+Version-2 plans support W01 creation, W02 scalar edits and W03 assignment
+replacement on marked disposable stores and the reviewed live Setapp runtime.
+`moneywiz transaction create --help`, `moneywiz transaction edit --help` and
+`moneywiz transaction assign --help` describe guarded planning; reviewed plans
+use `moneywiz write apply` and the durable recovery journal. See
+[Transaction Creation](doc/TRANSACTION-CREATION.md) and
+[Transaction Editing](doc/TRANSACTION-EDITING.md), and
+[Transaction Assignment](doc/TRANSACTION-ASSIGNMENT.md).
 
 ## Check compatibility
 
@@ -181,7 +194,9 @@ moneywiz compatibility --format json
 An unknown profile is diagnostic-only. Profile selection includes the exact
 Core Data model checksum, so a future model that retains the same tables and
 columns is not treated as the verified model. A listed operation may be
-`verified`, `supported`, or `blocked`; only `verified` permits a live write.
+`enabled`, `verified`, `supported`, or `blocked`. Live writes require `enabled`
+or `verified` plus the operation-specific runtime and plan guards; `supported`
+alone does not authorize mutation.
 Table and JSON output use the same nonzero status for unknown profiles and
 blocked or unknown requested capabilities.
 
@@ -199,6 +214,10 @@ command table and exact examples.
 
 | Need | Document |
 | --- | --- |
+| Inspect complete reconciliation reads and runtime identity | [Reconciliation Reads](doc/RECONCILIATION-READS.md) |
+| Review disposable transaction reconciliation writes | [Transaction Reconciliation](doc/TRANSACTION-RECONCILIATION.md) |
+| Review disposable transfer replacement writes | [Transaction Transfer](doc/TRANSACTION-TRANSFER.md) |
+| Review disposable investment transactions | [Investment Transactions](doc/TRANSACTION-INVESTMENT.md) |
 | Install, relocate, or remove the app | [Bundle Installation](doc/BUNDLE-INSTALLATION.md) |
 | Understand the live writer | [Core Data Writer](doc/CORE-DATA-WRITER.md) |
 | Operate and revalidate live writes | [Live Write Compatibility](doc/LIVE-WRITE-COMPATIBILITY.md) |

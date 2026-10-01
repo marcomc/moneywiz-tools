@@ -4,12 +4,9 @@
 from __future__ import annotations
 
 import argparse
-import json
 import os
-import plistlib
 import sqlite3
 import subprocess
-import tempfile
 import unicodedata
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -21,9 +18,21 @@ from compatibility import (
     CompatibilityError,
     require_write_capability,
 )
+from runtime_identity import DEFAULT_MONEYWIZ_APP as RUNTIME_DEFAULT_MONEYWIZ_APP
+from runtime_identity import (
+    SETAPP_BUNDLE_IDENTIFIER,
+    RuntimeIdentityError,
+    resolve_model,
+)
+from writer_client import (
+    WriterClientError,
+    invoke_v1,
+    require_moneywiz_stopped,
+    resolve_writer,
+)
 
-DEFAULT_MONEYWIZ_APP = Path("/Applications/Setapp/MoneyWiz 2026.app")
-EXPECTED_BUNDLE_IDENTIFIER = "com.moneywiz.personalfinance-setapp"
+DEFAULT_MONEYWIZ_APP = RUNTIME_DEFAULT_MONEYWIZ_APP
+EXPECTED_BUNDLE_IDENTIFIER = SETAPP_BUNDLE_IDENTIFIER
 
 TRANSACTION_TYPENAMES: tuple[str, ...] = (
     "DepositTransaction",
@@ -410,183 +419,27 @@ def build_plan(
 
 def _require_moneywiz_stopped() -> None:
     try:
-        completed = subprocess.run(
-            ["pgrep", "-x", "MoneyWiz"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=False,
-        )
-    except OSError as exc:
-        raise ReassignmentError(
-            f"Cannot verify whether MoneyWiz 2026 is running: {exc}"
-        ) from exc
-    if completed.returncode == 0:
-        raise ReassignmentError(
-            "Quit MoneyWiz 2026 before --apply and keep it closed until the write "
-            "finishes."
-        )
-    if completed.returncode != 1:
-        raise ReassignmentError(
-            "Cannot verify whether MoneyWiz 2026 is running: "
-            f"pgrep exited with status {completed.returncode}"
-        )
+        require_moneywiz_stopped(run=subprocess.run)
+    except WriterClientError as exc:
+        raise ReassignmentError(str(exc)) from exc
 
 
 def _resolve_writer() -> Path:
-    configured = os.environ.get("MONEYWIZ_TOOLS_HOST") or os.environ.get(
-        "MONEYWIZ_CORE_DATA_WRITER"
-    )
-    if configured:
-        writer = Path(configured).expanduser()
-        if _is_executable_file(writer):
-            return writer
-        raise ReassignmentError(
-            "MoneyWiz Tools Core Data host override is not an executable file: "
-            f"{writer}"
-        )
-
-    script_path = Path(__file__).resolve()
-    runtime_root = script_path.parents[1]
-    if (
-        runtime_root.name == "runtime"
-        and runtime_root.parent.name == "Resources"
-        and runtime_root.parent.parent.name == "Contents"
-    ):
-        writer = runtime_root.parent.parent / "MacOS/MoneyWizTools"
-        if _is_executable_file(writer):
-            return writer
-        raise ReassignmentError(
-            "Bundled MoneyWiz Tools Core Data host is not executable. "
-            f"Searched host path: {writer}. Run: make install"
-        )
-
-    bundle_directory = _configured_bundle_directory()
-    writer = bundle_directory / "MoneyWiz Tools.app/Contents/MacOS/MoneyWizTools"
-    if _is_executable_file(writer):
-        return writer
-    raise ReassignmentError(
-        "MoneyWiz Tools Core Data host is not executable. "
-        f"Searched installed host path: {writer}. Run: make install"
-    )
-
-
-def _is_executable_file(path: Path) -> bool:
-    return path.is_file() and os.access(path, os.X_OK)
-
-
-def _configured_bundle_directory() -> Path:
-    install_config = Path.home() / ".config/moneywiz-tools/install.mk"
-    if not install_config.exists():
-        return Path.home() / "Applications"
     try:
-        lines = install_config.read_text(encoding="utf-8").splitlines()
-    except OSError as exc:
-        raise ReassignmentError(
-            f"Cannot read MoneyWiz Tools install configuration at {install_config}: {exc}"
-        ) from exc
-
-    configured_values: list[str] = []
-    for line in lines:
-        content = line.strip()
-        if not content or content.startswith("#"):
-            continue
-        for operator in (":=", "?=", "="):
-            prefix = f"APP_BUNDLE_DIR {operator}"
-            if content.startswith(prefix):
-                configured_values.append(content[len(prefix) :].strip())
-                break
-    if len(configured_values) != 1 or not configured_values[0]:
-        raise ReassignmentError(
-            "MoneyWiz Tools install configuration must contain exactly one "
-            f"APP_BUNDLE_DIR assignment: {install_config}"
-        )
-    configured = Path(configured_values[0]).expanduser()
-    if not configured.is_absolute():
-        raise ReassignmentError(
-            f"APP_BUNDLE_DIR must be an absolute path in {install_config}"
-        )
-    return configured
+        return resolve_writer(script_file=__file__)
+    except WriterClientError as exc:
+        raise ReassignmentError(str(exc)) from exc
 
 
 def _resolve_model() -> Path:
-    configured = os.environ.get("MONEYWIZ_MODEL_PATH")
-    if configured:
-        model = Path(configured).expanduser()
-        if model.is_file():
-            return model
-        raise ReassignmentError(f"MONEYWIZ_MODEL_PATH does not exist: {model}")
-
-    app = Path(os.environ.get("MONEYWIZ_APP", DEFAULT_MONEYWIZ_APP)).expanduser()
-    info_path = app / "Contents/Info.plist"
     try:
-        with info_path.open("rb") as info_file:
-            app_info = plistlib.load(info_file)
-    except (OSError, plistlib.InvalidFileException) as exc:
-        raise ReassignmentError(
-            f"Cannot read MoneyWiz app metadata at {info_path}: {exc}"
-        ) from exc
-    if not isinstance(app_info, dict):
-        raise ReassignmentError(
-            f"MoneyWiz app metadata is not a dictionary: {info_path}"
-        )
-    if app_info.get("CFBundleIdentifier") != EXPECTED_BUNDLE_IDENTIFIER:
-        raise ReassignmentError(
-            f"Unexpected MoneyWiz bundle identifier at {app}: {app_info.get('CFBundleIdentifier')!r}"
-        )
-
-    model_directory = app / "Contents/Resources/MoneyWizDataModel.momd"
-    version_info_path = model_directory / "VersionInfo.plist"
-    try:
-        with version_info_path.open("rb") as version_file:
-            version_info = plistlib.load(version_file)
-    except (OSError, plistlib.InvalidFileException) as exc:
-        raise ReassignmentError(
-            f"Cannot read MoneyWiz model manifest at {version_info_path}: {exc}"
-        ) from exc
-    if not isinstance(version_info, dict):
-        raise ReassignmentError(
-            f"MoneyWiz model manifest is not a dictionary: {version_info_path}"
-        )
-    version_name = version_info.get("NSManagedObjectModel_CurrentVersionName")
-    if (
-        not isinstance(version_name, str)
-        or not version_name
-        or version_name != version_name.strip()
-    ):
-        raise ReassignmentError(
-            f"MoneyWiz model manifest has an invalid current version: {version_info_path}"
-        )
-    version_leaf = Path(version_name)
-    if (
-        version_leaf.is_absolute()
-        or len(version_leaf.parts) != 1
-        or version_leaf.name != version_name
-        or version_name in {".", ".."}
-        or any(unicodedata.category(char).startswith("C") for char in version_name)
-    ):
-        raise ReassignmentError(
-            "MoneyWiz model manifest current version must be a single file name: "
-            f"{version_name!r}"
-        )
-    if version_name.endswith(".mom"):
-        model_stem = version_name[: -len(".mom")]
-        if not model_stem or model_stem in {".", ".."}:
-            raise ReassignmentError(
-                "MoneyWiz model manifest has an invalid current version: "
-                f"{version_info_path}"
-            )
-        model_leaf = version_name
-    elif version_leaf.suffix:
-        raise ReassignmentError(
-            "MoneyWiz model manifest current version has an unsupported suffix: "
-            f"{version_name!r}"
-        )
-    else:
-        model_leaf = f"{version_name}.mom"
-    model = model_directory / model_leaf
-    if not model.is_file():
-        raise ReassignmentError(f"MoneyWiz model file does not exist: {model}")
-    return model
+        if not os.environ.get("MONEYWIZ_APP") and not os.environ.get(
+            "MONEYWIZ_MODEL_PATH"
+        ):
+            return resolve_model(app_path=DEFAULT_MONEYWIZ_APP)
+        return resolve_model()
+    except RuntimeIdentityError as exc:
+        raise ReassignmentError(str(exc)) from exc
 
 
 def require_coredata_write_capability(
@@ -611,33 +464,18 @@ def apply_coredata_payload(
     writer_payload["profile_id"] = assessment.profile_id
     writer_payload["model_checksum"] = assessment.model_checksum
     writer_payload["capability"] = capability
-    with tempfile.TemporaryDirectory(prefix="moneywiz-coredata-") as temp_dir:
-        plan_path = Path(temp_dir) / "plan.json"
-        plan_path.write_text(
-            json.dumps(writer_payload, ensure_ascii=False), encoding="utf-8"
+    try:
+        output = invoke_v1(
+            db_path=db_path,
+            payload=writer_payload,
+            writer=writer,
+            model=model,
+            run=subprocess.run,
         )
-        completed = subprocess.run(
-            [
-                str(writer),
-                "--coredata-write",
-                "--store",
-                str(db_path.expanduser().resolve()),
-                "--model",
-                str(model),
-                "--plan",
-                str(plan_path),
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-    if completed.returncode != 0:
-        detail = (
-            completed.stderr.strip() or completed.stdout.strip() or "unknown failure"
-        )
-        raise ReassignmentError(f"Compatible Core Data writer failed: {detail}")
-    if completed.stdout.strip():
-        print(completed.stdout.strip())
+    except WriterClientError as exc:
+        raise ReassignmentError(f"Compatible Core Data writer failed: {exc}") from exc
+    if output:
+        print(output)
 
 
 def apply_plan(db_path: Path, plan: ReassignmentPlan) -> None:

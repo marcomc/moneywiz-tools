@@ -237,7 +237,7 @@ def assess_database(db_path: Path) -> CompatibilityAssessment:
 
 
 def require_write_capability(db_path: Path, capability: str) -> CompatibilityAssessment:
-    """Refuse a live write unless its profile-operation pair is verified."""
+    """Refuse a live write unless its profile-operation pair is enabled or verified."""
     assessment = assess_database(db_path)
     if assessment.profile_id is None:
         known_profiles = ", ".join(sorted(assessment.missing_by_profile))
@@ -246,11 +246,81 @@ def require_write_capability(db_path: Path, capability: str) -> CompatibilityAss
             f"known profiles: {known_profiles}. Run: moneywiz compatibility"
         )
     state = assessment.capabilities.get(capability, "blocked")
-    if state != "verified":
+    if state not in {"enabled", "verified"}:
         raise CompatibilityError(
             f"{capability} is {state} for profile {assessment.profile_id}; "
-            "a verified Core Data capability is required before --apply"
+            "an enabled Core Data capability is required before --apply"
         )
+    return assessment
+
+
+DISPOSABLE_CREATE_CAPABILITIES = frozenset(
+    {
+        "write.create-income",
+        "write.create-expense",
+        "write.create-refund",
+    }
+)
+DISPOSABLE_WRITE_CAPABILITIES = DISPOSABLE_CREATE_CAPABILITIES | {
+    "write.edit-transaction",
+    "write.assign-payee-categories",
+    "write.reconcile",
+    "write.unreconcile",
+    "write.adjust-account-balance",
+    "write.adjust-investment-cash",
+    "write.adjust-asset-quantity",
+    "write.delete-adjust-balance-investment-total",
+    "write.delete-supported-transactions",
+    "write.replace-import-with-transfer",
+    "write.reassign-transfer-recipient",
+    "write.investment-income",
+    "write.investment-expense",
+    "write.investment-buy",
+    "write.investment-buy-new-holding",
+    "write.investment-sell",
+    "write.merge-exact-payees",
+    "write.merge-approved-fuzzy-payees",
+}
+DISPOSABLE_METADATA_KEY = "MoneyWizToolsDisposableFixture"
+DISPOSABLE_METADATA_VALUE = "W01-v1"
+
+
+def require_disposable_write_capability(
+    db_path: Path, capability: str
+) -> CompatibilityAssessment:
+    """Admit fixture-only writes on explicitly marked model-48 stores.
+
+    This is separate from live capability clearance. The native host independently
+    enforces the same persistent-store metadata boundary before opening for writes.
+    Plans and environment variables cannot designate an existing store as a fixture.
+    """
+    assessment = assess_database(db_path)
+    if (
+        capability not in DISPOSABLE_WRITE_CAPABILITIES
+        or assessment.profile_id != "moneywiz-2026-model-48"
+    ):
+        raise CompatibilityError(
+            "fixture-only writes require an exact model-48 disposable profile"
+        )
+    connection = _open_read_only(db_path)
+    try:
+        rows = connection.execute("SELECT Z_PLIST FROM Z_METADATA").fetchall()
+        if len(rows) != 1:
+            raise CompatibilityError(
+                "fixture-only writes require one disposable store metadata record"
+            )
+        metadata = plistlib.loads(bytes(rows[0][0]))
+        if (
+            not isinstance(metadata, dict)
+            or metadata.get(DISPOSABLE_METADATA_KEY) != DISPOSABLE_METADATA_VALUE
+        ):
+            raise CompatibilityError(
+                "fixture-only live writes remain blocked; an invented disposable fixture is required"
+            )
+    except (sqlite3.Error, ValueError, TypeError, plistlib.InvalidFileException) as exc:
+        raise CompatibilityError("cannot verify disposable store metadata") from exc
+    finally:
+        connection.close()
     return assessment
 
 
@@ -285,7 +355,7 @@ def _outcome_status(assessment: CompatibilityAssessment, capability: str | None)
     if capability is None:
         return 0
     state = _requested_capability_state(assessment, capability)
-    return 0 if state in {"supported", "verified"} else 1
+    return 0 if state in {"supported", "enabled", "verified"} else 1
 
 
 def make_parser() -> argparse.ArgumentParser:

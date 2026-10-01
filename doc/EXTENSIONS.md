@@ -9,8 +9,9 @@
 | Generic write helpers | Retired from the product CLI. |
 | Live payee reassignment to an existing payee | Verified through Core Data. |
 | Live payee reassignment that creates a destination payee | Verified through Core Data. |
-| Live exact-normalized duplicate-payee merge | Planning only; native apply remains blocked. |
-| Similar-name payee merge | Approval-map generation only. |
+| W01–W10 typed writer variants | Enabled for supported MoneyWiz bundles at build 449 or newer; exact model and canonical store checks apply. |
+| Live exact-normalized duplicate-payee merge | W09 reviewed pair apply enabled; legacy group apply blocked. |
+| Similar-name payee merge | W09 consumes one explicitly approved CSV pair; pending and rejected rows are refused. |
 | Graphical user interface | Planned. |
 
 ## Extension principles
@@ -27,11 +28,11 @@
 
 ## Next implementation candidates
 
-### Similar-name approval workflow
+### Existing similar-name approval workflow
 
-Exact-normalized groups now have a deterministic plan, but no native mutation
-path. A future implementation also needs an explicit parser for an approved
-fuzzy CSV:
+W09 implements one exact or individually approved fuzzy pair. Its parser
+requires an approved CSV row and checks the current identity and reference
+inventory:
 
 1. Read only rows marked approved.
 2. Validate the selected canonical payee is still valid and belongs to the
@@ -39,13 +40,15 @@ fuzzy CSV:
 3. Present a fresh plan because names and reference counts may have changed.
 4. Apply no unapproved or stale row.
 
-The current command intentionally exports the CSV but never consumes it.
+The legacy group command exports the CSV without consuming it. The separate
+`payee merge --kind fuzzy` planner consumes one approved row. See
+[Payee Consolidation](PAYEE-CONSOLIDATION.md) for the current workflow.
 
 ### Additional live writers
 
-Potential writers include categories, tags, refunds, and other relationship
-updates. Each requires a narrow contract and native comparison evidence
-before it is offered against the live iCloud store.
+The implemented refund and assignment variants are documented in
+[Live Write Compatibility](LIVE-WRITE-COMPATIBILITY.md). Additional variants
+require a narrow contract and native comparison evidence before live enablement.
 
 ### GUI
 

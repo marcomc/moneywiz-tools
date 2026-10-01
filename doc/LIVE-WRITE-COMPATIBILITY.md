@@ -11,8 +11,81 @@ compatibility is defined per write path.
 | Generic SQL mutation | Not a product capability | Do not infer iCloud compatibility from SQL success. |
 | Reassign a payee to an existing destination | Verified | Bundled Core Data writer. |
 | Reassign a payee and create its destination | Verified | Bundled Core Data writer. |
-| Merge exact-normalized duplicate payees | Blocked | Requires independent Core Data acceptance evidence. |
-| Merge similar-name payees | Not implemented | Requires an approved map and a separate reviewed contract. |
+| W01 income, expense and linked refund | Enabled; live trial accepted | Supported MoneyWiz bundle, build 449 or newer, exact reviewed model and canonical store identity. |
+| W02 edit, W03 assignment, W04 reconcile/unreconcile | Enabled; live trial accepted | Supported MoneyWiz bundle, build 449 or newer, exact reviewed model and canonical store identity. |
+| W05 Adjust Balance investment total | Verified | Supported MoneyWiz bundle at build 449 or newer, exact model and reviewed store identity. |
+| W05 ordinary balance, investment cash and existing-asset quantity | Enabled; live trial accepted for ordinary balances, cash and stock quantity | Supported MoneyWiz bundle at build 449 or newer; exact model, store and balance unit; Forex quantity tested on disposable stores. |
+| W07 reciprocal zero-fee transfer replacement | Enabled; live trial accepted | Supported MoneyWiz bundle, build 449 or newer, exact reviewed model and canonical store identity. |
+| W10 linked transfer recipient reassignment | Enabled in the CLI; live app/sync acceptance pending | Supported MoneyWiz bundle, build 449 or newer, exact reviewed model and canonical store identity; all three owned accounts and both transfer legs must match the plan. |
+| W06 delete one investment-total adjustment | Enabled for authorized trials | Supported MoneyWiz bundle at build 449 or newer, exact model and reviewed store identity. |
+| W06 delete supported transactions | Enabled; live trial accepted | Supported MoneyWiz bundle at build 449 or newer, exact model and store; explicitly selected complete dependency closure. |
+| W08 investment cash events and Buy/Sell | Enabled for authorized trials | Supported MoneyWiz bundle at build 449 or newer, exact model and reviewed store identity. |
+| Merge exact-normalized duplicate payees | Enabled for authorized trials | Exact reviewed model, app, store and complete reference inventory. |
+| Merge similar-name payees | Enabled for authorized trials | W09 requires one approved review-map row and the complete reference inventory. |
+
+### Account coverage and acceptance, 30 September 2026
+
+The installed model has seven concrete account subtypes: `CashAccount`,
+`BankChequeAccount`, `BankSavingAccount`, `CreditCardAccount`, `LoanAccount`,
+`InvestmentAccount` and `ForexAccount`. Ordinary creation, editing, assignment,
+reconciliation and transfer replacement admit all seven. Native regression
+stores exercise each subtype, preserving its metadata and account relationships.
+An online-banking connection does not exclude the account from these operations.
+
+Authorized synthetic W01–W09 trials passed on a private copy and the live Setapp
+store. Each applied plan passed replay and recovery without duplication. The
+native admission gate is channel-neutral: either supported MoneyWiz bundle is
+eligible at build 449 or newer when the model and canonical store identities
+match. This build floor describes gate admission; it does not replace
+operation-specific trial evidence below.
+MoneyWiz displayed the bank rows, reciprocal FX transfer, investment cash and
+Buy/Sell events, payee migration and balance adjustment. Temporary investment,
+transfer and merge-reference rows were removed; three labelled bank TEST rows
+were retained as requested. Original financial fields were unchanged.
+CloudKit recorded export without pending upload for the trial rows; after final
+cleanup MoneyWiz reported **Up to Date**. The user confirmed that the iPhone
+displays the retained TEST rows and matching bank and investment balances.
+Individual temporary investment and transfer identities were not checked on the
+second device. Private plans, receipts and comparisons remain outside the repository.
+
+The W05 extensions additionally passed six installed-CLI live trials: ordinary
+GBP/EUR/USD/CAD balances, investment cash and existing stock quantity. App
+read-back and per-record CloudKit export were verified. Exact native cleanup
+restored the original financial fields, histories and holding metadata while
+preserving the three retained TEST rows. Reopened balances and quantities agreed,
+and iCloud reported **Up to Date**. These six temporary rows were not verified
+on a second device; Forex quantity has disposable-store acceptance only.
+
+Account coverage does not expand operation-specific semantics: W05 retains
+the reviewed no-holdings investment-total contract alongside its explicit
+ordinary balance, investment cash and existing-asset quantity variants. W06
+additionally deletes the eight supported transaction entities with explicit
+refund/transfer closure and owned dependency cleanup. W08
+Buy/Sell uses an existing owned holding; the separate first-Buy operation can
+create a manual investment holding atomically. New Forex holdings through
+Exchange remain outside that contract. Implementation PRs have completed
+independent review; runtime entries retain their operation-specific status.
+
+The aggregate investment-total currency extension validates identifiers and
+decimal precision against the reviewed app's fiat/crypto catalogs on apply
+and recovery. New plans bind an explicit reporting exchange rate; original
+GBP plans keep their existing contract. Native EUR and eight-decimal crypto
+references were captured. Installed-client live trials verified creation,
+replay, recovery and dedicated latest-adjustment deletion in both currencies.
+The app displayed the exact totals and deltas, and row-specific CloudKit
+metadata recorded export with no pending upload. All fictional rows and
+accounts were removed; original financial fields and the three retained TEST
+rows were preserved. The app reported iCloud up to date and the trial records
+had no remaining CloudKit metadata. No second-device check is claimed.
+
+The W06 extension passed native live deletion of 15 exported fictional rows
+and installed Python-client deletion of three further exported rows. Coverage
+includes refund-only retention, complete withdrawal/refund groups, reciprocal
+transfers, categories, cash and stock quantity adjustments, Buy/Sell, dividends
+and fees. Replay and recovery passed. Original ledgers, balances, quantities and
+manual-price archives were restored, and the three retained TEST rows stayed
+unchanged. After cleanup the app reported **Up to Date** and the exact exported
+record metadata was absent. No second-device check is claimed for these rows.
 
 No backup requirement is imposed by the command. The operator remains
 responsible for deciding their own recovery posture before modifying
@@ -50,8 +123,7 @@ different `ZSYNCOBJECT` row cannot satisfy the ownership check accidentally.
 The tool refuses ambiguous normalized payee names. Resolve or consolidate those
 duplicates through the MoneyWiz GUI while
 `write.merge-duplicate-payees` remains blocked. Export similar pairs with
-`--fuzzy-map PATH`; they remain pending until an explicitly approved workflow
-exists.
+`--fuzzy-map PATH`; W09 requires an explicitly approved row.
 
 ## Compatibility profile
 
@@ -70,7 +142,7 @@ The relevant payee relationships are documented in
 [Live Payee Structure](LIVE-PAYEE-STRUCTURE.md). The writer itself is
 documented in [Core Data Writer](CORE-DATA-WRITER.md).
 
-## Evidence for the current path
+## Evidence for the version-1 reassignment path
 
 The current host was tested against the live profile by:
 
@@ -120,7 +192,8 @@ profile ID, checksum, and writer-contract version to the Swift host. Before
 opening the persistent store, the host independently requires the exact
 supported profile, checksum, `write.reassign-payees-by-id` capability, schema
 version 1, ten-entity transaction allowlist, and reassignment-only payload
-shape. It rejects blank or duplicate transaction GIDs, partial or mixed target
+shape. These version-1 restrictions do not describe the version-2 handlers.
+It rejects blank or duplicate transaction GIDs, partial or mixed target
 fields, and inconsistent new-payee keys. It then compares the expected checksum
 with both the store metadata and the selected MoneyWiz managed-object model.
 The selected model path comes from one safe manifest leaf: an extensionless
@@ -131,4 +204,4 @@ After the store opens, a read-only Core Data preflight resolves the complete
 plan using exact-entity fetches with subentities excluded. It verifies account
 users, existing-payee ownership, and shared new-payee ownership before any
 payee insert or relationship change. Unknown, blocked, merge, mixed, schema 2,
-entity-mismatched, or ownership-invalid plans fail closed without mutation.
+entity-mismatched, or ownership-invalid version-1 plans fail closed without mutation.

@@ -3,8 +3,7 @@
 ## Product purpose
 
 MoneyWiz Tools provides local command-line access to a MoneyWiz SQLite store.
-It separates routine inspection from explicitly verified live write
-operations.
+It separates routine inspection from typed, guarded live write operations.
 
 ## User-facing entrypoints
 
@@ -26,14 +25,19 @@ tags, transactions, holdings, records, summaries, statistics, and schema.
 matching profile. It plans the change, refuses ambiguous normalized targets,
 and uses the bundled Core Data host to reuse or create a destination payee.
 
-`merge-duplicate-payees` plans exact-normalized groups. Its live application
-capability remains blocked until it has independent acceptance evidence.
-Similar-name pairs are exported for manual review and are not applied.
+`merge-duplicate-payees` plans exact-normalized groups and exports similar-name
+pairs for manual review; its legacy apply path remains blocked. W09
+`payee merge` plans one exact or explicitly approved fuzzy pair using the complete
+native reference inventory, and `write apply` executes the reviewed plan.
+
+Version-2 plans also implement the finite W01–W08 transaction operations. See
+[Live Write Compatibility](LIVE-WRITE-COMPATIBILITY.md) for exact runtime, account
+and acceptance boundaries.
 
 ### Explicit exclusions
 
 - No generic raw-SQL product writer.
-- No similar-name duplicate merge yet.
+- No unapproved similar-name duplicate merge.
 - No GUI yet.
 - No claim that test-store entity numbers describe every live model.
 

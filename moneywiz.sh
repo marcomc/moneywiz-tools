@@ -204,7 +204,30 @@ Reads (support --format table|json; default: table):
                [--fields f1,f2,...] [--list-fields] [--all-fields]
   holdings --account ID
 
+Reconciliation reads (JSON):
+  identity [--app PATH] [--model PATH] [--owner ID]
+                                      Discover exact app/store/model identity read-only.
+  snapshot [--account ID] [--until DATE] [--timezone IANA]
+                                      Complete read graph and bounded audit findings.
+  accounts|holdings|transactions --format json --diagnostics
+                                      Include read completeness; partial reads exit 3.
+
 Writes (dry-run by default; add --apply to commit):
+  transaction create --help            Build a strict W01 creation plan.
+  transaction edit --help              Build a guarded W02 scalar edit plan.
+  transaction assign --help            Build a guarded W03 relationship replacement plan.
+  transaction reconcile --help         Build a guarded W04 reconciliation plan.
+  transaction unreconcile --help       Build a guarded W04 correction plan.
+  transaction adjust-balance --help     Build an explicit W05 balance or quantity plan.
+  transaction delete-adjustment --help  Build a guarded W06 deletion plan for that variant.
+  transaction delete --help  Plan deletion of supported transactions and their native dependencies.
+  transaction transfer --help           Build a guarded W07 transfer replacement plan.
+  transaction investment --help         Build a guarded W08 investment transaction plan.
+  payee merge --help                     Build a guarded W09 exact or approved fuzzy merge plan.
+  write validate|apply|recover --plan FILE
+                                      Inspect or execute a reviewed versioned plan.
+  write locations|journal|cleanup [--apply]
+                                      Discover private recovery data and bounded cleanup.
   reassign-payees-by-id [--from-payee-id ID] [--from-empty-payee]
                         [--empty-desc-target-payee-id ID]
                         [--apply] [--quiet] [--show-plan]
@@ -283,7 +306,7 @@ if [[ "${IS_BUNDLED}" -eq 1 ]]; then
 fi
 
 BASE_DB_ARG=(--db "${GLOBAL_DB:-${DB_PATH}}")
-if [[ "${HELP_REQUESTED}" -eq 0 && "${SUBCMD}" != "shell" && "${SUBCMD}" != "create-test-db" && "${SUBCMD}" != "sanitize-test-db" ]]; then
+if [[ "${HELP_REQUESTED}" -eq 0 && "${SUBCMD}" != "shell" && "${SUBCMD}" != "identity" && "${SUBCMD}" != "snapshot" && "${SUBCMD}" != "write" && "${SUBCMD}" != "transaction" && "${SUBCMD}" != "create-test-db" && "${SUBCMD}" != "sanitize-test-db" ]]; then
   DB_TO_USE="${GLOBAL_DB:-${DB_PATH}}"
   if [[ ! -f "${DB_TO_USE}" ]]; then
     echo "Error: Database file not found: ${DB_TO_USE}" >&2
@@ -293,6 +316,27 @@ if [[ "${HELP_REQUESTED}" -eq 0 && "${SUBCMD}" != "shell" && "${SUBCMD}" != "cre
 fi
 
 case "${SUBCMD}" in
+  transaction)
+    transaction_arguments=()
+    if [[ -n "${GLOBAL_DB:-${CONFIG_DB_PATH}}" ]]; then
+      transaction_arguments=(--db "${GLOBAL_DB:-${CONFIG_DB_PATH}}")
+    fi
+    run_python_script "${SCRIPT_DIR}/scripts/write_transactions.py" "${transaction_arguments[@]}" "$@"
+    ;;
+  write)
+    write_arguments=()
+    if [[ -n "${GLOBAL_DB:-${CONFIG_DB_PATH}}" ]]; then
+      write_arguments=(--db "${GLOBAL_DB:-${CONFIG_DB_PATH}}")
+    fi
+    run_python_script "${SCRIPT_DIR}/scripts/write.py" "${write_arguments[@]}" "$@"
+    ;;
+  identity)
+    identity_arguments=()
+    if [[ -n "${GLOBAL_DB:-${CONFIG_DB_PATH}}" ]]; then
+      identity_arguments=(--db "${GLOBAL_DB:-${CONFIG_DB_PATH}}")
+    fi
+    run_python_script "${SCRIPT_DIR}/scripts/identity.py" ${identity_arguments[@]+"${identity_arguments[@]}"} "$@"
+    ;;
   shell)
     shell_arguments=("$@")
     if [[ "${HELP_REQUESTED}" -eq 1 ]]; then
@@ -304,12 +348,15 @@ case "${SUBCMD}" in
     fi
     run_python_script "${SCRIPT_DIR}/scripts/run_moneywiz_cli.py" "${GLOBAL_DB:-${DB_PATH}}" "${shell_arguments[@]}"
     ;;
-  users|accounts|categories|payees|tags|transactions|holdings|record|stats|summary)
+  users|accounts|categories|payees|tags|transactions|holdings|record|stats|summary|snapshot)
     run_python_script "${SCRIPT_DIR}/scripts/${SUBCMD}.py" "${BASE_DB_ARG[@]}" "$@"
     ;;
   reassign-payees-by-id|merge-duplicate-payees)
     script_name="${SUBCMD//-/_}.py"
     run_python_script "${SCRIPT_DIR}/scripts/${script_name}" "${BASE_DB_ARG[@]}" "$@"
+    ;;
+  payee)
+    run_python_script "${SCRIPT_DIR}/scripts/write_payees.py" "${BASE_DB_ARG[@]}" "$@"
     ;;
   compatibility)
     run_python_script "${SCRIPT_DIR}/scripts/compatibility.py" "${BASE_DB_ARG[@]}" "$@"

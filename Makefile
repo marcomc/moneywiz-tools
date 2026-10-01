@@ -31,10 +31,14 @@ BUNDLE_RUNTIME_SCRIPT_PAYLOAD := \
 	scripts/compatibility.py \
 	scripts/compatibility_matrix.json \
 	scripts/holdings.py \
+	scripts/identity.py \
 	scripts/introspect_db.py \
 	scripts/merge_duplicate_payees.py \
 	scripts/payees.py \
 	scripts/reassign_payees_by_id.py \
+	scripts/read_support.py \
+	scripts/runtime_identity.py \
+	scripts/snapshot.py \
 	scripts/record.py \
 	scripts/run_moneywiz_cli.py \
 	scripts/stats.py \
@@ -42,6 +46,15 @@ BUNDLE_RUNTIME_SCRIPT_PAYLOAD := \
 	scripts/tags.py \
 	scripts/transactions.py \
 	scripts/users.py
+
+BUNDLE_RUNTIME_SCRIPT_PAYLOAD += \
+	scripts/write_plan.py \
+	scripts/write_journal.py \
+	scripts/writer_client.py \
+	scripts/write.py \
+	scripts/write_transactions.py
+
+BUNDLE_RUNTIME_SCRIPT_PAYLOAD += scripts/write_payees.py
 
 .DEFAULT_GOAL := help
 
@@ -84,7 +97,7 @@ _build-bundle:
 	@mkdir -p "$(APP_RUNTIME)/python" "$(APP_RUNTIME)/bin"
 	@mkdir -p "$(APP_RUNTIME)/scripts" "$(APP_RUNTIME)/doc"
 	@cp -f "$(HOST_PLIST)" "$(APP_CONTENTS)/Info.plist"
-	@swiftc -parse-as-library "$(HOST_SOURCE)" -o "$(APP_HOST)"
+	@cd "$(CURDIR)" && swiftc -parse-as-library "scripts/moneywiz_tools_host.swift" -o "$(APP_HOST)"
 	@set -eu; \
 		for payload_path in $(BUNDLE_RUNTIME_ROOTS) $(BUNDLE_RUNTIME_SCRIPT_PAYLOAD); do \
 			cp -f "$(CURDIR)/$$payload_path" "$(APP_RUNTIME)/$$payload_path"; \
@@ -105,14 +118,19 @@ _build-bundle:
 			exit 1; \
 		fi; \
 		uv venv --clear --relocatable --seed --link-mode copy --python "$$base_python" "$(APP_VENV)"; \
+		venv_config="$(APP_VENV)/pyvenv.cfg"; \
+		test -f "$$venv_config"; \
+		sed '/^home = /d' "$$venv_config" > "$$venv_config.tmp"; \
+		mv "$$venv_config.tmp" "$$venv_config"; \
 		managed_python="$${base_python#$(APP_RUNTIME)/python/}"; \
 		if [ "$$managed_python" = "$$base_python" ]; then \
 			echo "x bundled Python path is outside the staged runtime"; \
 			exit 1; \
 		fi; \
 		ln -sfn "../../$$managed_python" "$(APP_VENV)/bin/python"
-	@uv export --project "$(CURDIR)" --frozen --no-dev --format requirements-txt --output-file "$(APP_RUNTIME)/requirements.txt"
+	@uv export --project "$(CURDIR)" --frozen --no-dev --no-header --format requirements-txt --output-file "$(APP_RUNTIME)/requirements.txt"
 	@uv pip install --python "$(APP_PY)" --quiet --requirement "$(APP_RUNTIME)/requirements.txt"
+	@"$(APP_PY)" -B "$(CURDIR)/scripts/sanitize_bundle_python.py" "$(APP_PYTHON_MANAGED)"
 	@chmod +x "$(APP_RUNTIME)/moneywiz.sh"
 
 _validate-bundle:

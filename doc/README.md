@@ -4,12 +4,20 @@ Use the documents below by task rather than reading the design history first.
 The README and command reference are the quickest path to a working CLI;
 design documents explain implementation constraints after the task is clear.
 
+## Contents
+
+- [Operator guides](#operator-guides)
+- [Live writer and schema evidence](#live-writer-and-schema-evidence)
+- [Design and maintenance](#design-and-maintenance)
+- [Developer documentation workflow](#developer-documentation-workflow)
+
 ## Operator guides
 
 | Task | Document |
 | --- | --- |
 | Install, relocate, update, or remove the app bundle | [Bundle Installation](BUNDLE-INSTALLATION.md) |
 | Configure the store and run everyday commands | [Project README](../README.md) |
+| Inspect reconciliation completeness, graph and runtime identity | [Reconciliation Reads](RECONCILIATION-READS.md) |
 | Run and revalidate a live payee reassignment | [Live Write Compatibility](LIVE-WRITE-COMPATIBILITY.md) |
 | Find commands and their intended scope | [Functions Reference](../FUNCTIONS.md) |
 
@@ -18,7 +26,16 @@ design documents explain implementation constraints after the task is clear.
 | Topic | Document |
 | --- | --- |
 | Core Data host, identity, and live-write protocol | [Core Data Writer](CORE-DATA-WRITER.md) |
-| Exact duplicate consolidation and fuzzy-map review | [Payee Consolidation](PAYEE-CONSOLIDATION.md) |
+| W01 creation contract and disposable validation | [Transaction Creation](TRANSACTION-CREATION.md) |
+| W02 guarded scalar edits and disposable validation | [Transaction Editing](TRANSACTION-EDITING.md) |
+| W03 payee/category replacement and disposable validation | [Transaction Assignment](TRANSACTION-ASSIGNMENT.md) |
+| W04 reconciliation flags and disposable validation | [Transaction Reconciliation](TRANSACTION-RECONCILIATION.md) |
+| W05/W06 investment-total adjustment creation and guarded deletion | [Transaction Adjust Balance](TRANSACTION-ADJUST-BALANCE.md) |
+| W06 supported transaction deletion and native dependency closure | [Supported Transaction Deletion](TRANSACTION-DELETION.md) |
+| W07 imported-row replacement and W10 recipient reassignment for linked transfer pairs | [Transaction Transfer](TRANSACTION-TRANSFER.md) |
+| W08 investment cash events and existing-holding Buy/Sell | [Investment Transactions](TRANSACTION-INVESTMENT.md) |
+| Versioned plans, interrupted writes and private journal retention | [Writer Recovery](WRITER-RECOVERY.md) |
+| Exact and reviewed fuzzy payee consolidation | [Payee Consolidation](PAYEE-CONSOLIDATION.md) |
 | Verified MoneyWiz 2026 payee and transaction mapping | [Live Payee Structure](LIVE-PAYEE-STRUCTURE.md) |
 | Logical object relationships | [Entity Relationship Diagram](ER-DIAGRAM.md) |
 | Core Data sync-object lifecycle | [Sync Object Model](SYNCOBJECT.md) |
@@ -38,6 +55,8 @@ numbers as a live-store contract and do not hand-edit generated sections.
 | Runtime and non-functional requirements | [Software Requirements Specification](SRS.md) |
 | Technical design and validation strategy | [Technical Design Document](TDD.md) |
 | Extension boundaries and roadmap | [Extensions](EXTENSIONS.md) |
+| P0–P3 delivery, phase preparation and acceptance | [Transaction Write Implementation Plan](proposals/TRANSACTION-WRITE-IMPLEMENTATION-PLAN.md) |
+| Proposed transaction contracts and technical evidence | [Transaction Write API Proposal](proposals/TRANSACTION-WRITE-API.md) |
 | Build-time repository relationship | [Repository Integration](REPO-INTEGRATION.md) |
 | Product/API/writer architecture decisions | [Wayfinder Map](wayfinder/MAP.md) |
 
