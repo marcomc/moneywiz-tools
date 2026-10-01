@@ -1,4 +1,4 @@
-"""Installed W08 admission follows the reviewed application edition."""
+"""Installed W08 admission is channel-neutral and requires marked fixtures."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from test_native_transaction_create import W01Runtime, w01_runtime
 from write_plan import validate_result
 
 
-def test_installed_w08_admission_by_edition(
+def test_installed_w08_admission_is_channel_neutral(
     w01_runtime: W01Runtime, tmp_path: Path
 ) -> None:
     configured = os.environ.get("MONEYWIZ_TEST_BUNDLE_PATH")
@@ -86,17 +86,8 @@ def test_installed_w08_admission_by_edition(
                   "--reviewed-digest", unmarked_plan["plan_digest"], "--apply",
                   "--app", str(w01_runtime.app), "--model", str(w01_runtime.model),
                   "--owner", unmarked_identity["owner_uri"].rsplit("/p", 1)[1])
-    if w01_runtime.app_identity["bundle_id"] == "com.moneywiz.personalfinance-setapp":
-        assert unmarked_result.returncode == 0, unmarked_result.stderr
-        assert validate_result(unmarked_plan, json.loads(unmarked_result.stdout))["classification"] == "applied"
-        recovered = run(unmarked_store, "write", "recover", "--plan", str(unmarked_path),
-                        "--app", str(w01_runtime.app), "--model", str(w01_runtime.model),
-                        "--owner", unmarked_identity["owner_uri"].rsplit("/p", 1)[1])
-        assert recovered.returncode == 0, recovered.stderr
-        assert validate_result(unmarked_plan, json.loads(recovered.stdout))["classification"] == "noop"
-    else:
-        assert unmarked_result.returncode == 2
-        assert "disposable" in unmarked_result.stderr
-        assert not list((unmarked_dir / "journal" / "entries").glob("*.json"))
-        with sqlite3.connect(f"{unmarked_store.as_uri()}?mode=ro", uri=True) as database:
-            assert database.execute("SELECT * FROM ZSYNCOBJECT ORDER BY Z_PK").fetchall() == original_rows
+    assert unmarked_result.returncode == 2
+    assert "disposable" in unmarked_result.stderr
+    assert not list((unmarked_dir / "journal" / "entries").glob("*.json"))
+    with sqlite3.connect(f"{unmarked_store.as_uri()}?mode=ro", uri=True) as database:
+        assert database.execute("SELECT * FROM ZSYNCOBJECT ORDER BY Z_PK").fetchall() == original_rows

@@ -3,9 +3,10 @@
 ## Capability and supported variants
 
 W02 edits exact existing transaction entity/GID pairs through the version-2
-native writer. The model-48 capability is enabled for authorized live execution
-on Setapp MoneyWiz 2026.37.1 build 449, with exact app and store identity checks.
-TestFlight regression stores require the disposable metadata marker.
+native writer. The model-48 capability is enabled for supported MoneyWiz bundles
+at build 449 or newer, with exact model and canonical store identity checks.
+Synthetic stores require the disposable metadata marker regardless of bundle
+channel.
 
 Supported entities are `DepositTransaction`, `WithdrawTransaction` and linked
 `RefundTransaction` in all seven [supported account types](TRANSACTION-CREATION.md),

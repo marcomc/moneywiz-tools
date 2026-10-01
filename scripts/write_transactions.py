@@ -23,6 +23,7 @@ from write_plan import (
     DELETE_ADJUSTMENT_CAPABILITY,
     SUPPORTED_DELETION_CAPABILITY,
     TRANSFER_CAPABILITY,
+    TRANSFER_RECIPIENT_CAPABILITY,
     ASSIGN_CAPABILITY,
     CREATE_OPERATION_POLICIES,
     EDIT_CAPABILITY,
@@ -34,6 +35,7 @@ from write_plan import (
     edit_changed_fields,
     normalize_decimal,
     transfer_postcondition,
+    transfer_recipient_postcondition,
     supported_deletion_postcondition,
     validate_plan,
 )
@@ -582,6 +584,57 @@ def build_transfer_plan(request: Mapping[str, Any]) -> dict[str, Any]:
     return validate_plan(plan)
 
 
+def build_transfer_recipient_plan(request: Mapping[str, Any]) -> dict[str, Any]:
+    """Plan one exact linked-transfer recipient-account reassignment."""
+    raw = _mapping(request, "request")
+    required = _ENVELOPE_FIELDS | {
+        "previous_destination_account", "destination_account", "operation",
+    }
+    if set(raw) != required:
+        raise PlanValidationError("request has unknown or missing W10 fields")
+    operation = _mapping(raw.pop("operation"), "operation")
+    if set(operation) != {"operation_id", "kind", "expected_pair"} or operation.get("kind") != "reassign_transfer_recipient":
+        raise PlanValidationError("operation has unknown or missing W10 fields")
+    for name in ("previous_destination_account", "destination_account"):
+        account = _mapping(raw[name], name)
+        if "expected_cached_balance" in account:
+            account["expected_cached_balance"] = normalize_decimal(
+                account["expected_cached_balance"], f"{name}.expected_cached_balance"
+            )
+        raw[name] = account
+    pair = _mapping(operation["expected_pair"], "operation.expected_pair")
+    if set(pair) != {"sender", "recipient"}:
+        raise PlanValidationError("expected_pair must contain sender and recipient")
+    for leg_name, leg_value in pair.items():
+        leg = _mapping(leg_value, f"expected_pair.{leg_name}")
+        for decimal_field in (
+            "amount", "fee", "original_fee", "original_amount", "peer_amount", "exchange_rate",
+        ):
+            if decimal_field in leg:
+                leg[decimal_field] = normalize_decimal(
+                    leg[decimal_field], f"expected_pair.{leg_name}.{decimal_field}"
+                )
+        pair[leg_name] = leg
+    operation["expected_pair"] = pair
+    operation.update(
+        capability=TRANSFER_RECIPIENT_CAPABILITY,
+        transaction_entity="TransferWithdrawTransaction",
+        transaction_gid=pair.get("sender", {}).get("transaction_gid"),
+        recipient_transaction_gid=pair.get("recipient", {}).get("transaction_gid"),
+        owner_uri=raw["owner_uri"],
+        source_event_id=raw["source_event_id"],
+    )
+    plan = {
+        "contract_version": CONTRACT_VERSION,
+        "operation_schema_version": OPERATION_SCHEMA_VERSION,
+        **raw,
+        "capability": TRANSFER_RECIPIENT_CAPABILITY,
+        "operations": [operation],
+    }
+    operation["expected_postcondition"] = transfer_recipient_postcondition(plan, operation)
+    return validate_plan(plan)
+
+
 def build_investment_plan(request: Mapping[str, Any]) -> dict[str, Any]:
     """Plan one model-48 investment cash event or linked Buy/Sell."""
     raw = _mapping(request, "request")
@@ -704,7 +757,7 @@ def make_parser() -> argparse.ArgumentParser:
         help=argparse.SUPPRESS,
     )
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ("create", "edit", "assign", "reconcile", "unreconcile", "adjust-balance", "delete-adjustment", "transfer", "investment"):
+    for name in ("create", "edit", "assign", "reconcile", "unreconcile", "adjust-balance", "delete-adjustment", "transfer", "reassign-transfer-recipient", "investment"):
         command = commands.add_parser(name)
         command.add_argument("--request", type=Path, required=True)
         command.add_argument(
@@ -731,6 +784,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "assign": build_assign_plan, "adjust-balance": build_adjust_balance_plan,
                     "delete-adjustment": build_delete_adjustment_plan,
                     "transfer": build_transfer_plan,
+                    "reassign-transfer-recipient": build_transfer_recipient_plan,
                     "investment": build_investment_plan}
         request = _native_deletion_request(args) if args.command == "delete" else _load_request(args.request)
         plan = (build_supported_deletion_plan(request) if args.command == "delete"

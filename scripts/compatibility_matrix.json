@@ -51,6 +51,7 @@
         "write.delete-adjust-balance-investment-total": "enabled",
         "write.delete-supported-transactions": "enabled",
         "write.replace-import-with-transfer": "enabled",
+        "write.reassign-transfer-recipient": "enabled",
         "write.investment-income": "enabled",
         "write.investment-expense": "enabled",
         "write.investment-buy": "enabled",

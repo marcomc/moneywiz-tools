@@ -111,18 +111,13 @@ def test_native_precision_scalar_refuses_raw_plan(w01_runtime, tmp_path, bad):
 
 @pytest.mark.parametrize("recover", [False, True])
 @pytest.mark.parametrize("direct", [False, True])
-def test_native_total_unmarked_admission_by_edition(w01_runtime, tmp_path, recover, direct):
+def test_native_total_unmarked_store_refusal(w01_runtime, tmp_path, recover, direct):
     runtime, store, identity = currency_store(w01_runtime, tmp_path, "PI+35697", marked=False)
     plan = adjustment(runtime, identity, "PI+35697", 8)
     before = rows(store)
     result = _invoke(runtime, store, plan, tmp_path, recover=recover, direct=direct)
-    if runtime.app_identity["bundle_id"] == "com.moneywiz.personalfinance-setapp":
-        assert result.returncode == 0, result.stderr
-        assert validate_result(plan, json.loads(result.stdout))["classification"] == ("retry_safe" if recover else "applied")
-        assert len(rows(store)) == len(before) + (0 if recover else 1)
-    else:
-        assert result.returncode != 0
-        assert rows(store) == before
+    assert result.returncode != 0
+    assert rows(store) == before
 
 
 @pytest.mark.parametrize("crash,classification", [("before-save", "retry_safe"), ("after-save", "noop")])

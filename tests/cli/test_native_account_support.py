@@ -1,9 +1,7 @@
 """Account subtype coverage and native ledger behavior on invented stores."""
 
 import json
-import plistlib
 from dataclasses import replace
-from pathlib import Path
 
 import pytest
 
@@ -52,26 +50,9 @@ def test_transfer_accepts_every_account_subtype(w01_runtime, tmp_path, entity):
     assert _inspect(runtime, store, tmp_path, entity, "w07-source")["attributes"] == before
 
 
-@pytest.fixture
-def setapp_runtime(w01_runtime):
-    app = Path("/Applications/Setapp/MoneyWiz 2026.app")
-    if not app.is_dir():
-        pytest.skip("reviewed Setapp application is unavailable")
-    with (app / "Contents/Info.plist").open("rb") as source:
-        info = plistlib.load(source)
-    if (info["CFBundleShortVersionString"], info["CFBundleVersion"]) != ("2026.37.1", "449"):
-        pytest.skip("reviewed Setapp version is unavailable")
-    model = app / "Contents/Resources/MoneyWizDataModel.momd/MoneyWizDataModel 48.mom"
-    return replace(w01_runtime, app=app, model=model, app_identity={
-        "bundle_id": info["CFBundleIdentifier"], "version": info["CFBundleShortVersionString"],
-        "path": str(app), "model_path": str(model),
-    })
-
-
-def test_live_shape_preserves_cache_and_reporting_rate(setapp_runtime, tmp_path):
-    # No production database is opened: the unmarked store is constructed here.
-    runtime = setapp_runtime
-    store, identity = _new_store(runtime, tmp_path, marked=False, account_entity="BankChequeAccount")
+def test_fixture_shape_uses_cache_delta_and_reporting_rate(w01_runtime, tmp_path):
+    runtime = w01_runtime
+    store, identity = _new_store(runtime, tmp_path, account_entity="BankChequeAccount")
     plan = _plan(runtime, identity)
     plan.pop("plan_digest")
     operation = plan["operations"][0]
@@ -85,14 +66,14 @@ def test_live_shape_preserves_cache_and_reporting_rate(setapp_runtime, tmp_path)
     assert applied.returncode == 0, applied.stderr
     assert validate_result(plan, json.loads(applied.stdout))["classification"] == "applied"
     row = _inspect(runtime, store, tmp_path, "DepositTransaction", operation["transaction_gid"])
-    assert row["account_balance"] == 0
-    assert row["attributes"]["status"] == 2
+    assert row["account_balance"] == 2
+    assert row["attributes"]["status"] == 1
     assert row["attributes"]["desc"] == fields["description"]
     assert row["attributes"]["currencyExchangeRate"] == 0.752775
     replay = _invoke(runtime, store, plan, tmp_path)
     assert replay.returncode == 0, replay.stderr
     assert validate_result(plan, json.loads(replay.stdout))["classification"] == "noop"
-    edit = _edit_plan(runtime, identity)
+    edit = _edit_plan(runtime, identity, expected_balance="2")
     edit.pop("plan_digest")
     edit_operation = edit["operations"][0]
     edit_operation.update(transaction_entity="DepositTransaction", transaction_gid=operation["transaction_gid"])
@@ -107,14 +88,14 @@ def test_live_shape_preserves_cache_and_reporting_rate(setapp_runtime, tmp_path)
     changed = _invoke(runtime, store, edit, tmp_path)
     assert changed.returncode == 0, changed.stderr
     after = _inspect(runtime, store, tmp_path, "DepositTransaction", operation["transaction_gid"])
-    assert after["account_balance"] == 0
+    assert after["account_balance"] == 3
     assert after["attributes"]["amount"] == 3
     assert after["attributes"]["currencyExchangeRate"] == 0.752775
 
 
-def test_unmarked_live_shape_requires_reviewed_reporting_rate(setapp_runtime, tmp_path):
-    store, identity = _new_store(setapp_runtime, tmp_path, marked=False)
-    plan = _plan(setapp_runtime, identity)
-    refused = _invoke(setapp_runtime, store, plan, tmp_path)
+def test_unmarked_store_requires_disposable_marker(w01_runtime, tmp_path):
+    store, identity = _new_store(w01_runtime, tmp_path, marked=False)
+    plan = _plan(w01_runtime, identity)
+    refused = _invoke(w01_runtime, store, plan, tmp_path)
     assert refused.returncode == 2
-    assert "explicit reviewed reporting exchange rate" in refused.stderr
+    assert "marked disposable fixture required" in refused.stderr

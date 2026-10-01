@@ -2,8 +2,9 @@
 
 W04 changes only the native `reconciled` attribute of selected existing
 transactions. `reconcile` and `unreconcile` have separate capabilities. Both
-are enabled for authorized Setapp MoneyWiz 2026.37.1 build 449 live execution.
-TestFlight regression stores require the disposable metadata marker.
+are enabled for supported MoneyWiz bundles at build 449 or newer, with exact
+model and canonical store identity checks. Synthetic stores require the
+disposable metadata marker regardless of bundle channel.
 
 ## Build and review a plan
 

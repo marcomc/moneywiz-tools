@@ -323,11 +323,9 @@ def test_partial_target_absence_refuses_replay(
 
 
 @pytest.mark.parametrize("recover", [False, True])
-def test_direct_supported_deletion_requires_fixture_marker_for_testflight(
+def test_direct_supported_deletion_requires_fixture_marker_for_unmarked_store(
     w01_runtime: W01Runtime, tmp_path: Path, recover: bool,
 ) -> None:
-    if w01_runtime.app_identity["bundle_id"] != "com.moneywiz.personalfinance":
-        pytest.skip("TestFlight-specific marker boundary")
     store, identity = _store(w01_runtime, tmp_path)
     plan = _plan(w01_runtime, store, identity, "w06-income")
     with sqlite3.connect(store) as connection:

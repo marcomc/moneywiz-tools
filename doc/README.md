@@ -32,7 +32,7 @@ design documents explain implementation constraints after the task is clear.
 | W04 reconciliation flags and disposable validation | [Transaction Reconciliation](TRANSACTION-RECONCILIATION.md) |
 | W05/W06 investment-total adjustment creation and guarded deletion | [Transaction Adjust Balance](TRANSACTION-ADJUST-BALANCE.md) |
 | W06 supported transaction deletion and native dependency closure | [Supported Transaction Deletion](TRANSACTION-DELETION.md) |
-| W07 imported-row replacement with paired transfer legs | [Transaction Transfer](TRANSACTION-TRANSFER.md) |
+| W07 imported-row replacement and W10 recipient reassignment for linked transfer pairs | [Transaction Transfer](TRANSACTION-TRANSFER.md) |
 | W08 investment cash events and existing-holding Buy/Sell | [Investment Transactions](TRANSACTION-INVESTMENT.md) |
 | Versioned plans, interrupted writes and private journal retention | [Writer Recovery](WRITER-RECOVERY.md) |
 | Exact and reviewed fuzzy payee consolidation | [Payee Consolidation](PAYEE-CONSOLIDATION.md) |

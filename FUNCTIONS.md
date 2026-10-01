@@ -97,6 +97,7 @@ reference inventory; see [Payee Consolidation](doc/PAYEE-CONSOLIDATION.md).
 | `transaction delete-adjustment --request FILE --plan FILE` | Build a W06 plan for one exact latest investment-total adjustment without opening a store |
 | `transaction delete --target GID --reason TEXT --evidence-note TEXT --plan FILE` | Build a W06 plan from a native read-only inventory; repeat `--target` for complete transfer/refund groups; see [Supported Transaction Deletion](doc/TRANSACTION-DELETION.md) for status |
 | `transaction transfer --request FILE --plan FILE` | Build a W07 plan to replace one or two imported rows with a zero-fee paired transfer without opening a store |
+| `transaction reassign-transfer-recipient --request FILE --plan FILE` | Build a W10 plan to change the recipient account of an existing linked transfer pair while preserving both transactions |
 | `transaction investment --request FILE --plan FILE` | Build one guarded W08 cash event, existing-holding Buy/Sell or first-Buy holding plan without opening a store |
 | `payee merge --kind KIND --source-gid GID --survivor-gid GID --plan FILE` | Build one W09 merge plan from a native read-only inventory; fuzzy requires `--fuzzy-map` |
 | `write validate --plan FILE` | Validate and display the exact plan and canonical digest |
@@ -287,7 +288,7 @@ pending and rejected rows remain no-ops.
 | Configured or explicitly selected store, read-only | `users`, `accounts`, `categories`, `payees`, `tags`, `transactions`, `holdings`, `snapshot`, `identity`, `record`, `summary`, `stats`, `schema`, `shell`, `compatibility` |
 | Live iCloud store through Core Data | `reassign-payees-by-id --apply` when its profile capability is verified |
 | Planning only; apply blocked | Legacy `merge-duplicate-payees --apply` remains unavailable |
-| Reviewed live Setapp runtime or marked disposable model-48 store | `write apply` executes reviewed W01–W09 plans, including one explicit W09 payee pair; exact runtime and operation guards apply |
+| Supported MoneyWiz bundle at build 449 or newer with matching canonical store, or marked disposable model-48 store | `write apply` executes reviewed W01–W10 plans; exact runtime and operation guards apply independent of bundle channel |
 
 For the persistent-history and CloudKit contract, see
 [Core Data Writer](doc/CORE-DATA-WRITER.md),

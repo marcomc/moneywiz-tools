@@ -35,7 +35,7 @@ Make owns the supported build and installation workflow:
 | Reads | SQLite/API access | Live or copied store. |
 | Payee reassignment | Bundled Swift Core Data host | Verified live path. |
 | Exact duplicate group planning | Python planner | Read-only; legacy group apply blocked. |
-| W01–W09 typed plans | Python planning and bundled Swift Core Data host | Enabled finite variants on the reviewed live Setapp runtime or marked disposable model-48 stores. |
+| W01–W10 typed plans | Python planning and bundled Swift Core Data host | Enabled finite variants on supported MoneyWiz bundles at build 449 or newer with matching model and canonical store, or on marked disposable model-48 stores. |
 
 The live writer relies on Core Data to manage object identity, optimistic
 versions, persistent history, and the sync-visible save lifecycle. A Python

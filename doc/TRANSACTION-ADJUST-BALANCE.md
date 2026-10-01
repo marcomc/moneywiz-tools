@@ -19,9 +19,9 @@ note, and an account relationship. It has no holding, category, payee or tag.
 
 The `investment_total` variant supports currencies in the reviewed MoneyWiz
 application's fiat and crypto catalogs. Live execution
-is admitted for Setapp and TestFlight MoneyWiz 2026.37.1 build 449, retaining
-the previously verified TestFlight path. Other compatible model-48 builds are
-admitted only on marked disposable fixtures. It requires
+is admitted for any supported official MoneyWiz bundle at build 449 or newer.
+Bundle channel is not part of the gate; other model-48 builds remain fixture-only
+until the build floor and exact live app/model/store identity checks pass. It requires
 the exact app, model, store, owner, account, prior balance and date in the
 reviewed plan; refuses holdings, valuation history and unsupported transaction
 history; saves one row; then reads it back in a fresh context. A deterministic
@@ -160,5 +160,6 @@ The app-created deletion reference removed only the selected business row and
 changed the account version in private before/after snapshots. A writer trial
 on a separately marked copy reproduced the balance change and `noop` replay.
 The `write.delete-adjust-balance-investment-total` capability is enabled for
-Setapp MoneyWiz 2026.37.1 build 449 and the exact reviewed model and store.
-Marked disposable TestFlight fixtures remain supported for regression tests.
+supported official MoneyWiz bundles at build 449 or newer with the exact reviewed
+model and canonical store. Marked disposable fixtures remain supported for
+regression tests regardless of bundle channel.

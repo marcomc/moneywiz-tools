@@ -38,7 +38,7 @@ supported path for live MoneyWiz database writes.
 
 ## Not yet specified
 
-- Operation variants beyond the implemented version-2 W01–W09 contracts. See
+- Operation variants beyond the implemented version-2 W01–W10 contracts. See
   [Writer Recovery](../WRITER-RECOVERY.md) for the current exchange.
 - The future GUI interaction model; this map only reserves its product and
   writer boundaries.
@@ -93,7 +93,9 @@ preflights the complete plan, saves through Core Data, and returns JSON counts
 for created payees, reassigned transactions, merged payees, and migrated
 relationships. Version 1 rejects empty, merge, mixed, and unsupported payloads.
 Version 2 separately implements reviewed typed W01–W09 plans and durable
-recovery; it does not broaden the version-1 reassignment payload.
+recovery; it does not broaden the version-1 reassignment payload. W10 adds an
+independent version-2 operation for changing the recipient account of an
+existing linked transfer pair while preserving both transaction identities.
 
 ## Upstream updates are explicit and verified
 

@@ -9,7 +9,7 @@
 | Generic write helpers | Retired from the product CLI. |
 | Live payee reassignment to an existing payee | Verified through Core Data. |
 | Live payee reassignment that creates a destination payee | Verified through Core Data. |
-| W01–W09 typed writer variants | Enabled on the reviewed live Setapp runtime; finite operation and runtime guards apply. |
+| W01–W10 typed writer variants | Enabled for supported MoneyWiz bundles at build 449 or newer; exact model and canonical store checks apply. |
 | Live exact-normalized duplicate-payee merge | W09 reviewed pair apply enabled; legacy group apply blocked. |
 | Similar-name payee merge | W09 consumes one explicitly approved CSV pair; pending and rejected rows are refused. |
 | Graphical user interface | Planned. |

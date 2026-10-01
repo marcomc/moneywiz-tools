@@ -78,15 +78,16 @@ The native host rechecks the complete reference inventory, moves each relation
 in one Core Data save, deletes the source and verifies the graph in a fresh
 context. Recovery distinguishes an unchanged source from a completed merge.
 Stale plans and unreviewed model relationships are refused. Both W09 capabilities
-are enabled on Setapp MoneyWiz 2026.37.1 build 449 with exact app/model/store
-identity checks. See [Live Write Compatibility](LIVE-WRITE-COMPATIBILITY.md) for
+are enabled for supported official MoneyWiz bundles at build 449 or newer, with
+exact app/model/store identity checks. See [Live Write Compatibility](LIVE-WRITE-COMPATIBILITY.md) for
 authorized trial and sync evidence.
 
 The active MoneyWiz 2026 model exposes inbound
 payee references from transactions, string history, scheduled transaction
 handlers, payment plans, and info cards. `User.payees` is ownership metadata.
 W09 mutation requires this complete inventory and the operation-specific
-runtime guards; current TestFlight regression stores must be marked disposable.
+runtime guards; every noncanonical regression store must be marked disposable,
+regardless of the bundle used to run the tests.
 
 ## Similar-name approval map
 

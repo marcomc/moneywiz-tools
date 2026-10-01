@@ -47,6 +47,7 @@ SUPPORTED_DELETION_ENTITIES = frozenset({
     "InvestmentBuyTransaction", "InvestmentSellTransaction",
 })
 TRANSFER_CAPABILITY = "write.replace-import-with-transfer"
+TRANSFER_RECIPIENT_CAPABILITY = "write.reassign-transfer-recipient"
 INVESTMENT_POLICIES = {
     "investment_income": ("write.investment-income", "DepositTransaction", 1),
     "investment_expense": ("write.investment-expense", "WithdrawTransaction", -1),
@@ -292,8 +293,23 @@ class TransferReplacementOperation(TypedDict):
     expected_postcondition: dict[str, Any]
 
 
+class TransferRecipientEditOperation(TypedDict):
+    """Change the recipient account of one exact linked transfer pair."""
+
+    operation_id: str
+    kind: str
+    capability: str
+    transaction_entity: str
+    transaction_gid: str
+    recipient_transaction_gid: str
+    owner_uri: str
+    source_event_id: str
+    expected_pair: dict[str, Any]
+    expected_postcondition: dict[str, Any]
+
+
 class WritePlan(TypedDict):
-    """Version-two envelope, intentionally closed until W01-W04 are evidenced."""
+    """Version-two envelope with the finite typed writer operation contracts."""
 
     contract_version: int
     operation_schema_version: int
@@ -324,6 +340,7 @@ class WritePlan(TypedDict):
         | AdjustBalanceOperation
         | DeleteAdjustmentOperation
         | TransferReplacementOperation
+        | TransferRecipientEditOperation
         | dict[str, Any]
     ]
 
@@ -1371,6 +1388,134 @@ def _validate_transfer_operation(
     return operation["transaction_gid"]
 
 
+_TRANSFER_LEG_FIELDS = {
+    "transaction_entity", "transaction_gid", "transaction_numeric_id", "account_gid",
+    "amount", "currency_unit", "occurred_at", "status", "flags", "reconciled",
+    "note", "description", "fee", "original_fee", "original_fee_currency",
+    "original_amount", "peer_amount", "peer_currency_unit", "exchange_rate",
+    "peer_transaction_gid", "peer_account_gid", "payee_gid", "tag_gids", "category_assignment_uris",
+}
+
+
+def _validate_transfer_leg_snapshot(
+    value: object, field: str, *, entity: str, currency_unit: str
+) -> dict[str, Any]:
+    if not isinstance(value, Mapping) or set(value) != _TRANSFER_LEG_FIELDS:
+        raise PlanValidationError(f"{field} has unknown or missing fields")
+    row = dict(value)
+    if row["transaction_entity"] != entity:
+        raise PlanValidationError(f"{field}.transaction_entity is invalid")
+    for name in ("transaction_gid", "account_gid", "peer_transaction_gid", "peer_account_gid"):
+        _text(row[name], f"{field}.{name}")
+    numeric_id = row["transaction_numeric_id"]
+    if (not isinstance(numeric_id, str) or not numeric_id.isascii()
+            or not numeric_id.isdigit() or int(numeric_id) <= 0
+            or str(int(numeric_id)) != numeric_id):
+        raise PlanValidationError(f"{field}.transaction_numeric_id must be positive")
+    if row["currency_unit"] != currency_unit:
+        raise PlanValidationError(f"{field}.currency_unit differs from its account")
+    for name in ("amount", "fee", "original_fee", "original_amount", "peer_amount", "exchange_rate"):
+        _canonical_decimal(row[name], f"{field}.{name}")
+    if Decimal(row["exchange_rate"]) <= 0 or Decimal(row["fee"]) < 0 or Decimal(row["original_fee"]) < 0:
+        raise PlanValidationError(f"{field} has an invalid rate or fee")
+    _currency(row["peer_currency_unit"], f"{field}.peer_currency_unit")
+    _timestamp(row["occurred_at"], f"{field}.occurred_at")
+    if type(row["status"]) is not int or row["status"] not in (1, 2):
+        raise PlanValidationError(f"{field}.status must be an observed active status")
+    if type(row["flags"]) is not int or row["flags"] < 0 or type(row["reconciled"]) is not bool:
+        raise PlanValidationError(f"{field} flags or reconciliation state are invalid")
+    for name in ("note", "description", "original_fee_currency"):
+        if (row[name] is not None and (not isinstance(row[name], str)
+                or row[name] != row[name].strip())):
+            raise PlanValidationError(f"{field}.{name} must be text or null")
+    if row["original_fee_currency"] is not None:
+        _currency(row["original_fee_currency"], f"{field}.original_fee_currency")
+    if row["payee_gid"] is not None:
+        _text(row["payee_gid"], f"{field}.payee_gid")
+    for name in ("tag_gids", "category_assignment_uris"):
+        items = row[name]
+        if (not isinstance(items, list) or not all(isinstance(item, str) and item.strip() == item and item
+                for item in items) or items != sorted(set(items))):
+            raise PlanValidationError(f"{field}.{name} must be unique sorted strings")
+    return row
+
+
+def transfer_recipient_postcondition(
+    plan: Mapping[str, Any], operation: Mapping[str, Any]
+) -> dict[str, Any]:
+    pair = operation["expected_pair"]
+    sender, recipient = pair["sender"], pair["recipient"]
+    return {
+        "sender_gid": sender["transaction_gid"],
+        "recipient_gid": recipient["transaction_gid"],
+        "sender_account_gid": sender["account_gid"],
+        "previous_destination_account_gid": recipient["account_gid"],
+        "destination_account_gid": plan["destination_account"]["account_gid"],
+        "recipient_amount": recipient["amount"],
+        "receive_at": recipient["occurred_at"],
+    }
+
+
+def _validate_transfer_recipient_operation(
+    operation: Mapping[str, Any], prefix: str, plan: dict[str, Any]
+) -> str:
+    required = {
+        "operation_id", "kind", "capability", "transaction_entity", "transaction_gid",
+        "recipient_transaction_gid", "owner_uri", "source_event_id", "expected_pair",
+        "expected_postcondition",
+    }
+    if set(operation) != required or operation["kind"] != "reassign_transfer_recipient":
+        raise PlanValidationError(f"{prefix} has unknown or missing W10 fields")
+    if (operation["capability"] != TRANSFER_RECIPIENT_CAPABILITY
+            or plan["capability"] != TRANSFER_RECIPIENT_CAPABILITY
+            or operation["transaction_entity"] != "TransferWithdrawTransaction"
+            or operation["owner_uri"] != plan["owner_uri"]
+            or operation["source_event_id"] != plan["source_event_id"]):
+        raise PlanValidationError("W10 operation differs from its envelope")
+    pair = operation["expected_pair"]
+    if not isinstance(pair, Mapping) or set(pair) != {"sender", "recipient"}:
+        raise PlanValidationError("W10 expected_pair must contain sender and recipient")
+    sender_currency = plan["currency_unit"]
+    recipient_currency = plan["previous_destination_account"]["currency_unit"]
+    sender = _validate_transfer_leg_snapshot(
+        pair["sender"], f"{prefix}.expected_pair.sender", entity="TransferWithdrawTransaction",
+        currency_unit=sender_currency,
+    )
+    recipient = _validate_transfer_leg_snapshot(
+        pair["recipient"], f"{prefix}.expected_pair.recipient", entity="TransferDepositTransaction",
+        currency_unit=recipient_currency,
+    )
+    if (sender["transaction_gid"] != operation["transaction_gid"]
+            or recipient["transaction_gid"] != operation["recipient_transaction_gid"]
+            or sender["peer_transaction_gid"] != recipient["transaction_gid"]
+            or recipient["peer_transaction_gid"] != sender["transaction_gid"]
+            or sender["account_gid"] != plan["expected_account_gid"]
+            or recipient["account_gid"] != plan["previous_destination_account"]["account_gid"]
+            or sender["peer_account_gid"] != recipient["account_gid"]
+            or recipient["peer_account_gid"] != sender["account_gid"]
+            or sender["peer_currency_unit"] != recipient_currency
+            or recipient["peer_currency_unit"] != sender_currency
+            or Decimal(sender["amount"]) >= 0 or Decimal(recipient["amount"]) <= 0
+            or Decimal(sender["peer_amount"]) != Decimal(recipient["amount"])
+            or Decimal(recipient["peer_amount"]) != Decimal(sender["amount"])
+            or sender["exchange_rate"] != recipient["exchange_rate"]):
+        raise PlanValidationError("W10 transfer pair is not reciprocal or differs from account identities")
+    if (plan["destination_account"]["currency_unit"] != recipient_currency
+            or plan["destination_account"]["account_gid"] in {
+                sender["account_gid"], recipient["account_gid"]
+            }):
+        raise PlanValidationError("W10 target must be a distinct account in the recipient currency")
+    for name in ("send_at", "receive_at"):
+        value = sender["occurred_at"] if name == "send_at" else recipient["occurred_at"]
+        _validate_timezone_offset(_timestamp(value, f"{prefix}.{name}"), plan["timezone"], f"{prefix}.{name}")
+    if (sender["transaction_gid"] == recipient["transaction_gid"]
+            or sender["transaction_numeric_id"] == recipient["transaction_numeric_id"]):
+        raise PlanValidationError("W10 transfer leg identities must be distinct")
+    if operation["expected_postcondition"] != transfer_recipient_postcondition(plan, operation):
+        raise PlanValidationError("W10 postcondition differs from the reviewed transfer pair")
+    return sender["transaction_gid"]
+
+
 def _validate_investment_operation(
     operation: Mapping[str, Any], prefix: str, plan: dict[str, Any]
 ) -> str:
@@ -1679,6 +1824,9 @@ def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
     w07 = plan.get("capability") == TRANSFER_CAPABILITY
     if w07:
         required.add("destination_account")
+    w10 = plan.get("capability") == TRANSFER_RECIPIENT_CAPABILITY
+    if w10:
+        required.update({"previous_destination_account", "destination_account"})
     if set(plan) != required and set(plan) != required - {"plan_digest"}:
         raise PlanValidationError("plan has unknown or missing fields")
     if (
@@ -1709,6 +1857,7 @@ def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
     if capability not in {PAYEE_CAPABILITY, EDIT_CAPABILITY, ASSIGN_CAPABILITY,
                           ADJUST_BALANCE_CAPABILITY, *EXTENDED_ADJUST_CAPABILITIES, DELETE_ADJUSTMENT_CAPABILITY, SUPPORTED_DELETION_CAPABILITY,
                           TRANSFER_CAPABILITY,
+                          TRANSFER_RECIPIENT_CAPABILITY,
                           *INVESTMENT_CAPABILITIES,
                           *(policy[0] for policy in RECONCILE_CAPABILITIES.values()),
                           *CREATE_CAPABILITIES}:
@@ -1762,6 +1911,25 @@ def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
         _currency(plan["currency_unit"], "currency_unit")
         _canonical_decimal(plan["expected_cached_account_balance"],
                            "expected_cached_account_balance")
+    if w10:
+        _currency(plan["currency_unit"], "currency_unit")
+        _canonical_decimal(plan["expected_cached_account_balance"], "expected_cached_account_balance")
+        for name in ("previous_destination_account", "destination_account"):
+            account = plan[name]
+            fields = {"account_gid", "currency_unit", "expected_cached_balance"}
+            if (not isinstance(account, Mapping)
+                    or set(account) not in (fields, fields | {"balance_mode"} )
+                    or ("balance_mode" in account and account["balance_mode"] != "ledger")):
+                raise PlanValidationError(f"W10 {name} has unknown or missing fields")
+            _text(account["account_gid"], f"{name}.account_gid")
+            _currency(account["currency_unit"], f"{name}.currency_unit")
+            _canonical_decimal(account["expected_cached_balance"], f"{name}.expected_cached_balance")
+        if (plan["previous_destination_account"]["account_gid"] in {
+                plan["expected_account_gid"], plan["destination_account"]["account_gid"]
+            }
+                or plan["destination_account"]["currency_unit"]
+                    != plan["previous_destination_account"]["currency_unit"]):
+            raise PlanValidationError("W10 source, current destination and target account identities are invalid")
     scope_gids = _validate_source_scope(plan["source_scope"], plan) if w04 else []
     operations = plan.get("operations")
     if not isinstance(operations, list) or not operations:
@@ -1806,6 +1974,8 @@ def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
             transaction_gid = _validate_supported_deletion_operation(operation, prefix, plan)
         elif kind == "replace_import_with_transfer":
             transaction_gid = _validate_transfer_operation(operation, prefix, plan)
+        elif kind == "reassign_transfer_recipient":
+            transaction_gid = _validate_transfer_recipient_operation(operation, prefix, plan)
         elif kind in INVESTMENT_POLICIES:
             transaction_gid = _validate_investment_operation(operation, prefix, plan)
         else:
@@ -1815,7 +1985,7 @@ def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
         transaction_gids.add(transaction_gid)
         if w04 and transaction_gid not in scope_gids:
             raise PlanValidationError("W04 target is absent from complete account scope")
-    if (create_operations or adjust_operations or delete_operations or w07
+    if (create_operations or adjust_operations or delete_operations or w07 or w10
             or plan["capability"] in INVESTMENT_CAPABILITIES) and len(operations) != 1:
         raise PlanValidationError(
             "a creation or deletion source event must contain exactly one operation"
@@ -1831,6 +2001,7 @@ def validate_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
         DELETE_ADJUSTMENT_CAPABILITY,
         SUPPORTED_DELETION_CAPABILITY,
         TRANSFER_CAPABILITY,
+        TRANSFER_RECIPIENT_CAPABILITY,
         *INVESTMENT_CAPABILITIES,
         *(policy[0] for policy in RECONCILE_CAPABILITIES.values()),
     }:
@@ -1940,7 +2111,7 @@ def validate_result(plan: dict[str, Any], result: object) -> dict[str, Any]:
             and classification == "retry_safe"
         )
         transfer_without_pair = (
-            operation["kind"] == "replace_import_with_transfer"
+            operation["kind"] in {"replace_import_with_transfer", "reassign_transfer_recipient"}
             and classification in {"retry_safe", "unknown"}
             and numeric_id is None and uri is None
         )
@@ -2028,6 +2199,30 @@ def validate_result(plan: dict[str, Any], result: object) -> dict[str, Any]:
                     raise PlanValidationError("W07 receipt pair differs from the reviewed transfer")
             elif details is not None:
                 raise PlanValidationError("unverified W07 receipt claims a paired identity")
+        if operation["kind"] == "reassign_transfer_recipient":
+            postcondition = receipt.get("transfer_recipient_edit_postcondition")
+            details = receipt.get("transfer_recipient_edit_details")
+            if success:
+                if postcondition != operation["expected_postcondition"]:
+                    raise PlanValidationError("W10 receipt differs from the reviewed destination")
+                if not isinstance(details, Mapping) or set(details) != {
+                    "recipient_gid", "recipient_numeric_id", "recipient_uri",
+                    "reciprocal_links_verified",
+                }:
+                    raise PlanValidationError("W10 receipt omits the persisted recipient identity")
+                recipient_id = details["recipient_numeric_id"]
+                if (details["recipient_gid"] != operation["recipient_transaction_gid"]
+                        or not isinstance(recipient_id, str) or not recipient_id.isascii()
+                        or not recipient_id.isdigit() or int(recipient_id) <= 0
+                        or details["recipient_uri"] != (
+                            f"x-coredata://{plan['store_identity']['store_uuid']}/"
+                            f"TransferDepositTransaction/p{recipient_id}"
+                        )
+                        or recipient_id != operation["expected_pair"]["recipient"]["transaction_numeric_id"]
+                        or details["reciprocal_links_verified"] is not True):
+                    raise PlanValidationError("W10 receipt does not verify both linked transaction identities")
+            elif postcondition is not None or details is not None:
+                raise PlanValidationError("unverified W10 receipt claims a completed reassignment")
         if operation["kind"] in INVESTMENT_POLICIES:
             fields = (
                 "account_mode", "cash_event_type", "investment_symbol", "holding_gid", "holding_symbol",
@@ -2064,6 +2259,8 @@ def validate_result(plan: dict[str, Any], result: object) -> dict[str, Any]:
                 raise PlanValidationError(
                     "native operation receipt violates its payee postcondition"
                 )
+        elif success and operation["kind"] == "reassign_transfer_recipient":
+            pass  # W10 returns its independent pair postcondition in the typed extension fields.
         elif success:
             if operation["kind"] == "adjust_investment_total" and "currency_precision" in operation and (
                 not isinstance(receipt.get("postcondition"), Mapping)

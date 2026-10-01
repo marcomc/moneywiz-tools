@@ -9,8 +9,9 @@ with deterministic source-event identities. W02
 scalar editing uses the same journal with exact target IDs and prior values.
 W03 relationship replacement uses it with exact prior and target assignments.
 W04 reconciliation adds a full-account inventory and exact native flag guards.
-The implemented W01–W09 variants are enabled on the reviewed live Setapp runtime
-and marked disposable stores. Existing version-1 commands retain their interface
+The implemented W01–W10 variants are enabled on supported MoneyWiz bundles at
+build 449 or newer with matching model and canonical store identity, or on
+marked disposable stores. Existing version-1 commands retain their interface
 and capability checks.
 
 Synthetic/disposable tests validate persistence and recovery; application and

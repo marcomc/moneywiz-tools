@@ -80,6 +80,11 @@ These rules do not apply outside of work under `moneywiz-tools/`.
 
 ## Live financial-app sessions
 
+- When a session explicitly tests live database writes through the MoneyWiz CLI,
+  keep each write CLI-first. If the CLI cannot perform an operation, stop before
+  any GUI fallback and tell the user which operation is unsupported and why; do
+  not write through the GUI unless the user explicitly chooses that fallback.
+  A GUI write does not count as evidence that the CLI write path works.
 - **Absolute rule for every live import or reconciliation:** keep iPhone
   Mirroring active even while using the CLI, MoneyWiz, or a browser. Perform a
   harmless real pointer movement or click in the mirrored window at least every

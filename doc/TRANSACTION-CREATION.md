@@ -3,10 +3,10 @@
 ## Capability boundary
 
 W01 adds typed income, expense and refund creation to the version-2 writer.
-The model-48 capabilities are enabled for authorized live execution on Setapp
-MoneyWiz 2026.37.1 build 449, with exact app, model, owner and store identity
-checks in both clients. TestFlight regression stores require the native
-`MoneyWizToolsDisposableFixture: W01-v1` marker.
+The model-48 capabilities are enabled for supported MoneyWiz bundles at build
+449 or newer, with exact app, model, owner and canonical store identity checks
+in both clients. Synthetic stores require the native
+`MoneyWizToolsDisposableFixture: W01-v1` marker regardless of bundle channel.
 
 Ordinary transactions support all seven concrete account types: `CashAccount`,
 `BankChequeAccount`, `BankSavingAccount`, `CreditCardAccount`, `LoanAccount`,
@@ -151,7 +151,7 @@ also exercised the live Setapp `2026.37.1` build `449`, model 48 store. MoneyWiz
 displayed the created and edited bank rows, and CloudKit exported the trial
 records without pending uploads. Three labelled bank TEST transactions remain
 at the user's request. See [Live Write Compatibility](LIVE-WRITE-COMPATIBILITY.md)
-for the shared W01–W09 acceptance and cleanup evidence boundary.
+for the shared W01–W10 acceptance and cleanup evidence boundary.
 
 The [W01 task ledger](../TODO.md#p1-w01-transaction-creation) separates
 implementation, required validation, independent review and future application

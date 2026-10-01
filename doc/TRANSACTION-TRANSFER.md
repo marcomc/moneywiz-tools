@@ -6,7 +6,9 @@ destination must be active accounts of the same owner. Cash, cheque, savings,
 credit-card, loan, investment and forex accounts are supported. The request binds
 both accounts and cached balances, both currencies, each old row's GID and
 numeric ID, actual amounts and dates, a directional exchange rate, and a stable
-source-event ID. Send and Receive dates may differ.
+source-event ID. Send and Receive dates may differ. Live admission accepts a
+supported MoneyWiz bundle at build 449 or newer when its model and canonical
+store identity match; disposable test stores require the native fixture marker.
 
 ## Plan and apply
 
@@ -52,6 +54,44 @@ without an old recipient row, recipient metadata starts empty. See
 [Writer Recovery](WRITER-RECOVERY.md) for journal handling.
 
 The `write.replace-import-with-transfer` capability is enabled for reviewed
-Setapp MoneyWiz 2026.37.1 build 449, model 48. Marked disposable stores remain
-supported. Nonzero fees need native reference evidence for their currency and
-amount rules. Live use requires MoneyWiz reopen and sync acceptance.
+MoneyWiz builds at 449 or newer when the supported bundle, exact model, and
+canonical store identity match. Bundle channel does not determine admission.
+Marked disposable stores remain supported for tests. Nonzero fees need native
+reference evidence for their currency and amount rules. Live use requires
+MoneyWiz reopen and sync acceptance.
+
+## Change the recipient account of a linked transfer pair (W10)
+
+W10 updates the existing `TransferWithdrawTransaction.recipientAccount` and
+`TransferDepositTransaction.account` relationships in one Core Data save. It
+preserves both GIDs and durable IDs, amounts, currencies, dates, fees, notes,
+flags, payees, tags, assignments and reciprocal transaction links. The source,
+previous destination and new destination must be distinct accounts owned by the
+same user. The new destination must use the existing recipient leg's currency.
+
+Build a request with the shared version-2 envelope, `previous_destination_account`,
+`destination_account`, and one `operation` with kind
+`reassign_transfer_recipient`. Bind both complete transfer leg snapshots under
+`expected_pair.sender` and `expected_pair.recipient`, including native entity,
+GID, numeric ID, account, peer identities, amounts, currencies, exchange rate,
+date/timezone, status, flags, reconciliation state and metadata. Account guards
+include GID, currency and expected cached balance. Use `balance_mode: "ledger"`
+for live accounts; disposable fixtures use cache-delta checks.
+
+~~~sh
+moneywiz transaction reassign-transfer-recipient --request /private/path/request.json \
+  --plan /private/path/plan.json
+moneywiz write validate --plan /private/path/plan.json
+moneywiz --db /private/path/disposable.sqlite write apply \
+  --plan /private/path/plan.json --reviewed-digest REVIEWED_SHA256 --apply
+moneywiz --db /private/path/disposable.sqlite write recover \
+  --plan /private/path/plan.json
+~~~
+
+The native host checks both snapshots and all three accounts before mutation,
+saves both account relationship changes atomically, and independently reads the
+persisted pair back. Recovery reports retry-safe before save and a no-op after a
+completed reassignment; partial pairs and stale account or transaction state are
+refused. W10 capability is `write.reassign-transfer-recipient`. Live admission
+requires a supported MoneyWiz bundle at build 449 or newer with exact app/model/
+store identity; disposable stores must carry the W01 fixture marker.

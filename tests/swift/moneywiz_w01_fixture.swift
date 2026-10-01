@@ -55,6 +55,91 @@ func fixtureTransaction(_ entity: String, gid: String, amount: Double,
     return transaction
 }
 
+func fixtureTransferLeg(_ entity: String, gid: String, amount: Double, peerAmount: Double,
+                        account: NSManagedObject, peerAccount: NSManagedObject,
+                        context: NSManagedObjectContext) throws -> NSManagedObject {
+    let row = try fixtureObject(entity, context)
+    try fixtureSet(row, "GID", gid)
+    try fixtureSet(row, "amount", amount)
+    try fixtureSet(row, "originalAmount", amount)
+    try fixtureSet(row, "originalCurrency", "GBP")
+    try fixtureSet(row, entity == "TransferWithdrawTransaction" ? "originalRecipientAmount" : "originalSenderAmount", peerAmount)
+    try fixtureSet(row, entity == "TransferWithdrawTransaction" ? "originalRecipientCurrency" : "originalSenderCurrency", "GBP")
+    try fixtureSet(row, "originalExchangeRate", 1.0)
+    try fixtureSet(row, "currencyExchangeRate", 1.0)
+    try fixtureSet(row, "fee", 0.0)
+    try fixtureSet(row, "originalFee", 0.0)
+    try fixtureSet(row, "objectCreationDate", precisePlanTimestamp("2026-09-28T10:00:00Z"))
+    try fixtureSet(row, "date", precisePlanTimestamp(entity == "TransferWithdrawTransaction"
+        ? "2026-09-28T12:06:00+02:00" : "2026-09-28T12:07:00+02:00"))
+    try fixtureSet(row, "notes", "")
+    try fixtureSet(row, "desc", "Transfer")
+    try fixtureSet(row, "reconciled", false)
+    try fixtureSet(row, "flags", 0)
+    try fixtureSet(row, "status", 2)
+    try fixtureSet(row, "voidCheque", 0)
+    try fixtureSet(row, "account", account)
+    if entity == "TransferWithdrawTransaction" {
+        try fixtureSet(row, "recipientAccount", peerAccount)
+    } else {
+        try fixtureSet(row, "senderAccount", peerAccount)
+    }
+    return row
+}
+
+func fixtureTransferLegSnapshot(_ row: NSManagedObject, accountGID: String,
+                                peerAmount: String, peerCurrency: String,
+                                peerGID: String, peerAccountGID: String) -> [String: Any] {
+    let entity = row.entity.name!
+    return [
+        "transaction_entity": entity,
+        "transaction_gid": row.value(forKey: "GID") as! String,
+        "transaction_numeric_id": String(durableNumericID(row.objectID)),
+        "account_gid": accountGID,
+        "amount": NSDecimalNumber(value: (row.value(forKey: "amount") as! NSNumber).doubleValue).stringValue,
+        "currency_unit": "GBP",
+        "occurred_at": entity == "TransferWithdrawTransaction"
+            ? "2026-09-28T12:06:00+02:00" : "2026-09-28T12:07:00+02:00",
+        "status": row.value(forKey: "status") as! Int,
+        "flags": row.value(forKey: "flags") as! Int,
+        "reconciled": row.value(forKey: "reconciled") as! Bool,
+        "note": row.value(forKey: "notes") as? String ?? "",
+        "description": row.value(forKey: "desc") as? String ?? "",
+        "fee": "0",
+        "original_fee": "0",
+        "original_fee_currency": NSNull(),
+        "original_amount": NSDecimalNumber(value: (row.value(forKey: "originalAmount") as! NSNumber).doubleValue).stringValue,
+        "peer_amount": peerAmount,
+        "peer_currency_unit": peerCurrency,
+        "exchange_rate": "1",
+        "peer_transaction_gid": peerGID,
+        "peer_account_gid": peerAccountGID,
+        "payee_gid": NSNull(),
+        "tag_gids": [String](),
+        "category_assignment_uris": [String](),
+    ]
+}
+
+func fixtureTransferRecipientEdit(user: NSManagedObject, context: NSManagedObjectContext)
+    throws -> (sender: NSManagedObject, recipient: NSManagedObject) {
+    let entity = ProcessInfo.processInfo.environment["MONEYWIZ_TEST_ACCOUNT_ENTITY"] ?? "CashAccount"
+    guard supportedAccountEntities.contains(entity) else { throw HostError.message("W10 unsupported fixture account") }
+    let source = try fixtureAccount(entity, gid: "w10-source", name: "W10 source", opening: 1000,
+        balance: 700, user: user, context: context)
+    let previous = try fixtureAccount(entity, gid: "w10-previous", name: "W10 previous", opening: 50,
+        balance: 350, user: user, context: context)
+    let destination = try fixtureAccount(entity, gid: "w10-destination", name: "W10 destination", opening: 20,
+        balance: 20, user: user, context: context)
+    for account in [source, previous, destination] { try fixtureSet(account, "currencyName", "GBP") }
+    let sender = try fixtureTransferLeg("TransferWithdrawTransaction", gid: "w10-sender",
+        amount: -300, peerAmount: 300, account: source, peerAccount: previous, context: context)
+    let recipient = try fixtureTransferLeg("TransferDepositTransaction", gid: "w10-recipient",
+        amount: 300, peerAmount: -300, account: previous, peerAccount: source, context: context)
+    try fixtureSet(sender, "recipientTransaction", recipient)
+    try fixtureSet(recipient, "senderTransaction", sender)
+    return (sender, recipient)
+}
+
 func fixtureCategoryAssignment(_ transaction: NSManagedObject, category: NSManagedObject,
                                amount: Double, context: NSManagedObjectContext) throws {
     let assignment = try fixtureObject("CategoryAssigment", context)
@@ -384,7 +469,7 @@ func runFixtureWriter() throws {
                     "--w08-units", "--w08-unmarked", "--w05-balance", "--w05-cash", "--w05-quantity",
                     "--w05-unmarked-balance", "--w05-unmarked-cash", "--w05-unmarked-quantity", "--w09-exact",
                     "--w09-fuzzy", "--w09-untrimmed", "--w09-control-space",
-                    "--w09-blank-control",
+                    "--w09-blank-control", "--w10-transfer-pair", "--w10-unmarked",
                     "--w09-unmarked"].contains(args[4]) else {
                 throw HostError.message("usage")
             }
@@ -400,7 +485,7 @@ func runFixtureWriter() throws {
                 "--w07-paired", "--w07-reverse", "--w07-ambiguous",
                 "--w07-voided", "--w08-aggregate", "--w08-units", "--w05-balance", "--w05-cash", "--w05-quantity",
                 "--w09-exact", "--w09-fuzzy", "--w09-untrimmed",
-                "--w09-control-space", "--w09-blank-control"].contains(args[4]) {
+                "--w09-control-space", "--w09-blank-control", "--w10-transfer-pair"].contains(args[4]) {
                 var storeMetadata = persistentStore.metadata ?? [:]
                 storeMetadata["MoneyWizToolsDisposableFixture"] = "W01-v1"
                 container.persistentStoreCoordinator.setMetadata(storeMetadata, for: persistentStore)
@@ -410,6 +495,26 @@ func runFixtureWriter() throws {
             try fixtureSet(user, "syncLogin", "w01-fixture@example.invalid")
             let foreignUser = try fixtureObject("User", c)
             try fixtureSet(foreignUser, "syncLogin", "w01-foreign@example.invalid")
+            if args.count == 5 && args[4].hasPrefix("--w10-") {
+                let pair = try fixtureTransferRecipientEdit(user: user, context: c)
+                try c.save()
+                let snapshots: [String: Any] = [
+                    "sender": fixtureTransferLegSnapshot(pair.sender, accountGID: "w10-source",
+                        peerAmount: "300", peerCurrency: "GBP", peerGID: "w10-recipient", peerAccountGID: "w10-previous"),
+                    "recipient": fixtureTransferLegSnapshot(pair.recipient, accountGID: "w10-previous",
+                        peerAmount: "-300", peerCurrency: "GBP", peerGID: "w10-sender", peerAccountGID: "w10-source"),
+                ]
+                let metadata = try NSPersistentStoreCoordinator.metadataForPersistentStore(
+                    ofType: NSSQLiteStoreType, at: store, options: nil)
+                let result: [String: Any] = [
+                    "store_uuid": metadata[NSStoreUUIDKey] as! String,
+                    "owner_uri": user.objectID.uriRepresentation().absoluteString,
+                    "expected_pair": snapshots,
+                ]
+                FileHandle.standardOutput.write(try JSONSerialization.data(withJSONObject: result, options: [.sortedKeys]))
+                FileHandle.standardOutput.write(Data([10]))
+                return
+            }
             if args.count == 5 && args[4] == "--w06-supported" {
                 try fixtureSupportedDeletion(user, foreignUser: foreignUser, context: c)
                 try c.save()

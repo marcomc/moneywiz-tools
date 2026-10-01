@@ -2,8 +2,8 @@
 
 ## Authorized live validation checkpoint — 30 September 2026
 
-W01–W09 synthetic trials passed on a private copy and the reviewed live Setapp
-store, including replay, recovery, application display and observed iCloud export.
+W01–W09 synthetic trials passed on a private copy and the reviewed live store,
+including replay, recovery, application display and observed iCloud export.
 Cleanup restored the investment balances and removed temporary transfers and
 merge-reference rows; three labelled bank TEST transactions remain as requested.
 Ordinary operations now cover all seven concrete account subtypes.
@@ -19,7 +19,7 @@ Independent review of the current changes remains a separate release gate.
 ## Active release 0.3.0 tasks
 
 The user confirmed on 2026-09-28 that the full P0/P1F/P1/P2/P3 roadmap,
-including W01–W09, belongs to `release/0.3.0`. Keep one PR per operation. W01–W04
+including W01–W10, belongs to `release/0.3.0`. Keep one PR per operation. W01–W04
 are already integrated as recorded below; leave each new PR open for user
 inspection and do not merge. Refine later task details as prerequisites become
 concrete; preserve the propositions below as requirements.
@@ -274,6 +274,25 @@ payment plans and info cards. Only marked disposable stores are admitted.
 | P3-W09-05 | Bundle and independent review | Integrated suite, installed bundle, privacy scan, local READY and current-head GitHub review | 695 passed, 14 skipped; fresh bundle privacy scan and independent local review clean; GitHub review pending |
 | P3-W09-06 | Application and sync acceptance | MoneyWiz reopen/history and operation-specific sync evidence | Pending separate live-write authorization |
 
+## P2 extension: W10 transfer recipient reassignment
+
+Branch: `feat/p2-w10-transfer-recipient-edit`; PR target: `release/0.3.0`.
+W10 changes the destination account of an already linked transfer pair while
+preserving both transaction IDs, amounts, currencies, dates, fees, notes, flags,
+and reciprocal links. The existing source account, previous destination, target
+destination, owner and both complete leg snapshots must match the reviewed plan.
+
+| ID | Deliverable | Acceptance | State |
+| --- | --- | --- | --- |
+| P2-W10-01 | Strict CLI request and plan | Exact pair/account snapshots, currency and distinct-account guards, reviewed digest | Implemented; Python plan tests pass |
+| P2-W10-02 | Atomic Core Data reassignment | Set both account relationships together, one save, unchanged transaction identities and independent persisted read-back | Implemented; native fixture validation in progress |
+| P2-W10-03 | Recovery and refusal | Journal replay, pre/post-save crash recovery, marked-fixture positive and unmarked-fixture refusal | Implemented; end-to-end validation in progress |
+| P2-W10-04 | Docs and release integration | API, operator, compatibility and recovery docs; changelog and roadmap | In progress |
+| P2-W10-05 | Release review handoff | Scoped remediation, independent current-head GitHub review and open PR to `release/0.3.0` | Pending local readiness |
+
+Live app/iCloud acceptance is separate and requires explicit live-write
+authorization for the concrete transfer pair.
+
 ## Propositions
 
 ### Future writer extensions beyond the completed 0.3.0 scope
@@ -427,7 +446,7 @@ executable tasks progressively when each phase is prepared; the existing
 propositions below remain requirements, not an activated P0–P3 task list.
 
 Implementation design and priorities: [Transaction write API proposal](doc/proposals/TRANSACTION-WRITE-API.md).
-Its W01-W09 contracts refine the backlog below; none is implemented by the
+Its W01-W10 contracts refine the backlog below; none is implemented by the
 proposal. Start with P0 read completeness and runtime identity, then the shared
 writer contract and P1 operations.
 

@@ -183,11 +183,6 @@ def test_installed_first_buy_plans_applies_journals_and_enforces_admission(w01_r
     unmarked_dir.mkdir()
     unmarked, unmarked_identity = new_store(w01_runtime, unmarked_dir, units=False, marked=False)
     rejected = first_buy_plan(w01_runtime, unmarked_identity)
-    setapp = w01_runtime.app_identity["bundle_id"] == "com.moneywiz.personalfinance-setapp"
-    if setapp:
-        # Setapp is admitted on an unmarked store only with its reviewed runtime.
-        rejected["app_identity"]["version"] = "unreviewed-version"
-        rejected["plan_digest"] = compute_digest(rejected)
     rejected_file = tmp_path / "unmarked-plan.json"
     rejected_file.write_text(json.dumps(rejected), encoding="utf-8")
     before = sql_inventory(unmarked)
@@ -195,8 +190,8 @@ def test_installed_first_buy_plans_applies_journals_and_enforces_admission(w01_r
                   "--model", str(w01_runtime.model), "--owner", unmarked_identity["owner_uri"].rsplit("/p", 1)[1],
                   "--reviewed-digest", rejected["plan_digest"], "--apply")
     assert refused.returncode == 2
-    assert "disposable" in refused.stderr or (setapp and "identity" in refused.stderr)
+    assert "disposable" in refused.stderr
     native_refused = _invoke(w01_runtime, unmarked, rejected, unmarked_dir)
     assert native_refused.returncode == 2
-    assert "disposable" in native_refused.stderr or (setapp and "identity does not match" in native_refused.stderr)
+    assert "disposable" in native_refused.stderr
     assert sql_inventory(unmarked) == before
